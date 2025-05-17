@@ -1,0 +1,54 @@
+// Custom variables
+$primary: #2c3e50;
+$secondary: #95a5a6;
+$success: #27ae60;
+$info: #3498db;
+$warning: #f1c40f;
+$danger: #e74c3c;
+
+// Import Bootstrap
+@import "~bootstrap/scss/bootstrap";
+
+// Custom styles
+body {
+    background-color: #f8f9fa;
+    color: #2c3e50;
+}
+
+.card {
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn {
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+}
+
+.form-control {
+    border-radius: 4px;
+    &:focus {
+        box-shadow: 0 0 0 0.2rem rgba($primary, 0.25);
+    }
+}
+
+// Custom utilities
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.transition {
+    transition: all 0.3s ease;
+}
+
+// Layout utilities
+.page-container {
+    padding: 2rem 0;
+}
+
+.section-title {
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    color: $primary;
+}
