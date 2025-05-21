@@ -28,13 +28,13 @@ class PatientController extends AbstractController
         $result = array_map(function($patient) {
             return [
                 'id' => $patient->getId(),
-                'firstName' => $patient->getFirstName(),
-                'lastName' => $patient->getLastName(),
+                'name' => $patient->getName(),
+                
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
                 'medicalHistory' => $patient->getMedicalHistory(),
-                'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : trim($patient->getFirstName() . ' ' . $patient->getLastName())),
+                'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : $patient->getName()),
             ];
         }, $patients);
         return $this->json($result);
@@ -60,8 +60,7 @@ class PatientController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         $patient = new Patient();
-        $patient->setFirstName($data['firstName']);
-        $patient->setLastName($data['lastName']);
+        $patient->setName($data['name']);
         $patient->setEmail($data['email']);
         $patient->setPhone($data['phone']);
         if (isset($data['dateOfBirth'])) {
@@ -83,8 +82,7 @@ class PatientController extends AbstractController
             'message' => 'Patient created successfully',
             'patient' => [
                 'id' => $patient->getId(),
-                'firstName' => $patient->getFirstName(),
-                'lastName' => $patient->getLastName(),
+                'name' => $patient->getName(),
                 'email' => $patient->getEmail(),
             ]
         ], Response::HTTP_CREATED);
@@ -95,8 +93,7 @@ class PatientController extends AbstractController
     {
         return $this->json([
             'id' => $patient->getId(),
-            'firstName' => $patient->getFirstName(),
-            'lastName' => $patient->getLastName(),
+            'name' => $patient->getName(),
             'email' => $patient->getEmail(),
             'phone' => $patient->getPhone(),
             'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
@@ -112,11 +109,8 @@ class PatientController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
-        if (isset($data['firstName'])) {
-            $patient->setFirstName($data['firstName']);
-        }
-        if (isset($data['lastName'])) {
-            $patient->setLastName($data['lastName']);
+        if (isset($data['name'])) {
+            $patient->setName($data['name']);
         }
         if (isset($data['email'])) {
             $patient->setEmail($data['email']);
@@ -142,8 +136,8 @@ class PatientController extends AbstractController
             'message' => 'Patient updated successfully',
             'patient' => [
                 'id' => $patient->getId(),
-                'firstName' => $patient->getFirstName(),
-                'lastName' => $patient->getLastName(),
+                'name' => $patient->getName(),
+                
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),

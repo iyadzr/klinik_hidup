@@ -7,7 +7,7 @@
             <h4 class="mb-0">Current Queue Display</h4>
           </div>
           <div class="card-body">
-            <div class="current-queue text-center py-5">
+            <div class="current-queue text-center py-5 glass-card shadow mb-5" style="background:rgba(255,255,255,0.92);border:2px solid var(--accent);">
               <h2 class="mb-4">Now Serving</h2>
               <div class="display-1 mb-3" v-if="currentQueue">
                 {{ currentQueue.queueNumber }} - {{ getPatientName(currentQueue.patientId) }}
@@ -231,17 +231,29 @@ export default {
     },
     getFormattedPatientName(patient) {
       if (!patient) return 'Unknown Patient';
+      if (patient.name && patient.name.trim() !== '') {
+        return patient.name;
+      }
       if (patient.displayName && patient.displayName.trim() !== '') {
         return patient.displayName;
       }
-      return `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Unknown Patient';
+      return 'Unknown Patient';
     },
     getFormattedDoctorName(doctor) {
       if (!doctor) return 'Unknown Doctor';
       if (doctor.displayName && doctor.displayName.trim() !== '') {
         return doctor.displayName;
       }
-      return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'Unknown Doctor';
+      if (doctor.name && doctor.name.trim() !== '') {
+        return doctor.name;
+      }
+      if (doctor.displayName && doctor.displayName.trim() !== '') {
+        return doctor.displayName;
+      }
+      if (doctor.firstName || doctor.lastName) {
+        return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();
+      }
+      return 'Unknown Doctor';
     },
   }
 };

@@ -1,5 +1,5 @@
 <template>
-  <div class="registration-form">
+  <div class="registration-form glass-card shadow p-4 mt-4 mb-4">
     <div class="card">
       <div class="card-header">
         <h4 class="mb-0">Patient Registration</h4>
@@ -125,22 +125,36 @@ export default {
       }
     },
     async registerPatient() {
-      try {
+      // try {
         // Register patient
-        const patientResponse = await axios.post('/api/patients', this.patient);
-        const patientId = patientResponse.data.id;
+        // Only 'name' is used for patient name; backend and downstream code should use 'name', not 'firstName'/'lastName'.
+        try {
+          const patientResponse = await axios.post('/api/patients', this.patient);
+          // Some backend responses wrap patient as { patient: {...} }, others as { id: ... }
+          const patientId = (patientResponse.data.patient && patientResponse.data.patient.id)
+            ? patientResponse.data.patient.id
+            : patientResponse.data.id;
 
-        // Add to queue
-        await axios.post('/api/queue', {
-          patientId: patientId,
-          doctorId: this.queueInfo.doctorId
-        });
+          if (!patientId) {
+            alert('Registration failed: No patient ID returned.');
+            return;
+          }
 
-        this.$router.push('/queue');
-      } catch (error) {
-        console.error('Error registering patient:', error);
-        alert('Error registering patient. Please try again.');
-      }
+          // Add to queue
+          await axios.post('/api/queue', {
+            patientId: String(patientId).trim(),
+            doctorId: this.queueInfo.doctorId
+          });
+
+          this.$router.push('/queue');
+        } catch (error) {
+          console.error('Error registering patient or queueing:', error);
+          alert('Error registering patient or adding to queue. Please try again.');
+        }
+      // } catch (error) {
+      //   console.error('Error registering patient:', error);
+      //   alert('Error registering patient. Please try again.');
+      // }
     }
   }
 };

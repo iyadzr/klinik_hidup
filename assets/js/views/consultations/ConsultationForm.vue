@@ -17,9 +17,9 @@
     <form @submit.prevent="saveConsultation" class="row g-4">
       <!-- Patient Information -->
       <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="glass-card shadow h-100">
           <div class="card-body">
-            <h5 class="card-title d-flex align-items-center mb-4">
+            <h5 class="card-title text-gold d-flex align-items-center gap-2 mb-4">
               <i class="fas fa-user-injured text-primary me-2"></i>
               Patient Information
             </h5>
@@ -29,7 +29,7 @@
                   <select class="form-select" id="patientId" v-model="consultation.patientId" @change="fetchPatientDetails" required>
                     <option value="">Select Patient</option>
                     <option v-for="patient in patients" :key="patient.id" :value="patient.id">
-                      {{ patient.displayName || (patient.firstName ? (patient.firstName + ' ' + (patient.lastName || '')) : patient.lastName || 'Unknown') }}
+                      {{ patient.name || patient.displayName || 'Unknown' }}
                     </option>
                   </select>
                   <label for="patientId">Patient</label>
@@ -40,7 +40,7 @@
                   <select class="form-select" id="doctorId" v-model="consultation.doctorId" required>
                     <option value="">Select Doctor</option>
                     <option v-for="doctor in doctors" :key="doctor.id" :value="doctor.id">
-                      {{ (doctor.firstName ? (doctor.firstName + ' ' + (doctor.lastName || '')) : doctor.lastName || 'Unknown') + (doctor.specialization ? ' (' + doctor.specialization + ')' : '') }}
+                      {{ doctor.name || doctor.displayName || ((doctor.firstName ? (doctor.firstName + ' ' + (doctor.lastName || '')) : doctor.lastName || 'Unknown')) + (doctor.specialization ? ' (' + doctor.specialization + ')' : '') }}
                     </option>
                   </select>
                   <label for="doctorId">Doctor</label>
@@ -71,9 +71,9 @@
 
       <!-- Vital Signs -->
       <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
+        <div class="glass-card shadow h-100">
           <div class="card-body">
-            <h5 class="card-title d-flex align-items-center mb-4">
+            <h5 class="card-title text-gold d-flex align-items-center gap-2 mb-4">
               <i class="fas fa-heartbeat text-primary me-2"></i>
               Vital Signs
             </h5>
@@ -111,7 +111,7 @@
       <div class="col-12">
         <div class="card border-0 shadow-sm">
           <div class="card-body">
-            <h5 class="card-title d-flex align-items-center mb-4">
+            <h5 class="card-title text-gold d-flex align-items-center gap-2 mb-4">
               <i class="fas fa-stethoscope text-primary me-2"></i>
               Consultation Details
             </h5>
@@ -155,7 +155,7 @@
       <div class="col-12">
         <div class="card border-0 shadow-sm">
           <div class="card-body">
-            <h5 class="card-title d-flex align-items-center mb-4">
+            <h5 class="card-title text-gold d-flex align-items-center gap-2 mb-4">
               <i class="fas fa-money-bill text-primary me-2"></i>
               Payment Information
             </h5>

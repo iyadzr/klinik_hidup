@@ -16,11 +16,10 @@ class PatientRepository extends ServiceEntityRepository
     public function findBySearchTerm(string $searchTerm)
     {
         return $this->createQueryBuilder('p')
-            ->where('p.firstName LIKE :term')
-            ->orWhere('p.lastName LIKE :term')
+            ->where('p.name LIKE :term')
             ->orWhere('p.email LIKE :term')
             ->setParameter('term', '%' . $searchTerm . '%')
-            ->orderBy('p.lastName', 'ASC')
+            ->orderBy('p.name', 'ASC')
             ->getQuery()
             ->getResult();
     }

@@ -1,7 +1,12 @@
 <template>
   <div class="app-wrapper">
+    <button v-if="!isAuthPage" class="sidebar-toggle-btn" @click="sidebarOpen = true" aria-label="Open sidebar">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div v-if="!isAuthPage" :class="['sidebar-backdrop', { active: sidebarOpen } ]" @click="sidebarOpen = false"></div>
+  
     <!-- Sidebar -->
-    <nav class="sidebar bg-dark" v-if="isAuthenticated && !isAuthPage">
+    <nav :class="['sidebar', 'bg-dark', { open: sidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
       <div class="sidebar-header p-3">
         <router-link to="/" class="text-white text-decoration-none">
           <h5 class="mb-0 d-flex align-items-center">
@@ -105,6 +110,9 @@
   </div>
 </template>
 
+<style src="../styles/responsive-sidebar.css"></style>
+
+
 <script>
 import axios from 'axios';
 import mitt from 'mitt';
@@ -115,6 +123,7 @@ export default {
   name: 'App',
   data() {
     return {
+      sidebarOpen: false
     };
   },
   computed: {

@@ -38,11 +38,11 @@ class Doctor
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    private ?string $firstName = null;
+    
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    private ?string $lastName = null;
+    
 
     public function getId(): ?int
     {
@@ -57,38 +57,6 @@ class Doctor
     public function setName(string $name): self
     {
         $this->name = $name;
-        $nameParts = explode(' ', $name);
-        if (count($nameParts) >= 2) {
-            $this->firstName = $nameParts[0];
-            $this->lastName = implode(' ', array_slice($nameParts, 1));
-        } else {
-            $this->firstName = $name;
-            $this->lastName = '';
-        }
-        return $this;
-    }
-
-    public function getFirstName(): ?string
-    {
-        return $this->firstName;
-    }
-
-    public function setFirstName(string $firstName): self
-    {
-        $this->firstName = $firstName;
-        $this->updateFullName();
-        return $this;
-    }
-
-    public function getLastName(): ?string
-    {
-        return $this->lastName;
-    }
-
-    public function setLastName(string $lastName): self
-    {
-        $this->lastName = $lastName;
-        $this->updateFullName();
         return $this;
     }
 
@@ -145,10 +113,5 @@ class Doctor
     {
         $this->workingHours = $workingHours;
         return $this;
-    }
-
-    private function updateFullName(): void
-    {
-        $this->name = trim($this->firstName . ' ' . $this->lastName);
     }
 }

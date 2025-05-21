@@ -20,9 +20,9 @@ class DoctorController extends AbstractController
         $result = array_map(function($doctor) {
             return [
                 'id' => $doctor->getId(),
-                'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : trim($doctor->getFirstName() . ' ' . $doctor->getLastName())),
-                'firstName' => $doctor->getFirstName(),
-                'lastName' => $doctor->getLastName(),
+                'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : $doctor->getName()),
+                'name' => $doctor->getName(),
+                
                 'specialization' => $doctor->getSpecialization(),
             ];
         }, $doctors);
@@ -43,8 +43,8 @@ class DoctorController extends AbstractController
         $data = json_decode($request->getContent(), true);
 
         $doctor = new Doctor();
-        $doctor->setFirstName($data['firstName']);
-        $doctor->setLastName($data['lastName']);
+        $doctor->setName($data['name']);
+        
         $doctor->setEmail($data['email']);
         $doctor->setPhone($data['phone']);
         $doctor->setSpecialization($data['specialization']);
@@ -62,8 +62,8 @@ class DoctorController extends AbstractController
             'message' => 'Doctor created successfully',
             'doctor' => [
                 'id' => $doctor->getId(),
-                'firstName' => $doctor->getFirstName(),
-                'lastName' => $doctor->getLastName(),
+                'name' => $doctor->getName(),
+                
                 'email' => $doctor->getEmail(),
                 'specialization' => $doctor->getSpecialization(),
                 'displayName' => $doctor->getName(),
@@ -77,8 +77,8 @@ class DoctorController extends AbstractController
         return $this->json([
             'doctor' => [
                 'id' => $doctor->getId(),
-                'firstName' => $doctor->getFirstName(),
-                'lastName' => $doctor->getLastName(),
+                'name' => $doctor->getName(),
+                
                 'email' => $doctor->getEmail(),
                 'phone' => $doctor->getPhone(),
                 'specialization' => $doctor->getSpecialization(),
@@ -94,11 +94,8 @@ class DoctorController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
-        if (isset($data['firstName'])) {
-            $doctor->setFirstName($data['firstName']);
-        }
-        if (isset($data['lastName'])) {
-            $doctor->setLastName($data['lastName']);
+        if (isset($data['name'])) {
+            $doctor->setName($data['name']);
         }
         if (isset($data['email'])) {
             $doctor->setEmail($data['email']);
@@ -122,8 +119,8 @@ class DoctorController extends AbstractController
             'message' => 'Doctor updated successfully',
             'doctor' => [
                 'id' => $doctor->getId(),
-                'firstName' => $doctor->getFirstName(),
-                'lastName' => $doctor->getLastName(),
+                'name' => $doctor->getName(),
+                
                 'email' => $doctor->getEmail(),
                 'specialization' => $doctor->getSpecialization(),
 'displayName' => $doctor->getName(),
@@ -149,8 +146,8 @@ class DoctorController extends AbstractController
             'doctors' => array_map(function($doctor) {
                 return [
                     'id' => $doctor->getId(),
-                    'firstName' => $doctor->getFirstName(),
-                    'lastName' => $doctor->getLastName(),
+                    'name' => $doctor->getName(),
+                    
                     'email' => $doctor->getEmail(),
                     'specialization' => $doctor->getSpecialization(),
 'displayName' => $doctor->getName(),

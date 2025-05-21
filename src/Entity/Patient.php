@@ -16,11 +16,7 @@ class Patient
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
-    private ?string $firstName = null;
-
-    #[ORM\Column(length: 255)]
-    #[Assert\NotBlank]
-    private ?string $lastName = null;
+    private ?string $name = null;
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
@@ -58,26 +54,15 @@ class Patient
         return $this->firstName;
     }
 
-    public function setFirstName(string $firstName): self
+    public function setName(?string $name): self
     {
-        $this->firstName = $firstName;
+        $this->name = $name;
         return $this;
     }
 
-    public function getLastName(): ?string
+    public function getName(): ?string
     {
-        return $this->lastName;
-    }
-
-    public function setLastName(string $lastName): self
-    {
-        $this->lastName = $lastName;
-        return $this;
-    }
-
-    public function getName(): string
-    {
-        return trim($this->firstName . ' ' . $this->lastName);
+        return $this->name;
     }
 
     public function getEmail(): ?string

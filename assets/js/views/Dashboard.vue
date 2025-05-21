@@ -4,7 +4,7 @@
       <div class="col-md-4">
         <div class="card">
           <div class="card-body">
-            <h5 class="card-title">Patients</h5>
+            <h5 class="card-title text-gold d-flex align-items-center gap-2"><i class="fas fa-user-injured"></i> Patients</h5>
             <p class="card-text">
               <span v-if="loading.patients">
                 <span class="spinner-border spinner-border-sm" role="status"></span>
@@ -21,7 +21,7 @@
       <div class="col-md-4">
         <div class="card">
           <div class="card-body">
-            <h5 class="card-title">Doctors</h5>
+            <h5 class="card-title text-gold d-flex align-items-center gap-2"><i class="fas fa-user-md"></i> Doctors</h5>
             <p class="card-text">
               <span v-if="loading.doctors">
                 <span class="spinner-border spinner-border-sm" role="status"></span>

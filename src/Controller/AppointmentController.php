@@ -34,11 +34,11 @@ class AppointmentController extends AbstractController
                     'id' => $appointment->getId(),
                     'patient' => [
                         'id' => $patient->getId(),
-                        'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : trim($patient->getFirstName() . ' ' . $patient->getLastName())),
+                        'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : $patient->getName()),
                     ],
                     'doctor' => [
                         'id' => $doctor->getId(),
-                        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : trim($doctor->getFirstName() . ' ' . $doctor->getLastName())),
+                        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : $doctor->getName()),
                         'specialization' => $doctor->getSpecialization(),
                     ],
                     'appointmentDateTime' => $appointment->getAppointmentDateTime()->format('Y-m-d\TH:i:s'),
@@ -130,13 +130,13 @@ class AppointmentController extends AbstractController
                     'id' => $appointment->getId(),
                     'patient' => [
                         'id' => $patient->getId(),
-                        'firstName' => $patient->getFirstName(),
-                        'lastName' => $patient->getLastName(),
+                        'name' => $patient->getName(),
+                        
                     ],
                     'doctor' => [
                         'id' => $doctor->getId(),
-                        'firstName' => $doctor->getFirstName(),
-                        'lastName' => $doctor->getLastName(),
+                        'name' => $doctor->getName(),
+                        
                     ],
                     'appointmentDateTime' => $appointment->getAppointmentDateTime()->format('Y-m-d\TH:i:s'),
                     'reason' => $appointment->getReason(),
@@ -171,13 +171,13 @@ class AppointmentController extends AbstractController
                     'id' => $appointment->getId(),
                     'patient' => [
                         'id' => $patient->getId(),
-                        'firstName' => $patient->getFirstName(),
-                        'lastName' => $patient->getLastName(),
+                        'name' => $patient->getName(),
+                        
                     ],
                     'doctor' => [
                         'id' => $doctor->getId(),
-                        'firstName' => $doctor->getFirstName(),
-                        'lastName' => $doctor->getLastName(),
+                        'name' => $doctor->getName(),
+                        
                     ],
                     'appointmentDateTime' => $appointment->getAppointmentDateTime()->format('Y-m-d\TH:i:s'),
                     'reason' => $appointment->getReason(),
@@ -221,18 +221,6 @@ class AppointmentController extends AbstractController
                 $appointment->setDoctor($doctor);
             }
 
-            if (isset($data['appointmentDateTime'])) {
-                $appointment->setAppointmentDateTime(new \DateTime($data['appointmentDateTime']));
-            }
-
-            if (isset($data['status'])) {
-                $appointment->setStatus($data['status']);
-            }
-
-            if (isset($data['reason'])) {
-                $appointment->setReason($data['reason']);
-            }
-
             if (isset($data['notes'])) {
                 $appointment->setNotes($data['notes']);
             }
@@ -245,13 +233,13 @@ class AppointmentController extends AbstractController
                     'id' => $appointment->getId(),
                     'patient' => [
                         'id' => $appointment->getPatient()->getId(),
-                        'firstName' => $appointment->getPatient()->getFirstName(),
-                        'lastName' => $appointment->getPatient()->getLastName(),
+                        'name' => $appointment->getPatient()->getName(),
+                        
                     ],
                     'doctor' => [
                         'id' => $appointment->getDoctor()->getId(),
-                        'firstName' => $appointment->getDoctor()->getFirstName(),
-                        'lastName' => $appointment->getDoctor()->getLastName(),
+                        'name' => $appointment->getDoctor()->getName(),
+                        
                     ],
                     'appointmentDateTime' => $appointment->getAppointmentDateTime()->format('Y-m-d\TH:i:s'),
                     'reason' => $appointment->getReason(),
