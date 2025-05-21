@@ -34,7 +34,7 @@ class PatientController extends AbstractController
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
                 'medicalHistory' => $patient->getMedicalHistory(),
-                'displayName' => $patient->getName(),
+                'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : trim($patient->getFirstName() . ' ' . $patient->getLastName())),
             ];
         }, $patients);
         return $this->json($result);

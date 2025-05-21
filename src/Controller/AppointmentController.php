@@ -34,18 +34,17 @@ class AppointmentController extends AbstractController
                     'id' => $appointment->getId(),
                     'patient' => [
                         'id' => $patient->getId(),
-                        'firstName' => $patient->getFirstName(),
-                        'lastName' => $patient->getLastName(),
+                        'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : trim($patient->getFirstName() . ' ' . $patient->getLastName())),
                     ],
                     'doctor' => [
                         'id' => $doctor->getId(),
-                        'firstName' => $doctor->getFirstName(),
-                        'lastName' => $doctor->getLastName(),
+                        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : trim($doctor->getFirstName() . ' ' . $doctor->getLastName())),
+                        'specialization' => $doctor->getSpecialization(),
                     ],
                     'appointmentDateTime' => $appointment->getAppointmentDateTime()->format('Y-m-d\TH:i:s'),
                     'reason' => $appointment->getReason(),
                     'status' => $appointment->getStatus(),
-                    'notes' => $appointment->getNotes(),
+                    'notes' => $appointment->getNotes()
                 ];
             }, $appointments);
             
@@ -60,28 +59,30 @@ class AppointmentController extends AbstractController
                 'error' => 'Failed to fetch appointments',
                 'message' => $e->getMessage()
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Failed to fetch appointments',
+                'message' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
     #[Route('/today', name: 'app_appointment_today', methods: ['GET'])]
     public function today(EntityManagerInterface $entityManager): JsonResponse
     {
-        try {
-            $today = new \DateTime();
-            $appointments = $entityManager->getRepository(Appointment::class)
-                ->createQueryBuilder('a')
-                ->where('DATE(a.appointmentDateTime) = :today')
-                ->setParameter('today', $today->format('Y-m-d'))
-                ->getQuery()
-                ->getResult();
+        $start = (new \DateTime())->setTime(0, 0, 0);
+        $end = (new \DateTime())->setTime(23, 59, 59);
 
-            return $this->json(['count' => count($appointments)]);
-        } catch (\Exception $e) {
-            return $this->json([
-                'error' => 'Failed to fetch today\'s appointments',
-                'message' => $e->getMessage()
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        $appointments = $entityManager->getRepository(Appointment::class)
+            ->createQueryBuilder('a')
+            ->where('a.appointmentDateTime >= :start')
+            ->andWhere('a.appointmentDateTime <= :end')
+            ->setParameter('start', $start)
+            ->setParameter('end', $end)
+            ->getQuery()
+            ->getResult();
+
+        return $this->json(['count' => count($appointments)]);
     }
 
     #[Route('', name: 'app_appointment_create', methods: ['POST'])]

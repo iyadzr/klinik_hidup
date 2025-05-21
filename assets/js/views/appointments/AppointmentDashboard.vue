@@ -1,11 +1,11 @@
 <template>
-  <div class="appointment-dashboard">
+  <div class="registration-dashboard">
     <div class="row">
       <!-- Today's Stats -->
       <div class="col-md-4 mb-4">
         <div class="card border-0 shadow-sm h-100 bg-primary text-white">
           <div class="card-body">
-            <h5 class="card-title">Today's Appointments</h5>
+            <h5 class="card-title">Today's Registrations</h5>
             <div class="d-flex align-items-center mt-3">
               <div class="display-4 me-3">{{ todayAppointments.length }}</div>
               <div>
@@ -21,9 +21,9 @@
       <div class="col-md-4 mb-4">
         <div class="card border-0 shadow-sm h-100 bg-success text-white">
           <div class="card-body">
-            <h5 class="card-title">This Week</h5>
+            <h5 class="card-title">This Week's Registrations</h5>
             <div class="d-flex align-items-center mt-3">
-              <div class="display-4 me-3">{{ weeklyAppointments.length }}</div>
+              <div class="display-4 me-3">{{ weeklyRegistrations.length }}</div>
               <div>
                 <div>{{ averagePerDay }} Avg/Day</div>
                 <div>{{ completedThisWeek }} Completed</div>
@@ -50,28 +50,10 @@
       </div>
     </div>
 
-    <!-- Calendar View -->
-    <div class="card border-0 shadow-sm mb-4">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-          <h5 class="card-title mb-0">Appointment Calendar</h5>
-          <button class="btn btn-primary" @click="openNewAppointmentModal">
-            <i class="fas fa-plus me-2"></i>New Appointment
-          </button>
-        </div>
-        <div class="calendar-wrapper">
-          <full-calendar 
-            ref="calendar"
-            :options="calendarOptions"
-            class="appointment-calendar" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Today's Appointments List -->
+    <!-- Today's Registrations List -->
     <div class="card border-0 shadow-sm">
       <div class="card-body">
-        <h5 class="card-title mb-4">Today's Schedule</h5>
+        <h5 class="card-title mb-4">Today's Registrations</h5>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
             <thead class="table-light">
@@ -84,9 +66,9 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="appointment in todayAppointments" :key="appointment.id"
-                  :class="{ 'table-warning': isCurrentAppointment(appointment) }">
-                <td>{{ formatTime(appointment.startTime) }}</td>
+              <tr v-for="registration in todayRegistrations" :key="registration.id"
+                  :class="{ 'table-warning': isCurrentRegistration(registration) }">
+                <td>{{ formatTime(registration.startTime) }}</td>
                 <td>
                   <div class="d-flex align-items-center">
                     <div class="avatar-sm bg-light rounded-circle me-2">
@@ -151,18 +133,18 @@
               <div class="mb-3">
                 <label class="form-label">Patient</label>
                 <select class="form-select" v-model="form.patientId" required>
-                  <option value="">Select Patient</option>
-                  <option v-for="patient in patients" :key="patient.id" :value="patient.id">
-                    {{ patient.name }}
-                  </option>
-                </select>
+  <option value="">Select Patient</option>
+  <option v-for="patient in patients" :key="patient.id" :value="patient.id">
+    {{ patient.displayName || ((patient.firstName || '') + ' ' + (patient.lastName || '')) }}
+  </option>
+</select>
               </div>
               <div class="mb-3">
                 <label class="form-label">Doctor</label>
                 <select class="form-select" v-model="form.doctorId" required>
-                  <option value="">Select Doctor</option>
+                  <option value="">Select Doctorssadsd</option>
                   <option v-for="doctor in doctors" :key="doctor.id" :value="doctor.id">
-                    Dr. {{ doctor.name }}
+                    {{ doctor.displayName || ('Dr. ' + (doctor.firstName || '') + ' ' + (doctor.lastName || '')) }}<span v-if="doctor.specialization"> ({{ doctor.specialization }})</span>
                   </option>
                 </select>
               </div>
@@ -201,9 +183,13 @@ import { Calendar } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import FullCalendar from '@fullcalendar/vue3';
 
 export default {
   name: 'AppointmentDashboard',
+  components: {
+    FullCalendar
+  },
   data() {
     return {
       appointments: [],
@@ -240,15 +226,18 @@ export default {
     };
   },
   computed: {
+    safeAppointments() {
+      return Array.isArray(this.appointments) ? this.appointments : [];
+    },
     todayAppointments() {
       const today = new Date().toISOString().split('T')[0];
-      return this.appointments.filter(apt => apt.date === today);
+      return this.safeAppointments.filter(apt => apt.date === today);
     },
     weeklyAppointments() {
       const today = new Date();
       const weekStart = new Date(today.setDate(today.getDate() - today.getDay()));
       const weekEnd = new Date(today.setDate(today.getDate() + 6));
-      return this.appointments.filter(apt => {
+      return this.safeAppointments.filter(apt => {
         const aptDate = new Date(apt.date);
         return aptDate >= weekStart && aptDate <= weekEnd;
       });
@@ -276,7 +265,15 @@ export default {
     async loadAppointments() {
       try {
         const response = await axios.get('/api/appointments');
-        this.appointments = response.data;
+        // Robust: ensure appointments is always an array
+        let appointments = [];
+        if (Array.isArray(response.data.appointments)) {
+          appointments = response.data.appointments;
+        } else if (Array.isArray(response.data)) {
+          appointments = response.data;
+        }
+        this.appointments = appointments;
+        console.log('Loaded appointments:', this.appointments);
         this.updateCalendarEvents();
       } catch (error) {
         console.error('Error loading appointments:', error);
@@ -285,17 +282,27 @@ export default {
     async loadPatients() {
       try {
         const response = await axios.get('/api/patients');
-        this.patients = response.data;
+        this.patients = response.data || [];
+        console.log('Loaded patients:', this.patients);
+        if (!Array.isArray(this.patients) || this.patients.length === 0) {
+          console.error('No patients loaded or wrong structure:', this.patients);
+        }
       } catch (error) {
         console.error('Error loading patients:', error);
+        this.patients = [];
       }
     },
     async loadDoctors() {
       try {
         const response = await axios.get('/api/doctors');
-        this.doctors = response.data;
+        this.doctors = response.data || [];
+        console.log('Loaded doctors:', this.doctors);
+        if (!Array.isArray(this.doctors) || this.doctors.length === 0) {
+          console.error('No doctors loaded or wrong structure:', this.doctors);
+        }
       } catch (error) {
         console.error('Error loading doctors:', error);
+        this.doctors = [];
       }
     },
     formatTime(time) {
@@ -405,8 +412,6 @@ export default {
     }
   },
   mounted() {
-    this.appointmentModal = new Modal(document.getElementById('appointmentModal'));
-    this.loadAppointments();
     this.loadPatients();
     this.loadDoctors();
   }

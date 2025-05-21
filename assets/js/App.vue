@@ -1,12 +1,12 @@
 <template>
   <div class="app-wrapper">
     <!-- Sidebar -->
-    <nav class="sidebar bg-dark" v-if="isAuthenticated">
+    <nav class="sidebar bg-dark" v-if="isAuthenticated && !isAuthPage">
       <div class="sidebar-header p-3">
         <router-link to="/" class="text-white text-decoration-none">
           <h5 class="mb-0 d-flex align-items-center">
             <i class="fas fa-clinic-medical me-2"></i>
-            <span>Clinic Management</span>
+            <span>Klinik HiDUP sihat</span>
           </h5>
         </router-link>
       </div>
@@ -22,9 +22,9 @@
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link to="/appointments" class="nav-link">
-                <i class="fas fa-calendar-alt fa-fw"></i>
-                <span>Appointments</span>
+              <router-link to="/registration" class="nav-link">
+                <i class="fas fa-user-plus fa-fw"></i>
+                <span>Registration</span>
               </router-link>
             </li>
             <li class="nav-item">
@@ -128,6 +128,9 @@ export default {
         return userData.role === 'assistant';
       }
       return false;
+    },
+    isAuthPage() {
+      return this.$route.path === '/login' || this.$route.path === '/register';
     }
   },
   created() {
@@ -170,6 +173,9 @@ export default {
     },
     handleLoginSuccess() {
       this.checkAuth();
+      if (this.$route.path !== '/dashboard') {
+        this.$router.push('/dashboard');
+      }
     },
     handleDataChange() {
       // Find the dashboard component if it exists

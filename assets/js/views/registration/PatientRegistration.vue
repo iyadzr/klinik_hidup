@@ -65,7 +65,7 @@
               <select v-model="queueInfo.doctorId" class="form-select" required>
                 <option value="">Select Doctor</option>
                 <option v-for="doctor in doctors" :key="doctor.id" :value="doctor.id">
-                  {{ doctor.name }}
+                  {{ doctor.displayName || (doctor.firstName && doctor.lastName ? doctor.firstName + ' ' + doctor.lastName : doctor.name || 'Unknown Doctor') }}
                 </option>
               </select>
             </div>
@@ -112,7 +112,14 @@ export default {
     async loadDoctors() {
       try {
         const response = await axios.get('/api/doctors');
-        this.doctors = response.data;
+        // Normalize to array of doctor objects
+        if (Array.isArray(response.data)) {
+          this.doctors = response.data;
+        } else if (Array.isArray(response.data.doctors)) {
+          this.doctors = response.data.doctors;
+        } else {
+          this.doctors = [];
+        }
       } catch (error) {
         console.error('Error loading doctors:', error);
       }

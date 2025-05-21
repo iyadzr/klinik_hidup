@@ -1,49 +1,16 @@
 <template>
   <div class="queue-management">
     <div class="row mb-4">
-      <div class="col-md-6">
-        <div class="card">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h4 class="mb-0">Add to Queue</h4>
-          </div>
-          <div class="card-body">
-            <form @submit.prevent="addToQueue">
-              <div class="mb-3">
-                <label class="form-label">Patient</label>
-                <select v-model="newQueue.patientId" class="form-select" required>
-                  <option value="">Select Patient</option>
-                  <option v-for="patient in patients" :key="patient.id" :value="patient.id">
-                    {{ patient.name }}
-                  </option>
-                </select>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Doctor</label>
-                <select v-model="newQueue.doctorId" class="form-select" required>
-                  <option value="">Select Doctor</option>
-                  <option v-for="doctor in doctors" :key="doctor.id" :value="doctor.id">
-                    {{ doctor.name }}
-                  </option>
-                </select>
-              </div>
-
-              <button type="submit" class="btn btn-primary">Add to Queue</button>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-md-6">
+      <div class="col-12">
         <div class="card">
           <div class="card-header">
             <h4 class="mb-0">Current Queue Display</h4>
           </div>
           <div class="card-body">
-            <div class="current-queue text-center">
-              <h2>Now Serving</h2>
+            <div class="current-queue text-center py-5">
+              <h2 class="mb-4">Now Serving</h2>
               <div class="display-1 mb-3" v-if="currentQueue">
-                {{ currentQueue.queueNumber }}
+                {{ currentQueue.queueNumber }} - {{ getPatientName(currentQueue.patientId) }}
               </div>
               <div v-else class="text-muted">
                 No active queue
@@ -158,17 +125,56 @@ export default {
     async loadPatients() {
       try {
         const response = await axios.get('/api/patients');
-        this.patients = response.data;
+        console.log('Raw patient API response:', response);
+        
+        // Check the data structure
+        if (response.data && Array.isArray(response.data)) {
+          this.patients = response.data;
+          console.log('Sample patient item:', this.patients.length > 0 ? JSON.stringify(this.patients[0]) : 'No patients');
+        } else {
+          console.error('Unexpected patient data format:', response.data);
+          this.patients = [];
+        }
+        
+        if (this.patients.length === 0) {
+          console.warn('No patients were loaded from the API');
+        }
       } catch (error) {
         console.error('Error loading patients:', error);
+        this.patients = [];
       }
     },
     async loadDoctors() {
       try {
         const response = await axios.get('/api/doctors');
-        this.doctors = response.data;
+        console.log('Raw doctor API response:', response);
+        
+        // Check the data structure
+        if (response.data && Array.isArray(response.data)) {
+          this.doctors = response.data;
+          
+          // Detailed logging for each doctor to see firstName and lastName fields
+          this.doctors.forEach((doctor, index) => {
+            console.log(`Doctor ${index + 1}:`, {
+              id: doctor.id,
+              firstName: doctor.firstName,
+              lastName: doctor.lastName,
+              specialization: doctor.specialization,
+              raw: doctor
+            });
+          });
+          
+        } else {
+          console.error('Unexpected doctor data format:', response.data);
+          this.doctors = [];
+        }
+        
+        if (this.doctors.length === 0) {
+          console.warn('No doctors were loaded from the API');
+        }
       } catch (error) {
         console.error('Error loading doctors:', error);
+        this.doctors = [];
       }
     },
     async loadQueueList() {
@@ -217,7 +223,26 @@ export default {
     },
     formatDateTime(datetime) {
       return new Date(datetime).toLocaleTimeString();
-    }
+    },
+    getPatientName(patientId) {
+      const patient = this.patients.find(p => p.id === patientId);
+      if (!patient) return 'Unknown Patient';
+      return this.getFormattedPatientName(patient);
+    },
+    getFormattedPatientName(patient) {
+      if (!patient) return 'Unknown Patient';
+      if (patient.displayName && patient.displayName.trim() !== '') {
+        return patient.displayName;
+      }
+      return `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Unknown Patient';
+    },
+    getFormattedDoctorName(doctor) {
+      if (!doctor) return 'Unknown Doctor';
+      if (doctor.displayName && doctor.displayName.trim() !== '') {
+        return doctor.displayName;
+      }
+      return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || 'Unknown Doctor';
+    },
   }
 };
 </script>

@@ -20,12 +20,10 @@ class DoctorController extends AbstractController
         $result = array_map(function($doctor) {
             return [
                 'id' => $doctor->getId(),
+                'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : trim($doctor->getFirstName() . ' ' . $doctor->getLastName())),
                 'firstName' => $doctor->getFirstName(),
                 'lastName' => $doctor->getLastName(),
-                'email' => $doctor->getEmail(),
-                'phone' => $doctor->getPhone(),
                 'specialization' => $doctor->getSpecialization(),
-                'displayName' => $doctor->getName(),
             ];
         }, $doctors);
         return $this->json($result);

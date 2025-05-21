@@ -35,6 +35,7 @@
           </div>
         </div>
       </div>
+      <!--
       <div class="col-md-4">
         <div class="card">
           <div class="card-body">
@@ -52,6 +53,7 @@
           </div>
         </div>
       </div>
+      -->
     </div>
   </div>
 </template>
@@ -71,13 +73,11 @@ export default {
         patients: false,
         doctors: false,
         appointments: false
-      },
-      refreshInterval: null
+      }
     };
   },
   async created() {
     await this.fetchData();
-    this.startAutoRefresh();
   },
   beforeUnmount() {
     this.stopAutoRefresh();
@@ -111,7 +111,7 @@ export default {
         const response = await axios.get('/api/appointments/today');
         this.todayAppointments = response.data.count;
       } catch (error) {
-        console.error('Failed to load appointment count:', error);
+        console.error('Failed to fetch today appointments count:', error);
       } finally {
         this.loading.appointments = false;
       }
@@ -122,17 +122,6 @@ export default {
         this.fetchDoctorCount(),
         this.fetchAppointmentCount()
       ]);
-    },
-    startAutoRefresh() {
-      this.refreshInterval = setInterval(() => {
-        this.fetchData();
-      }, 30000); // Refresh every 30 seconds
-    },
-    stopAutoRefresh() {
-      if (this.refreshInterval) {
-        clearInterval(this.refreshInterval);
-        this.refreshInterval = null;
-      }
     }
   }
 };

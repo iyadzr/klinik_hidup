@@ -1,8 +1,8 @@
 <template>
   <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2>Appointments</h2>
-      <button class="btn btn-primary" @click="showAddModal = true">Schedule Appointment</button>
+      <h2>Registrations</h2>
+      <button class="btn btn-primary" @click="showAddModal = true">Register Patient</button>
     </div>
 
     <!-- Appointment List -->
@@ -19,30 +19,22 @@
               <tr>
                 <th>Patient</th>
                 <th>Doctor</th>
-                <th>Date & Time</th>
-                <th>Status</th>
-                <th>Reason</th>
+                <th>Notes</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="appointment in appointments" :key="appointment.id">
-                <td>{{ appointment.patient.firstName }} {{ appointment.patient.lastName }}</td>
-                <td>{{ appointment.doctor.firstName }} {{ appointment.doctor.lastName }}</td>
-                <td>{{ formatDateTime(appointment.appointmentDateTime) }}</td>
+              <tr v-for="registration in registrations" :key="registration.id">
+                <td>{{ registration.patient.firstName }} {{ registration.patient.lastName }}</td>
+                <td>{{ registration.doctor.firstName }} {{ registration.doctor.lastName }}</td>
+                <td>{{ registration.notes }}</td>
                 <td>
-                  <span :class="getStatusBadgeClass(appointment.status)">
-                    {{ appointment.status }}
-                  </span>
-                </td>
-                <td>{{ appointment.reason }}</td>
-                <td>
-                  <button class="btn btn-sm btn-info me-2" @click="editAppointment(appointment)">Edit</button>
-                  <button class="btn btn-sm btn-danger" @click="deleteAppointment(appointment)">Cancel</button>
+                  <button class="btn btn-sm btn-info me-2" @click="editRegistration(registration)">Edit</button>
+                  <button class="btn btn-sm btn-danger" @click="deleteRegistration(registration)">Cancel</button>
                 </td>
               </tr>
-              <tr v-if="appointments.length === 0">
-                <td colspan="6" class="text-center">No appointments found</td>
+              <tr v-if="registrations.length === 0">
+                <td colspan="4" class="text-center">No registrations found</td>
               </tr>
             </tbody>
           </table>
@@ -73,7 +65,7 @@
               <div class="mb-3">
                 <label class="form-label">Doctor</label>
                 <select class="form-select" v-model="form.doctorId" required>
-                  <option value="">Select Doctor</option>
+                  <option value="">Select Doctorasdasd</option>
                   <option v-for="doctor in doctors" :key="doctor.id" :value="doctor.id">
                     {{ doctor.firstName }} {{ doctor.lastName }} ({{ doctor.specialization }})
                   </option>
@@ -179,6 +171,7 @@ export default {
     async loadDoctors() {
       try {
         const response = await axios.get('/api/doctors');
+        console.log('Loaded doctors:', response.data);
         this.doctors = response.data.doctors;
       } catch (error) {
         console.error('Failed to load doctors:', error);

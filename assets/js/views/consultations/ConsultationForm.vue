@@ -342,6 +342,33 @@ this.doctors = Array.isArray(response.data) ? response.data : (response.data.doc
           await axios.put(`/api/consultations/${this.$route.params.id}`, this.consultation);
         } else {
           await axios.post('/api/consultations', this.consultation);
+          try {
+            await axios.post('/api/queue', {
+              patientId: this.consultation.patientId,
+              doctorId: this.consultation.doctorId
+            });
+          } catch (queueError) {
+            console.error('Failed to add patient to queue:', queueError);
+            this.$toast && this.$toast.error ? this.$toast.error('Consultation saved but failed to add to queue.') : alert('Consultation saved but failed to add to queue.');
+          }
+        }
+        // After saving consultation, mark the queue entry as completed
+        try {
+          // Fetch the queue entry for this patient and doctor with status 'in_consultation' or 'waiting'
+          const queueRes = await axios.get('/api/queue', {
+            params: {
+              patientId: this.consultation.patientId,
+              doctorId: this.consultation.doctorId,
+              status: 'in_consultation'
+            }
+          });
+          const queueEntry = Array.isArray(queueRes.data) ? queueRes.data[0] : null;
+          if (queueEntry && queueEntry.id) {
+            await axios.put(`/api/queue/${queueEntry.id}/status`, { status: 'completed' });
+          }
+        } catch (queueCompleteError) {
+          console.error('Failed to update queue status to completed:', queueCompleteError);
+          // Optionally, show an error toast/alert here
         }
         this.$router.push('/consultations');
       } catch (error) {

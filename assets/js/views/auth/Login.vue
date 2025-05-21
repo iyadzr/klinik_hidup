@@ -7,7 +7,7 @@
             <div class="card-body p-5">
               <div class="text-center mb-4">
                 <i class="fas fa-clinic-medical fa-3x text-primary"></i>
-                <h4 class="mt-3">Clinic Management System</h4>
+                <h4 class="mt-3">Klinik HiDUP sihat</h4>
                 <p class="text-muted">{{ isLogin ? 'Sign in to your account' : 'Create a new account' }}</p>
               </div>
 
