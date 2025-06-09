@@ -73,11 +73,11 @@
               </div>
               <div class="mb-3">
                 <label class="form-label">Date</label>
-                <input type="date" class="form-control" v-model="form.date" required>
+                <input type="date" class="form-control" v-model="form.date" required v-enter-submit>
               </div>
               <div class="mb-3">
                 <label class="form-label">Time</label>
-                <input type="time" class="form-control" v-model="form.time" required>
+                <input type="time" class="form-control" v-model="form.time" required v-enter-submit>
               </div>
               <div class="mb-3">
                 <label class="form-label">Reason</label>

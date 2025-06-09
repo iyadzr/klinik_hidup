@@ -27,8 +27,22 @@ class Queue
     #[ORM\Column(length: 20)]
     private ?string $status = null; // waiting, in_consultation, completed, cancelled
 
-    #[ORM\Column]
-    private ?int $queueNumber = null;
+    #[ORM\Column(type: "string", length: 20, nullable: true)]
+    private ?string $queueNumber = null;
+
+    #[ORM\Column(type: "integer")]
+    private ?int $registrationNumber = null;
+
+    public function getRegistrationNumber(): ?int
+    {
+        return $this->registrationNumber;
+    }
+
+    public function setRegistrationNumber(?int $registrationNumber): self
+    {
+        $this->registrationNumber = $registrationNumber;
+        return $this;
+    }
 
     public function getId(): ?int
     {
@@ -79,12 +93,12 @@ class Queue
         return $this;
     }
 
-    public function getQueueNumber(): ?int
+    public function getQueueNumber(): ?string
     {
         return $this->queueNumber;
     }
 
-    public function setQueueNumber(int $queueNumber): self
+    public function setQueueNumber(string $queueNumber): self
     {
         $this->queueNumber = $queueNumber;
         return $this;

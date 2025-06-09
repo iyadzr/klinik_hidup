@@ -14,6 +14,31 @@ use Psr\Log\LoggerInterface;
 #[Route('/api/patients')]
 class PatientController extends AbstractController
 {
+    #[Route('/registration/{registrationNumber}', name: 'app_patient_by_registration', methods: ['GET'])]
+    public function getByRegistrationNumber(int $registrationNumber, EntityManagerInterface $entityManager): JsonResponse
+    {
+        $queue = $entityManager->getRepository(\App\Entity\Queue::class)->findOneBy(['registrationNumber' => $registrationNumber]);
+        if (!$queue) {
+            return $this->json(['error' => 'Registration number not found'], 404);
+        }
+        $patient = $queue->getPatient();
+        if (!$patient) {
+            return $this->json(['error' => 'Patient not found'], 404);
+        }
+        return $this->json([
+            'id' => $patient->getId(),
+            'name' => $patient->getName(),
+            'nric' => $patient->getNric(),  
+            'email' => $patient->getEmail(),
+            'phone' => $patient->getPhone(),
+            'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+            'medicalHistory' => $patient->getMedicalHistory(),
+            'company' => method_exists($patient, 'getCompany') ? $patient->getCompany() : null,
+            'preInformedIllness' => method_exists($patient, 'getPreInformedIllness') ? $patient->getPreInformedIllness() : null,
+            'displayName' => $patient->getName(),
+        ]);
+    }
+
     private $logger;
 
     public function __construct(LoggerInterface $logger)
@@ -29,12 +54,15 @@ class PatientController extends AbstractController
             return [
                 'id' => $patient->getId(),
                 'name' => $patient->getName(),
-                
+                'nric' => $patient->getNric(),
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
-                'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
                 'medicalHistory' => $patient->getMedicalHistory(),
-                'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : (method_exists($patient, 'getName') ? $patient->getName() : $patient->getName()),
+                'company' => method_exists($patient, 'getCompany') ? $patient->getCompany() : null,
+                'preInformedIllness' => method_exists($patient, 'getPreInformedIllness') ? $patient->getPreInformedIllness() : null,
+
+                'displayName' => $patient->getName(),
             ];
         }, $patients);
         return $this->json($result);
@@ -47,12 +75,83 @@ class PatientController extends AbstractController
         $count = $repository->count([]);
         
         $this->logger->info('Patient count requested', [
-            'count' => $count,
-            'raw_patients' => $repository->findAll()
+            'count' => $count
         ]);
         
         return $this->json(['count' => $count]);
     }
+
+    #[Route('/search', name: 'app_patient_search', methods: ['GET'])]
+    public function search(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    {
+        $query = $request->query->get('query', '');
+        
+        if (empty($query)) {
+            return $this->json([]);
+        }
+        
+        $qb = $entityManager->createQueryBuilder();
+        $qb->select('p')
+           ->from(Patient::class, 'p')
+           ->where('p.name LIKE :query')
+           ->orWhere('p.nric LIKE :query')
+           ->orWhere('p.phone LIKE :query')
+           ->setParameter('query', '%' . $query . '%')
+           ->setMaxResults(10);
+        
+        $patients = $qb->getQuery()->getResult();
+        
+        // Also search for registration numbers in the Queue entity
+        if (is_numeric($query)) {
+            $queueQb = $entityManager->createQueryBuilder();
+            $queueQb->select('q')
+                   ->from('App\\Entity\\Queue', 'q')
+                   ->where('q.registrationNumber = :regNum')
+                   ->setParameter('regNum', (int)$query);
+            
+            $queues = $queueQb->getQuery()->getResult();
+            
+            foreach($queues as $queue) {
+                $patient = $queue->getPatient();
+                if ($patient) {
+                    // Check if this patient is already in our results
+                    $found = false;
+                    foreach ($patients as $p) {
+                        if ($p->getId() === $patient->getId()) {
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        $patients[] = $patient;
+                    }
+                }
+            }
+        }
+        
+        // Format the patient data for the response
+        $result = array_map(function($patient) use ($entityManager) {
+            // Try to find registration number
+            $queue = $entityManager->getRepository('App\\Entity\\Queue')->findOneBy(['patient' => $patient]);
+            $registrationNumber = $queue ? $queue->getRegistrationNumber() : null;
+            
+            return [
+                'id' => $patient->getId(),
+                'name' => $patient->getName(),
+                'nric' => $patient->getNric(),
+                'email' => $patient->getEmail(),
+                'phone' => $patient->getPhone(),
+                'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                'gender' => method_exists($patient, 'getGender') ? $patient->getGender() : null,
+                'address' => method_exists($patient, 'getAddress') ? $patient->getAddress() : null,
+                'registrationNumber' => $registrationNumber
+            ];
+        }, $patients);
+        
+        return $this->json($result);
+    }
+
 
     #[Route('', name: 'app_patient_create', methods: ['POST'])]
     public function create(Request $request, EntityManagerInterface $entityManager): JsonResponse
@@ -61,6 +160,7 @@ class PatientController extends AbstractController
 
         $patient = new Patient();
         $patient->setName($data['name']);
+        $patient->setNric($data['nric']);
         $patient->setEmail($data['email']);
         $patient->setPhone($data['phone']);
         if (isset($data['dateOfBirth'])) {
@@ -75,7 +175,7 @@ class PatientController extends AbstractController
 
         $this->logger->info('Patient created', [
             'id' => $patient->getId(),
-            'email' => $patient->getEmail()
+            'email' => $patient->getEmail(),
         ]);
 
         return $this->json([
@@ -83,6 +183,7 @@ class PatientController extends AbstractController
             'patient' => [
                 'id' => $patient->getId(),
                 'name' => $patient->getName(),
+                'nric' => $patient->getNric(),
                 'email' => $patient->getEmail(),
             ]
         ], Response::HTTP_CREATED);
@@ -94,6 +195,7 @@ class PatientController extends AbstractController
         return $this->json([
             'id' => $patient->getId(),
             'name' => $patient->getName(),
+            'nric' => $patient->getNric(),
             'email' => $patient->getEmail(),
             'phone' => $patient->getPhone(),
             'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
@@ -111,6 +213,9 @@ class PatientController extends AbstractController
 
         if (isset($data['name'])) {
             $patient->setName($data['name']);
+        }
+        if (isset($data['nric'])) {
+            $patient->setNric($data['nric']);
         }
         if (isset($data['email'])) {
             $patient->setEmail($data['email']);
@@ -137,7 +242,7 @@ class PatientController extends AbstractController
             'patient' => [
                 'id' => $patient->getId(),
                 'name' => $patient->getName(),
-                
+                'nric' => $patient->getNric(),
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),

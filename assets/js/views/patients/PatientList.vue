@@ -2,9 +2,19 @@
   <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2>Patients</h2>
-      <button class="btn btn-primary" @click="showAddModal = true">Add Patient</button>
+
     </div>
 
+    <!-- Search Bar -->
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <div class="input-group">
+          <input type="text" class="form-control" placeholder="Search by name, NRIC, or phone" v-model="searchQuery" v-enter-submit>
+          <button class="btn btn-outline-primary" @click="searchPatients">Search</button>
+          <button class="btn btn-outline-secondary" @click="clearSearch" v-if="searchQuery">Clear</button>
+        </div>
+      </div>
+    </div>
     <!-- Patient List -->
     <div class="card">
       <div class="card-body">
@@ -17,6 +27,7 @@
           <table class="table">
             <thead>
               <tr>
+                <th>#</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
@@ -25,8 +36,9 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="patient in patients" :key="patient.id">
-                <td>{{ patient.firstName }} {{ patient.lastName }}</td>
+              <tr v-for="(patient, index) in patients" :key="patient.id">
+                <td>{{ index + 1 }}</td>
+                <td>{{ patient.name }}</td>
                 <td>{{ patient.email }}</td>
                 <td>{{ patient.phone }}</td>
                 <td>{{ patient.dateOfBirth }}</td>
@@ -56,13 +68,10 @@
             <div v-if="error" class="alert alert-danger">{{ error }}</div>
             <form @submit.prevent="savePatient">
               <div class="mb-3">
-                <label class="form-label">First Name</label>
-                <input type="text" class="form-control" v-model="form.firstName" required>
+                <label class="form-label">Name</label>
+                <input type="text" class="form-control" v-model="form.name" required>
               </div>
-              <div class="mb-3">
-                <label class="form-label">Last Name</label>
-                <input type="text" class="form-control" v-model="form.lastName" required>
-              </div>
+              
               <div class="mb-3">
                 <label class="form-label">Email</label>
                 <input type="email" class="form-control" v-model="form.email" required>
@@ -104,13 +113,13 @@ export default {
     return {
       patients: [],
       showAddModal: false,
+      searchQuery: '',
       editingPatient: null,
       loading: false,
       saving: false,
       error: null,
       form: {
-        firstName: '',
-        lastName: '',
+        name: '',
         email: '',
         phone: '',
         dateOfBirth: '',
@@ -132,6 +141,27 @@ export default {
       } finally {
         this.loading = false;
       }
+    },
+    async searchPatients() {
+      if (!this.searchQuery) {
+        this.loadPatients();
+        return;
+      }
+      this.loading = true;
+      try {
+        const response = await axios.get('/api/patients/search', {
+          params: { query: this.searchQuery }
+        });
+        this.patients = response.data;
+      } catch (error) {
+        console.error('Failed to search patients:', error);
+      } finally {
+        this.loading = false;
+      }
+    },
+    clearSearch() {
+      this.searchQuery = '';
+      this.loadPatients();
     },
     editPatient(patient) {
       this.editingPatient = patient;

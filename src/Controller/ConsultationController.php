@@ -23,33 +23,71 @@ class ConsultationController extends AbstractController
     }
 
     #[Route('', name: 'app_consultation_create', methods: ['POST'])]
-    public function create(Request $request): JsonResponse
+    public function create(Request $request, LoggerInterface $logger): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-
-        $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
-        $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
-
-        if (!$patient || !$doctor) {
-            return new JsonResponse(['error' => 'Patient or Doctor not found'], 404);
+        try {
+            $data = json_decode($request->getContent(), true);
+            $logger->info('Received consultation data', ['data' => $data]);
+            
+            // Get Patient
+            $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
+            if (!$patient) {
+                return new JsonResponse(['error' => 'Patient not found'], 404);
+            }
+            
+            // Get Doctor if doctor ID is provided
+            $doctor = null;
+            if (!empty($data['doctorId'])) {
+                $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
+                if (!$doctor) {
+                    return new JsonResponse(['error' => 'Doctor not found'], 404);
+                }
+            }
+            
+            // Create new consultation
+            $consultation = new Consultation();
+            $consultation->setPatient($patient);
+            
+            // Set doctor if available
+            if ($doctor) {
+                $consultation->setDoctor($doctor);
+            }
+            
+            // Set consultation date to now if not provided
+            $consultation->setConsultationDate(new \DateTime());
+            
+            // Set all fields from the request data
+            if (isset($data['symptoms'])) $consultation->setSymptoms($data['symptoms']);
+            if (isset($data['diagnosis'])) $consultation->setDiagnosis($data['diagnosis']);
+            if (isset($data['treatment'])) $consultation->setTreatment($data['treatment']);
+            if (isset($data['medications'])) $consultation->setMedications($data['medications']);
+            if (isset($data['notes'])) $consultation->setNotes($data['notes']);
+            
+            // Handle payment information
+            if (isset($data['totalAmount'])) $consultation->setTotalAmount($data['totalAmount']);
+            
+            // Handle medical certificate information
+            if (isset($data['hasMedicalCertificate']) && $data['hasMedicalCertificate']) {
+                $consultation->setHasMedicalCertificate(true);
+                if (isset($data['mcStartDate'])) $consultation->setMcStartDate(new \DateTime($data['mcStartDate']));
+                if (isset($data['mcEndDate'])) $consultation->setMcEndDate(new \DateTime($data['mcEndDate']));
+                if (isset($data['mcNumber'])) $consultation->setMcNumber($data['mcNumber']);
+                if (isset($data['mcRunningNumber'])) $consultation->setMcRunningNumber($data['mcRunningNumber']);
+            }
+            
+            $this->entityManager->persist($consultation);
+            $this->entityManager->flush();
+            
+            return new JsonResponse([
+                'id' => $consultation->getId(),
+                'message' => 'Consultation created successfully'
+            ], 201);
+        } catch (\Exception $e) {
+            $logger->error('Error creating consultation: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return new JsonResponse(['error' => 'Error creating consultation: ' . $e->getMessage()], 500);
         }
-
-        $consultation = new Consultation();
-        $consultation->setPatient($patient);
-        $consultation->setDoctor($doctor);
-        $consultation->setConsultationDate(new \DateTime($data['consultationDate']));
-        $consultation->setDiagnosis($data['diagnosis']);
-        $consultation->setMedications($data['medications']);
-        $consultation->setNotes($data['notes'] ?? null);
-        $consultation->setFollowUpPlan($data['followUpPlan'] ?? null);
-
-        $this->entityManager->persist($consultation);
-        $this->entityManager->flush();
-
-        return new JsonResponse([
-            'id' => $consultation->getId(),
-            'message' => 'Consultation created successfully'
-        ], 201);
     }
 
     #[Route('/patient/{id}', name: 'app_consultation_history', methods: ['GET'])]

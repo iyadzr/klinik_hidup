@@ -10,7 +10,7 @@
             <div class="current-queue text-center py-5 glass-card shadow mb-5" style="background:rgba(255,255,255,0.92);border:2px solid var(--accent);">
               <h2 class="mb-4">Now Serving</h2>
               <div class="display-1 mb-3" v-if="currentQueue">
-                {{ currentQueue.queueNumber }} - {{ getPatientName(currentQueue.patientId) }}
+                {{ formatQueueNumber(currentQueue.queueNumber) }} - {{ getFormattedPatientName(currentQueue.patient) }}
               </div>
               <div v-else class="text-muted">
                 No active queue
@@ -40,7 +40,7 @@
             </thead>
             <tbody>
               <tr v-for="queue in queueList" :key="queue.id" :class="{'table-active': queue.status === 'in_consultation'}">
-                <td>{{ queue.queueNumber }}</td>
+                <td>{{ formatQueueNumber(queue.queueNumber) }}</td>
                 <td>{{ queue.patient.name }}</td>
                 <td>{{ queue.doctor.name }}</td>
                 <td>
@@ -115,6 +115,16 @@ export default {
     }
   },
   methods: {
+    formatQueueNumber(queueNumber) {
+      if (!queueNumber) return '';
+      // Ensure string
+      queueNumber = queueNumber.toString();
+      // Pad to 4 digits (e.g., 8001 -> 8001, 801 -> 0801)
+      if (queueNumber.length === 4) return queueNumber;
+      if (queueNumber.length === 3) return '0' + queueNumber;
+      if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
+      return queueNumber;
+    },
     async loadData() {
       await Promise.all([
         this.loadPatients(),
@@ -180,9 +190,18 @@ export default {
     async loadQueueList() {
       try {
         const response = await axios.get('/api/queue');
-        this.queueList = response.data;
+        console.log('Queue API response:', response);
+        
+        if (response.data && Array.isArray(response.data)) {
+          this.queueList = response.data;
+          console.log('Queue list loaded:', this.queueList.length, 'items');
+        } else {
+          console.error('Unexpected queue data format:', response.data);
+          this.queueList = [];
+        }
       } catch (error) {
         console.error('Error loading queue:', error);
+        this.queueList = [];
       }
     },
     async addToQueue() {
@@ -222,7 +241,17 @@ export default {
       return classes[status] || 'badge bg-secondary';
     },
     formatDateTime(datetime) {
-      return new Date(datetime).toLocaleTimeString();
+      if (!datetime) return '';
+      const date = new Date(datetime);
+      return date.toLocaleString('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
     },
     getPatientName(patientId) {
       const patient = this.patients.find(p => p.id === patientId);
@@ -231,11 +260,11 @@ export default {
     },
     getFormattedPatientName(patient) {
       if (!patient) return 'Unknown Patient';
-      if (patient.name && patient.name.trim() !== '') {
-        return patient.name;
-      }
       if (patient.displayName && patient.displayName.trim() !== '') {
         return patient.displayName;
+      }
+      if (patient.name && patient.name.trim() !== '') {
+        return patient.name;
       }
       return 'Unknown Patient';
     },
@@ -246,9 +275,6 @@ export default {
       }
       if (doctor.name && doctor.name.trim() !== '') {
         return doctor.name;
-      }
-      if (doctor.displayName && doctor.displayName.trim() !== '') {
-        return doctor.displayName;
       }
       if (doctor.firstName || doctor.lastName) {
         return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();

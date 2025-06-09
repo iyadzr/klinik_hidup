@@ -7,23 +7,14 @@
             <h2 class="text-center mb-4">Register</h2>
             <form @submit.prevent="handleSubmit">
               <div class="mb-3">
-                <label for="firstName" class="form-label">First Name</label>
+                <label for="name" class="form-label">Name</label>
                 <input
                   type="text"
                   class="form-control"
-                  id="firstName"
-                  v-model="firstName"
+                  id="name"
+                  v-model="name"
                   required
-                />
-              </div>
-              <div class="mb-3">
-                <label for="lastName" class="form-label">Last Name</label>
-                <input
-                  type="text"
-                  class="form-control"
-                  id="lastName"
-                  v-model="lastName"
-                  required
+                  v-enter-submit
                 />
               </div>
               <div class="mb-3">
@@ -34,6 +25,7 @@
                   id="email"
                   v-model="email"
                   required
+                  v-enter-submit
                 />
               </div>
               <div class="mb-3">
@@ -44,6 +36,7 @@
                   id="password"
                   v-model="password"
                   required
+                  v-enter-submit
                 />
               </div>
               <div class="d-grid">
@@ -67,8 +60,7 @@ export default {
   name: 'Register',
   data() {
     return {
-      firstName: '',
-      lastName: '',
+      name: '',
       email: '',
       password: ''
     };
@@ -77,8 +69,7 @@ export default {
     async handleSubmit() {
       try {
         await axios.post('/api/register', {
-          firstName: this.firstName,
-          lastName: this.lastName,
+          name: this.name,
           email: this.email,
           password: this.password
         });

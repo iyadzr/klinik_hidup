@@ -14,9 +14,9 @@
               <p><strong>Date:</strong> {{ formatDate(consultation.createdAt) }}</p>
             </div>
             <div class="col-md-6">
-              <p><strong>Consultation Fee:</strong> ${{ consultation.consultationFee }}</p>
-              <p><strong>Medicines Fee:</strong> ${{ consultation.medicinesFee }}</p>
-              <p><strong>Total Amount:</strong> ${{ consultation.totalAmount }}</p>
+              <p><strong>Consultation Fee:</strong> RM {{ consultation.consultationFee }}</p>
+              <p><strong>Medicines Fee:</strong> RM {{ consultation.medicinesFee }}</p>
+              <p><strong>Total Amount:</strong> RM {{ consultation.totalAmount }}</p>
             </div>
           </div>
         </div>

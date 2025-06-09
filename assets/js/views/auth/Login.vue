@@ -23,7 +23,8 @@
                            v-model="form.username" 
                            class="form-control" 
                            required
-                           autocomplete="username">
+                           autocomplete="username"
+                           v-enter-submit>
                   </div>
                 </div>
 
@@ -37,7 +38,8 @@
                            v-model="form.password" 
                            class="form-control" 
                            required
-                           autocomplete="current-password">
+                           autocomplete="current-password"
+                           v-enter-submit>
                     <button type="button" 
                             class="btn btn-outline-secondary" 
                             @click="showPassword = !showPassword">
@@ -207,11 +209,15 @@ export default {
         // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(response.data.user));
         
-        // Emit login success event
-        this.$emit('login-success');
-        
-        // Redirect to dashboard
-        this.$router.push('/dashboard');
+        // Redirect to dashboard, then emit login success event
+        console.log('Login successful, moving to dashboard');
+        // Update parent App.vue's currentUser directly for instant reactivity
+        if (this.$root && this.$root.currentUser !== undefined) {
+          this.$root.currentUser = JSON.parse(localStorage.getItem('user'));
+        }
+        this.$router.push('/dashboard').then(() => {
+          this.$emit('login-success');
+        });
       } catch (error) {
         this.error = error.response?.data?.message || 'Invalid username or password';
       } finally {

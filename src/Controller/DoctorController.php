@@ -18,23 +18,42 @@ class DoctorController extends AbstractController
     {
         $doctors = $entityManager->getRepository(Doctor::class)->findAll();
         $result = array_map(function($doctor) {
-            return [
-                'id' => $doctor->getId(),
-                'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : $doctor->getName()),
-                'name' => $doctor->getName(),
-                
-                'specialization' => $doctor->getSpecialization(),
-            ];
-        }, $doctors);
+    return [
+        'id' => $doctor->getId(),
+        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : $doctor->getName()),
+        'name' => $doctor->getName(),
+        'email' => $doctor->getEmail(),
+        'phone' => $doctor->getPhone(),
+        'specialization' => $doctor->getSpecialization(),
+        'licenseNumber' => $doctor->getLicenseNumber(),
+    ];
+}, $doctors);
         return $this->json($result);
     }
 
     #[Route('/count', name: 'app_doctor_count', methods: ['GET'])]
     public function count(EntityManagerInterface $entityManager): JsonResponse
     {
-        $count = $entityManager->getRepository(Doctor::class)->count([]);
-        
-        return $this->json(['count' => $count]);
+        try {
+            // Use createQueryBuilder for more direct control
+            $queryBuilder = $entityManager->createQueryBuilder()
+                ->select('COUNT(d.id)')
+                ->from(Doctor::class, 'd');
+            
+            $count = $queryBuilder->getQuery()->getSingleScalarResult();
+            
+            return $this->json(['count' => $count]);
+        } catch (\Exception $e) {
+            // Log the error
+            error_log('Error in doctor count: ' . $e->getMessage());
+            
+            // Return error response with details
+            return $this->json([
+                'error' => 'Failed to count doctors',
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     #[Route('', name: 'app_doctor_create', methods: ['POST'])]
@@ -44,7 +63,7 @@ class DoctorController extends AbstractController
 
         $doctor = new Doctor();
         $doctor->setName($data['name']);
-        
+
         $doctor->setEmail($data['email']);
         $doctor->setPhone($data['phone']);
         $doctor->setSpecialization($data['specialization']);

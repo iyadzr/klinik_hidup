@@ -15,8 +15,8 @@ class QueueRepository extends ServiceEntityRepository
 
     public function findTodayQueue()
     {
-        $today = new \DateTime('today');
-        $tomorrow = new \DateTime('tomorrow');
+        $today = new \DateTime('today', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $tomorrow = new \DateTime('tomorrow', new \DateTimeZone('Asia/Kuala_Lumpur'));
 
         return $this->createQueryBuilder('q')
             ->andWhere('q.queueDateTime >= :today')

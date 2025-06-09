@@ -47,19 +47,34 @@ class Consultation
     private ?string $followUpPlan = null;
 
     #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
-    private ?float $consultationFee = null;
+    private ?string $consultationFee = null;
 
     #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
-    private ?float $medicinesFee = null;
+    private ?string $medicinesFee = null;
 
     #[ORM\Column(type: 'decimal', precision: 10, scale: 2)]
-    private float $totalAmount = 0.0;
+    private string $totalAmount = '0.00';
 
     #[ORM\Column(type: 'boolean')]
     private bool $isPaid = false;
 
     #[ORM\Column(type: 'datetime', nullable: true)]
     private ?\DateTimeInterface $paidAt = null;
+
+    #[ORM\Column(type: 'boolean', nullable: true)]
+    private ?bool $hasMedicalCertificate = false;
+    
+    #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTimeInterface $mcStartDate = null;
+    
+    #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
+    private ?\DateTimeInterface $mcEndDate = null;
+    
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $mcNumber = null;
+    
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $mcRunningNumber = null;
 
     public function __construct()
     {
@@ -181,38 +196,41 @@ class Consultation
         return $this;
     }
 
-    public function getConsultationFee(): ?float
+    public function getConsultationFee(): ?string
     {
         return $this->consultationFee;
     }
 
-    public function setConsultationFee(?float $consultationFee): self
+    public function setConsultationFee(?string $consultationFee): self
     {
         $this->consultationFee = $consultationFee;
         $this->updateTotalAmount();
         return $this;
     }
 
-    public function getMedicinesFee(): ?float
+    public function getMedicinesFee(): ?string
     {
         return $this->medicinesFee;
     }
 
-    public function setMedicinesFee(?float $medicinesFee): self
+    public function setMedicinesFee(?string $medicinesFee): self
     {
         $this->medicinesFee = $medicinesFee;
         $this->updateTotalAmount();
         return $this;
     }
 
-    public function getTotalAmount(): float
+    public function getTotalAmount(): string
     {
         return $this->totalAmount;
     }
 
     private function updateTotalAmount(): void
     {
-        $this->totalAmount = ($this->consultationFee ?? 0) + ($this->medicinesFee ?? 0);
+        // Use bcadd for string decimal arithmetic
+        $cf = $this->consultationFee !== null ? $this->consultationFee : '0.00';
+        $mf = $this->medicinesFee !== null ? $this->medicinesFee : '0.00';
+        $this->totalAmount = bcadd($cf, $mf, 2);
     }
 
     public function getIsPaid(): bool
@@ -237,6 +255,67 @@ class Consultation
     public function setPaidAt(?\DateTimeInterface $paidAt): self
     {
         $this->paidAt = $paidAt;
+        return $this;
+    }
+    
+    public function getHasMedicalCertificate(): bool
+    {
+        return $this->hasMedicalCertificate;
+    }
+    
+    public function setHasMedicalCertificate(bool $hasMedicalCertificate): self
+    {
+        $this->hasMedicalCertificate = $hasMedicalCertificate;
+        return $this;
+    }
+    
+    public function getMcStartDate(): ?\DateTimeInterface
+    {
+        return $this->mcStartDate;
+    }
+    
+    public function setMcStartDate(?\DateTimeInterface $mcStartDate): self
+    {
+        $this->mcStartDate = $mcStartDate;
+        return $this;
+    }
+    
+    public function getMcEndDate(): ?\DateTimeInterface
+    {
+        return $this->mcEndDate;
+    }
+    
+    public function setMcEndDate(?\DateTimeInterface $mcEndDate): self
+    {
+        $this->mcEndDate = $mcEndDate;
+        return $this;
+    }
+    
+    public function getMcNumber(): ?string
+    {
+        return $this->mcNumber;
+    }
+    
+    public function setMcNumber(?string $mcNumber): self
+    {
+        $this->mcNumber = $mcNumber;
+        return $this;
+    }
+    
+    public function getMcRunningNumber(): ?string
+    {
+        return $this->mcRunningNumber;
+    }
+    
+    public function setMcRunningNumber(?string $mcRunningNumber): self
+    {
+        $this->mcRunningNumber = $mcRunningNumber;
+        return $this;
+    }
+    
+    public function setTotalAmount(string $totalAmount): self
+    {
+        $this->totalAmount = $totalAmount;
         return $this;
     }
 }

@@ -83,6 +83,9 @@ export default {
     this.stopAutoRefresh();
   },
   methods: {
+    stopAutoRefresh() {
+      // Dummy method to prevent errors. Implement auto-refresh cleanup if needed.
+    },
     async fetchPatientCount() {
       this.loading.patients = true;
       try {

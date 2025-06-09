@@ -28,16 +28,26 @@ class QueueController extends AbstractController
         
         $queueData = [];
         foreach ($queues as $queue) {
+            $patient = $queue->getPatient();
+            $doctor = $queue->getDoctor();
+            
+            if (!$patient || !$doctor) {
+                continue; // Skip queues with missing patient or doctor
+            }
+            
             $queueData[] = [
                 'id' => $queue->getId(),
                 'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
                 'patient' => [
-                    'id' => $queue->getPatient()->getId(),
-                    'name' => $queue->getPatient()->getName()
+                    'id' => $patient->getId(),
+                    'name' => $patient->getName(),
+                    'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName()
                 ],
                 'doctor' => [
-                    'id' => $queue->getDoctor()->getId(),
-                    'name' => $queue->getDoctor()->getName()
+                    'id' => $doctor->getId(),
+                    'name' => $doctor->getName(),
+                    'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
                 ],
                 'status' => $queue->getStatus(),
                 'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
@@ -65,9 +75,30 @@ class QueueController extends AbstractController
         $queue->setQueueDateTime(new \DateTimeImmutable());
         $queue->setStatus('waiting');
         
-        // Get next queue number
-        $nextQueueNumber = $this->entityManager->getRepository(Queue::class)->findNextQueueNumber();
-        $queue->setQueueNumber($nextQueueNumber);
+        // Assign queue number based on registration time and running number for the hour
+        $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $queue->setQueueDateTime($queueDateTime);
+        $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
+        
+        // Find the latest queue number for this hour block today
+        $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
+        $qb->select('q.queueNumber')
+            ->where('q.queueDateTime >= :start')
+            ->andWhere('q.queueDateTime < :end')
+            ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
+            ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
+            ->orderBy('q.queueNumber', 'DESC')
+            ->setMaxResults(1);
+        $lastQueue = $qb->getQuery()->getOneOrNullResult();
+        
+        $runningNumber = 1;
+        if ($lastQueue && isset($lastQueue['queueNumber'])) {
+            $lastNum = (int)substr($lastQueue['queueNumber'], -2);
+            $runningNumber = $lastNum + 1;
+        }
+        $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
+        $queue->setQueueNumber($queueNumber);
+        $queue->setRegistrationNumber($queueNumber);
 
         $this->entityManager->persist($queue);
         $this->entityManager->flush();
@@ -75,6 +106,7 @@ class QueueController extends AbstractController
         return new JsonResponse([
             'id' => $queue->getId(),
             'queueNumber' => $queue->getQueueNumber(),
+            'registrationNumber' => $queue->getRegistrationNumber(),
             'message' => 'Queue created successfully'
         ], 201);
     }

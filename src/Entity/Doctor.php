@@ -36,13 +36,6 @@ class Doctor
     #[ORM\Column(type: 'json')]
     private array $workingHours = [];
 
-    #[ORM\Column(length: 255)]
-    #[Assert\NotBlank]
-    
-
-    #[ORM\Column(length: 255)]
-    #[Assert\NotBlank]
-    
 
     public function getId(): ?int
     {

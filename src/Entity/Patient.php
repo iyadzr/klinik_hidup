@@ -6,9 +6,48 @@ use App\Repository\PatientRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
 
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
+
 #[ORM\Entity(repositoryClass: PatientRepository::class)]
 class Patient
 {
+    /**
+     * @var Collection<int, \App\Entity\Consultation>
+     */
+    #[ORM\OneToMany(mappedBy: 'patient', targetEntity: Consultation::class)]
+    private Collection $consultations;
+
+    public function __construct()
+    {
+        $this->consultations = new ArrayCollection();
+    }
+
+    public function getConsultations(): Collection
+    {
+        return $this->consultations;
+    }
+
+    public function addConsultation(\App\Entity\Consultation $consultation): self
+    {
+        if (!$this->consultations->contains($consultation)) {
+            $this->consultations[] = $consultation;
+            $consultation->setPatient($this);
+        }
+        return $this;
+    }
+
+    public function removeConsultation(\App\Entity\Consultation $consultation): self
+    {
+        if ($this->consultations->removeElement($consultation)) {
+            if ($consultation->getPatient() === $this) {
+                $consultation->setPatient(null);
+            }
+        }
+        return $this;
+    }
+
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -17,6 +56,11 @@ class Patient
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
     private ?string $name = null;
+
+    #[ORM\Column(length: 20, unique: true)]
+    #[Assert\NotBlank]
+    private ?string $nric = null; // Singapore NRIC/FIN/IC
+
 
     #[ORM\Column(length: 255)]
     #[Assert\NotBlank]
@@ -49,10 +93,6 @@ class Patient
         return $this->id;
     }
 
-    public function getFirstName(): ?string
-    {
-        return $this->firstName;
-    }
 
     public function setName(?string $name): self
     {
@@ -63,6 +103,17 @@ class Patient
     public function getName(): ?string
     {
         return $this->name;
+    }
+
+    public function getNric(): ?string
+    {
+        return $this->nric;
+    }
+
+    public function setNric(string $nric): self
+    {
+        $this->nric = $nric;
+        return $this;
     }
 
     public function getEmail(): ?string

@@ -1,142 +1,221 @@
 <template>
   <div class="app-wrapper">
-    <button v-if="!isAuthPage" class="sidebar-toggle-btn" @click="sidebarOpen = true" aria-label="Open sidebar">
-      <i class="fas fa-bars"></i>
-    </button>
-    <div v-if="!isAuthPage" :class="['sidebar-backdrop', { active: sidebarOpen } ]" @click="sidebarOpen = false"></div>
-  
-    <!-- Sidebar -->
-    <nav :class="['sidebar', 'bg-dark', { open: sidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
-      <div class="sidebar-header p-3">
-        <router-link to="/" class="text-white text-decoration-none">
-          <h5 class="mb-0 d-flex align-items-center">
-            <i class="fas fa-clinic-medical me-2"></i>
-            <span>Klinik HiDUP sihat</span>
-          </h5>
-        </router-link>
+    <!-- Header Bar -->
+    <header v-if="isAuthenticated && !isAuthPage" class="app-header">
+      <div class="header-left">
+        <span class="header-title">Klinik HiDUP sihat</span>
       </div>
+      <div class="header-right">
+        <UserProfileMenu />
+      </div>
+    </header>
 
-      <div class="sidebar-menu">
-        <div class="menu-section">
-          <h6 class="menu-title text-muted px-4 py-2 mb-0">MAIN MENU</h6>
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <router-link to="/dashboard" class="nav-link">
-                <i class="fas fa-chart-line fa-fw"></i>
-                <span>Dashboard</span>
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/registration" class="nav-link">
-                <i class="fas fa-user-plus fa-fw"></i>
-                <span>Registration</span>
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/queue" class="nav-link">
-                <i class="fas fa-list-ol fa-fw"></i>
-                <span>Queue</span>
-              </router-link>
-            </li>
-          </ul>
+    <div class="main-area">
+      <!-- Sidebar (move below backdrop for proper stacking) -->
+      <nav :class="['sidebar', { open: sidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
+        <ul class="nav flex-column sidebar-nav">
+          <li class="nav-item">
+            <router-link to="/dashboard" class="nav-link">
+              <i class="fas fa-chart-line fa-fw"></i>
+              <span>Dashboard</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/registration" class="nav-link">
+              <i class="fas fa-user-plus fa-fw"></i>
+              <span>Registration</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/queue" class="nav-link">
+              <i class="fas fa-list-ol fa-fw"></i>
+              <span>Queue</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/consultations" class="nav-link">
+              <i class="fas fa-stethoscope fa-fw"></i>
+              <span>Consultations</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/patients" class="nav-link">
+              <i class="fas fa-user-injured fa-fw"></i>
+              <span>Patients</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/doctors" class="nav-link">
+              <i class="fas fa-user-md fa-fw"></i>
+              <span>Doctors</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
+            <router-link to="/clinic-assistants" class="nav-link">
+              <i class="fas fa-user-nurse fa-fw"></i>
+              <span>Clinic Assistants</span>
+            </router-link>
+          </li>
+          <li class="nav-item" v-if="isAssistant">
+            <router-link to="/payments" class="nav-link">
+              <i class="fas fa-money-bill fa-fw"></i>
+              <span>Payments</span>
+            </router-link>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <div class="content-wrapper">
+          <router-view 
+            @patient-added="handleDataChange" 
+            @patient-updated="handleDataChange" 
+            @patient-deleted="handleDataChange"
+            @appointment-added="handleDataChange"
+            @appointment-updated="handleDataChange"
+            @appointment-deleted="handleDataChange"
+            @login-success="handleLoginSuccess"
+            ref="currentView"
+          ></router-view>
         </div>
-
-        <div class="menu-section">
-          <h6 class="menu-title text-muted px-4 py-2 mb-0">MEDICAL</h6>
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <router-link to="/consultations" class="nav-link">
-                <i class="fas fa-stethoscope fa-fw"></i>
-                <span>Consultations</span>
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/patients" class="nav-link">
-                <i class="fas fa-user-injured fa-fw"></i>
-                <span>Patients</span>
-              </router-link>
-            </li>
-          </ul>
-        </div>
-
-        <div class="menu-section">
-          <h6 class="menu-title text-muted px-4 py-2 mb-0">ADMINISTRATION</h6>
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <router-link to="/doctors" class="nav-link">
-                <i class="fas fa-user-md fa-fw"></i>
-                <span>Doctors</span>
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/clinic-assistants" class="nav-link">
-                <i class="fas fa-user-nurse fa-fw"></i>
-                <span>Clinic Assistants</span>
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/payments" class="nav-link" v-if="isAssistant">
-                <i class="fas fa-money-bill fa-fw"></i>
-                <span>Payments</span>
-              </router-link>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <button class="btn btn-dark w-100 text-start" @click="logout">
-          <i class="fas fa-sign-out-alt fa-fw me-2"></i>
-          <span>Logout</span>
-        </button>
-      </div>
-    </nav>
-
-    <!-- Main Content -->
-    <main class="main-content">
-      <div class="content-wrapper">
-        <router-view 
-          @patient-added="handleDataChange" 
-          @patient-updated="handleDataChange" 
-          @patient-deleted="handleDataChange"
-          @appointment-added="handleDataChange"
-          @appointment-updated="handleDataChange"
-          @appointment-deleted="handleDataChange"
-          @login-success="handleLoginSuccess"
-          ref="currentView"
-        ></router-view>
-      </div>
-    </main>
+      </main>
+    </div>
   </div>
 </template>
 
 <style src="../styles/responsive-sidebar.css"></style>
-
+<style>
+.app-header {
+  width: 100vw;
+  min-width: 100vw;
+  height: 60px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2000;
+}
+.header-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #222;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+}
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.main-area {
+  display: flex;
+  flex: 1 1 auto;
+  margin-top: 60px;
+  min-height: 0;
+}
+.sidebar {
+  width: 260px;
+  min-width: 220px;
+  max-width: 300px;
+  height: calc(100vh - 60px);
+  position: fixed;
+  left: 0;
+  top: 60px;
+  margin-top: 0;
+  flex-shrink: 0;
+  background: #f8f9fa !important;
+  color: #222;
+  border-right: 1px solid #e0e0e0;
+  padding-top: 1.5rem;
+  z-index: 1000;
+  overflow-y: auto;
+}
+.sidebar-nav {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+.sidebar .nav-link {
+  color: #222;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  margin: 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: background 0.2s, color 0.2s;
+}
+.sidebar .nav-link.router-link-active,
+.sidebar .nav-link:hover {
+  background: #e9ecef;
+  color: #007bff;
+}
+.sidebar .nav-link i {
+  width: 20px;
+  font-size: 1.1rem;
+}
+.main-content {
+  flex: 1 1 0%;
+  min-width: 0;
+  background: #f5f6fa;
+  min-height: calc(100vh - 60px);
+  overflow-x: auto;
+  margin-left: 260px;
+}
+.content-wrapper {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 1rem;
+  }
+  .sidebar {
+    width: 180px;
+    min-width: 120px;
+  }
+  .main-content {
+    margin-left: 180px;
+  }
+  .content-wrapper {
+    padding: 1rem;
+  }
+}
+</style>
 
 <script>
 import axios from 'axios';
 import mitt from 'mitt';
+import UserProfileMenu from './components/UserProfileMenu.vue';
 
 export const emitter = mitt();
 
 export default {
   name: 'App',
+  components: { UserProfileMenu },
   data() {
     return {
-      sidebarOpen: false
+      sidebarOpen: false,
+      currentUser: JSON.parse(localStorage.getItem('user')) || null
     };
   },
   computed: {
     isAuthenticated() {
-      return !!localStorage.getItem('user');
+      return !!this.currentUser;
     },
     isAssistant() {
-      const user = localStorage.getItem('user');
-      if (user) {
-        const userData = JSON.parse(user);
-        return userData.role === 'assistant';
-      }
-      return false;
+      return this.currentUser && this.currentUser.role === 'assistant';
     },
     isAuthPage() {
       return this.$route.path === '/login' || this.$route.path === '/register';
@@ -163,9 +242,7 @@ export default {
   methods: {
     checkAuth() {
       const user = localStorage.getItem('user');
-      this.isAuthenticated = !!user;
-      
-      if (!this.isAuthenticated && this.$route.path !== '/login') {
+      if (!user && this.$route.path !== '/login') {
         this.$router.push('/login');
       }
     },
@@ -181,7 +258,8 @@ export default {
       );
     },
     handleLoginSuccess() {
-      this.checkAuth();
+      this.currentUser = JSON.parse(localStorage.getItem('user'));
+      this.sidebarOpen = true;
       if (this.$route.path !== '/dashboard') {
         this.$router.push('/dashboard');
       }
@@ -196,204 +274,22 @@ export default {
     async logout() {
       localStorage.removeItem('user');
       delete axios.defaults.headers.common['Authorization'];
-      this.isAuthenticated = false;
+      this.currentUser = null;
+      this.sidebarOpen = false;
       this.$router.push('/login');
     }
   },
   watch: {
+    currentUser(newVal, oldVal) {
+      if (newVal) {
+        this.sidebarOpen = true;
+      } else {
+        this.sidebarOpen = false;
+      }
+    },
     '$route'() {
       this.checkAuth();
     }
   }
 };
 </script>
-
-<style>
-:root {
-  --sidebar-width: 280px;
-  --header-height: 60px;
-  --primary-color: #4361ee;
-  --secondary-color: #3f37c9;
-  --success-color: #4caf50;
-  --info-color: #2196f3;
-  --warning-color: #ff9800;
-  --danger-color: #f44336;
-  --light-color: #f8f9fa;
-  --dark-color: #212529;
-}
-
-/* Global Styles */
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #f5f6fa;
-  color: #333;
-  line-height: 1.6;
-}
-
-/* Layout */
-.app-wrapper {
-  display: flex;
-  min-height: 100vh;
-}
-
-/* Sidebar */
-.sidebar {
-  width: var(--sidebar-width);
-  height: 100vh;
-  position: fixed;
-  left: 0;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  color: #fff;
-  transition: all 0.3s ease;
-  z-index: 1000;
-}
-
-.sidebar-header {
-  height: var(--header-height);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar-menu {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem 0;
-}
-
-.menu-section {
-  margin-bottom: 1.5rem;
-}
-
-.menu-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  color: rgba(255, 255, 255, 0.7);
-  padding: 0.75rem 1.5rem;
-  transition: all 0.3s ease;
-}
-
-.nav-link:hover,
-.nav-link.router-link-active {
-  color: #fff;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.nav-link i {
-  width: 20px;
-  margin-right: 10px;
-  font-size: 1.1rem;
-}
-
-.sidebar-footer {
-  padding: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Main Content */
-.main-content {
-  flex: 1;
-  margin-left: var(--sidebar-width);
-  min-height: 100vh;
-  background-color: #f5f6fa;
-}
-
-.content-wrapper {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* Cards */
-.card {
-  border: none;
-  border-radius: 10px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  transition: all 0.3s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Forms */
-.form-control,
-.form-select {
-  border-radius: 8px;
-  border: 1px solid #dee2e6;
-  padding: 0.6rem 1rem;
-}
-
-.form-control:focus,
-.form-select:focus {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
-}
-
-/* Buttons */
-.btn {
-  border-radius: 8px;
-  padding: 0.6rem 1.2rem;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.btn-primary {
-  background-color: var(--primary-color);
-  border-color: var(--primary-color);
-}
-
-.btn-primary:hover {
-  background-color: var(--secondary-color);
-  border-color: var(--secondary-color);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(67, 97, 238, 0.2);
-}
-
-/* Tables */
-.table {
-  background-color: #fff;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.table th {
-  background-color: #f8f9fa;
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.5px;
-}
-
-/* Utilities */
-.shadow-sm {
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-}
-
-.rounded {
-  border-radius: 10px !important;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .sidebar {
-    transform: translateX(-100%);
-  }
-
-  .main-content {
-    margin-left: 0;
-  }
-
-  .sidebar.show {
-    transform: translateX(0);
-  }
-}
-</style>

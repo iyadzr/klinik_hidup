@@ -16,6 +16,7 @@
                   v-model="email"
                   required
                   :disabled="loading"
+                  v-enter-submit
                 />
               </div>
               <div class="mb-3">
@@ -27,6 +28,7 @@
                   v-model="password"
                   required
                   :disabled="loading"
+                  v-enter-submit
                 />
               </div>
               <div class="d-grid">

@@ -59,11 +59,11 @@
             <form @submit.prevent="saveAssistant">
               <div class="mb-3">
                 <label class="form-label">Name</label>
-                <input type="text" v-model="form.name" class="form-control" required>
+                <input type="text" v-model="form.name" class="form-control" required v-enter-submit>
               </div>
               <div class="mb-3">
                 <label class="form-label">Email</label>
-                <input type="email" v-model="form.email" class="form-control" required>
+                <input type="email" v-model="form.email" class="form-control" required v-enter-submit>
               </div>
               <div class="mb-3">
                 <label class="form-label">Phone</label>
