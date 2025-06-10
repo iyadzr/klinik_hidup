@@ -29,8 +29,9 @@
               <tr>
                 <th>#</th>
                 <th>Name</th>
-                <th>Email</th>
+                <th>NRIC</th>
                 <th>Phone</th>
+                <th>Gender</th>
                 <th>Date of Birth</th>
                 <th>Actions</th>
               </tr>
@@ -39,16 +40,17 @@
               <tr v-for="(patient, index) in patients" :key="patient.id">
                 <td>{{ index + 1 }}</td>
                 <td>{{ patient.name }}</td>
-                <td>{{ patient.email }}</td>
+                <td>{{ patient.nric || 'N/A' }}</td>
                 <td>{{ patient.phone }}</td>
-                <td>{{ patient.dateOfBirth }}</td>
+                <td>{{ patient.gender === 'M' ? 'Male' : patient.gender === 'F' ? 'Female' : 'N/A' }}</td>
+                <td>{{ patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString() : 'N/A' }}</td>
                 <td>
                   <button class="btn btn-sm btn-info me-2" @click="editPatient(patient)">Edit</button>
                   <button class="btn btn-sm btn-danger" @click="deletePatient(patient)">Delete</button>
                 </td>
               </tr>
               <tr v-if="patients.length === 0">
-                <td colspan="5" class="text-center">No patients found</td>
+                <td colspan="7" class="text-center">No patients found</td>
               </tr>
             </tbody>
           </table>
@@ -58,7 +60,7 @@
 
     <!-- Add/Edit Patient Modal -->
     <div class="modal fade" :class="{ show: showAddModal }" tabindex="-1" v-if="showAddModal">
-      <div class="modal-dialog">
+      <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ editingPatient ? 'Edit Patient' : 'Add Patient' }}</h5>
@@ -67,30 +69,86 @@
           <div class="modal-body">
             <div v-if="error" class="alert alert-danger">{{ error }}</div>
             <form @submit.prevent="savePatient">
-              <div class="mb-3">
-                <label class="form-label">Name</label>
-                <input type="text" class="form-control" v-model="form.name" required>
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-control" v-model="form.name" required>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">NRIC</label>
+                    <input type="text" 
+                           class="form-control" 
+                           v-model="form.nric" 
+                           :readonly="editingPatient"
+                           :class="{ 'bg-light': editingPatient }"
+                           @blur="checkNricUniqueness"
+                           required>
+                    <small class="text-muted" v-if="editingPatient">NRIC cannot be changed</small>
+                    <small class="text-danger" v-if="nricError">{{ nricError }}</small>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" v-model="form.email">
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Phone</label>
+                    <input type="tel" class="form-control" v-model="form.phone" required>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Date of Birth</label>
+                    <input type="date" class="form-control" v-model="form.dateOfBirth" required>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="mb-3">
+                    <label class="form-label">Gender</label>
+                    <select class="form-select" v-model="form.gender" required>
+                      <option value="">Select Gender</option>
+                      <option value="M">Male</option>
+                      <option value="F">Female</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               
               <div class="mb-3">
-                <label class="form-label">Email</label>
-                <input type="email" class="form-control" v-model="form.email" required>
+                <label class="form-label">Address</label>
+                <input type="text" class="form-control" v-model="form.address">
               </div>
+              
               <div class="mb-3">
-                <label class="form-label">Phone</label>
-                <input type="tel" class="form-control" v-model="form.phone" required>
+                <label class="form-label">Company</label>
+                <input type="text" class="form-control" v-model="form.company">
               </div>
+              
               <div class="mb-3">
-                <label class="form-label">Date of Birth</label>
-                <input type="date" class="form-control" v-model="form.dateOfBirth">
+                <label class="form-label">Pre-informed Illness/Symptoms</label>
+                <textarea class="form-control" v-model="form.preInformedIllness" rows="2" placeholder="Initial symptoms or complaints reported during registration"></textarea>
               </div>
+              
               <div class="mb-3">
                 <label class="form-label">Medical History</label>
-                <textarea class="form-control" v-model="form.medicalHistory" rows="3"></textarea>
+                <textarea class="form-control" v-model="form.medicalHistory" rows="3" placeholder="Past medical conditions, surgeries, medications, etc."></textarea>
               </div>
+              
               <div class="text-end">
                 <button type="button" class="btn btn-secondary me-2" @click="closeModal">Cancel</button>
-                <button type="submit" class="btn btn-primary" :disabled="saving">
+                <button type="submit" class="btn btn-primary" :disabled="saving || nricError">
                   {{ saving ? 'Saving...' : 'Save' }}
                 </button>
               </div>
@@ -118,11 +176,17 @@ export default {
       loading: false,
       saving: false,
       error: null,
+      nricError: null,
       form: {
         name: '',
+        nric: '',
         email: '',
         phone: '',
         dateOfBirth: '',
+        gender: '',
+        address: '',
+        company: '',
+        preInformedIllness: '',
         medicalHistory: ''
       }
     };
@@ -181,6 +245,33 @@ export default {
         console.error('Failed to delete patient:', error);
       }
     },
+    async checkNricUniqueness() {
+      if (!this.form.nric || this.editingPatient) {
+        this.nricError = null;
+        return;
+      }
+      
+      try {
+        // Check if NRIC already exists
+        const response = await axios.get('/api/patients/search', {
+          params: { query: this.form.nric }
+        });
+        
+        const existingPatient = response.data.find(patient => 
+          patient.nric && patient.nric.toLowerCase() === this.form.nric.toLowerCase()
+        );
+        
+        if (existingPatient) {
+          this.nricError = 'This NRIC is already registered to another patient';
+        } else {
+          this.nricError = null;
+        }
+      } catch (error) {
+        console.error('Error checking NRIC uniqueness:', error);
+        // Don't show error to user for this check, just allow them to proceed
+        this.nricError = null;
+      }
+    },
     async savePatient() {
       this.saving = true;
       this.error = null;
@@ -208,12 +299,17 @@ export default {
       this.showAddModal = false;
       this.editingPatient = null;
       this.error = null;
+      this.nricError = null;
       this.form = {
-        firstName: '',
-        lastName: '',
+        name: '',
+        nric: '',
         email: '',
         phone: '',
         dateOfBirth: '',
+        gender: '',
+        address: '',
+        company: '',
+        preInformedIllness: '',
         medicalHistory: ''
       };
     }
