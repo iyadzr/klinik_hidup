@@ -62,8 +62,7 @@ class Patient
     private ?string $nric = null; // Singapore NRIC/FIN/IC
 
 
-    #[ORM\Column(length: 255)]
-    #[Assert\NotBlank]
+    #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Email]
     private ?string $email = null;
 
@@ -87,6 +86,12 @@ class Patient
 
     #[ORM\Column(length: 1000, nullable: true)]
     private ?string $preInformedIllness = null;
+
+    #[ORM\Column(length: 1, nullable: true)]
+    private ?string $gender = null;
+
+    #[ORM\Column(length: 500, nullable: true)]
+    private ?string $address = null;
 
     public function getId(): ?int
     {
@@ -121,7 +126,7 @@ class Patient
         return $this->email;
     }
 
-    public function setEmail(string $email): self
+    public function setEmail(?string $email): self
     {
         $this->email = $email;
         return $this;
@@ -190,6 +195,28 @@ class Patient
     public function setPreInformedIllness(?string $preInformedIllness): self
     {
         $this->preInformedIllness = $preInformedIllness;
+        return $this;
+    }
+
+    public function getGender(): ?string
+    {
+        return $this->gender;
+    }
+
+    public function setGender(?string $gender): self
+    {
+        $this->gender = $gender;
+        return $this;
+    }
+
+    public function getAddress(): ?string
+    {
+        return $this->address;
+    }
+
+    public function setAddress(?string $address): self
+    {
+        $this->address = $address;
         return $this;
     }
 }

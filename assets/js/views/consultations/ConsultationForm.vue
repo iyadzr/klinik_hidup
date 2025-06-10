@@ -1,7 +1,12 @@
 <template>
   <div class="consultation-form">
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="mb-0">Consultation</h2>
+      <div>
+        <h2 class="mb-0">Consultation</h2>
+        <small v-if="$route.query.queueNumber" class="text-muted">
+          <i class="fas fa-link me-1"></i>Started from Queue #{{ formatQueueNumber($route.query.queueNumber) }}
+        </small>
+      </div>
       <div class="d-flex gap-2">
 
       </div>
@@ -17,39 +22,6 @@
               Patient Information
             </h5>
             <div class="row g-3">
-              <div class="col-12 mb-2">
-                <div class="form-group">
-                  <label for="registrationNumber">Queue Number</label>
-                  <div class="input-group">
-                    <input
-                      type="text"
-                      id="registrationNumber"
-                      v-model="registrationNumberInput"
-                      class="form-control"
-                      placeholder="Enter queue number (e.g., 2, 102, 1210)"
-                      @keyup.enter="handleRegistrationNumberInput"
-                    />
-                    <button 
-                      class="btn btn-primary" 
-                      type="button" 
-                      @click="handleRegistrationNumberInput"
-                    >
-                      Search
-                    </button>
-                  </div>
-                  <div v-if="filteredPatients.length > 0" class="patient-list">
-                    <div
-                      v-for="patient in filteredPatients"
-                      :key="patient.id"
-                      class="patient-item"
-                      @click="selectPatient(patient)"
-                    >
-                      <div class="patient-name">{{ patient.name }}</div>
-                      <div class="patient-queue">Queue #{{ patient.queueNumber?.toString().padStart(4, '0') }}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
               <div class="col-12" v-if="selectedPatient">
                 <div class="patient-details p-3 bg-light rounded w-100 d-flex align-items-start gap-3">
                   <div>
@@ -275,7 +247,7 @@
             <div class="row g-4">
               <div class="col-md-4">
                 <div class="form-floating">
-                  <input type="number" class="form-control" id="totalAmount" v-model="consultation.totalAmount" step="0.01" min="0" required>
+                  <input type="number" class="form-control" id="totalAmount" v-model="consultation.totalAmount" step="0.10" min="0" required>
                   <label for="totalAmount">Total Amount (RM)</label>
                 </div>
               </div>
@@ -542,7 +514,6 @@ export default {
       mcPreviewModal: null,
       isLoading: false,
       showPrescriptionForm: false,
-      registrationNumberInput: '',
       medications: [],
       selectedMedication: null,
       dosage: '',
@@ -554,18 +525,6 @@ export default {
     };
   },
   computed: {
-    filteredPatients() {
-      // If no queue number is entered, return empty array
-      if (!this.registrationNumberInput) return [];
-      
-      const inputNum = this.registrationNumberInput.trim();
-      
-      // Find patients whose queue number ends with the input number
-      return this.patients.filter(p => {
-        const patientQueueNum = p.queueNumber?.toString().padStart(4, '0');
-        return patientQueueNum && patientQueueNum.endsWith(inputNum);
-      });
-    },
     selectedPatient() {
       if (this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
         return this.fullPatientDetails;
@@ -687,36 +646,7 @@ export default {
         this.visitHistories = [];
       }
     },
-    async fetchPatientByRegistrationNumber() {
-      if (!this.registrationNumberInput) {
-        alert('Please enter a registration number.');
-        return;
-      }
-      try {
-        const res = await axios.get(`/api/patients/registration/${this.registrationNumberInput}`);
-        console.log('Fetched patient from API:', res.data);
-        if (res.data && res.data.id) {
-          // Add to patients list if not present
-          const exists = this.patients.find(p => p.id === res.data.id);
-          if (!exists) {
-            this.patients.push(res.data);
-          }
-          this.selectPatient(res.data);
-        }
-      } catch (error) {
-        console.error('Error fetching patient:', error);
-        alert('Error fetching patient. Please try again.');
-      }
-    },
-    handleRegistrationNumberInput() {
-      if (!this.registrationNumberInput) {
-        this.consultation.patientId = null;
-        this.fullPatientDetails = null;
-        this.visitHistories = [];
-        return;
-      }
-      this.fetchPatientByRegistrationNumber();
-    },
+
     async loadPatients() {
       try {
         const response = await axios.get('/api/patients');
@@ -821,7 +751,6 @@ export default {
     },
     selectPatient(patient) {
       this.consultation.patientId = patient.id;
-      this.registrationNumberInput = patient.queueNumber?.toString().padStart(4, '0');
       this.fetchPatientDetails();
     },
     showVisitDetails(visit) {
@@ -850,6 +779,16 @@ export default {
         console.error('Error loading medications:', error);
         this.medications = [];
       }
+    },
+    formatQueueNumber(queueNumber) {
+      if (!queueNumber) return '';
+      // Ensure string
+      queueNumber = queueNumber.toString();
+      // Pad to 4 digits (e.g., 8001 -> 8001, 801 -> 0801)
+      if (queueNumber.length === 4) return queueNumber;
+      if (queueNumber.length === 3) return '0' + queueNumber;
+      if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
+      return queueNumber;
     }
   },
   watch: {
@@ -873,14 +812,25 @@ export default {
     await this.loadDoctors();
     this.medicalCertificateModal = new bootstrap.Modal(document.getElementById('medicalCertificateModal'));
     
-    // Set the doctor ID from the logged-in user or use the first doctor
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user && user.id) {
-      this.consultation.doctorId = user.id;
-    } else if (this.doctors && this.doctors.length > 0) {
-      // Temporarily use the first doctor until auth is implemented
-      this.consultation.doctorId = this.doctors[0].id;
-      console.log('Using first doctor as default:', this.doctors[0]);
+    // Check if we're coming from the queue with patient/doctor info
+    const routeQuery = this.$route.query;
+    if (routeQuery.queueNumber && routeQuery.patientId && routeQuery.doctorId) {
+      // Auto-fill from queue information
+      this.consultation.patientId = parseInt(routeQuery.patientId);
+      this.consultation.doctorId = parseInt(routeQuery.doctorId);
+      
+      // Load patient details
+      await this.fetchPatientDetails();
+    } else {
+      // Set the doctor ID from the logged-in user or use the first doctor
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (user && user.id) {
+        this.consultation.doctorId = user.id;
+      } else if (this.doctors && this.doctors.length > 0) {
+        // Temporarily use the first doctor until auth is implemented
+        this.consultation.doctorId = this.doctors[0].id;
+        console.log('Using first doctor as default:', this.doctors[0]);
+      }
     }
     
     if (this.$route.params.id) {
@@ -1045,37 +995,7 @@ export default {
   }
 }
 
-.patient-list {
-  margin-top: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  max-height: 200px;
-  overflow-y: auto;
-}
 
-.patient-item {
-  padding: 10px;
-  border-bottom: 1px solid #eee;
-  cursor: pointer;
-}
-
-.patient-item:hover {
-  background-color: #f8f9fa;
-}
-
-.patient-item:last-child {
-  border-bottom: none;
-}
-
-.patient-name {
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.patient-queue {
-  font-size: 0.9em;
-  color: #666;
-}
 
 /* Visit Details Modal Styling */
 .visit-details-modal {

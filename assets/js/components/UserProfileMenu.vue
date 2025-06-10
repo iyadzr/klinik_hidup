@@ -12,7 +12,7 @@
     </button>
     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenuButton">
       <li>
-        <a class="dropdown-item" href="#" @click.prevent>Profile</a>
+        <router-link to="/profile" class="dropdown-item">Profile</router-link>
       </li>
       <li><hr class="dropdown-divider"></li>
       <li>

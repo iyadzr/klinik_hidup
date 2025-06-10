@@ -98,7 +98,7 @@ class QueueController extends AbstractController
         }
         $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
         $queue->setQueueNumber($queueNumber);
-        $queue->setRegistrationNumber($queueNumber);
+        $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
 
         $this->entityManager->persist($queue);
         $this->entityManager->flush();

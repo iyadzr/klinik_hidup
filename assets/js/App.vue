@@ -33,6 +33,12 @@
             </router-link>
           </li>
           <li class="nav-item">
+            <router-link to="/queue-display" class="nav-link">
+              <i class="fas fa-tv fa-fw"></i>
+              <span>Queue Display</span>
+            </router-link>
+          </li>
+          <li class="nav-item">
             <router-link to="/consultations" class="nav-link">
               <i class="fas fa-stethoscope fa-fw"></i>
               <span>Consultations</span>

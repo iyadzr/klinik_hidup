@@ -5,11 +5,6 @@
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">Consultations</h3>
-            <div class="card-tools">
-              <router-link to="/consultations/new" class="btn btn-primary">
-                <i class="fas fa-plus"></i> New Consultation
-              </router-link>
-            </div>
           </div>
           <div class="card-body">
             <div class="table-responsive">

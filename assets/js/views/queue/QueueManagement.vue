@@ -1,26 +1,5 @@
 <template>
   <div class="queue-management">
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h4 class="mb-0">Current Queue Display</h4>
-          </div>
-          <div class="card-body">
-            <div class="current-queue text-center py-5 glass-card shadow mb-5" style="background:rgba(255,255,255,0.92);border:2px solid var(--accent);">
-              <h2 class="mb-4">Now Serving</h2>
-              <div class="display-1 mb-3" v-if="currentQueue">
-                {{ formatQueueNumber(currentQueue.queueNumber) }} - {{ getFormattedPatientName(currentQueue.patient) }}
-              </div>
-              <div v-else class="text-muted">
-                No active queue
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="card">
       <div class="card-header">
         <h4 class="mb-0">Queue List</h4>
@@ -54,7 +33,7 @@
                     <button 
                       v-if="queue.status === 'waiting'"
                       class="btn btn-sm btn-success"
-                      @click="updateStatus(queue.id, 'in_consultation')"
+                      @click="startConsultation(queue)"
                     >
                       Start Consultation
                     </button>
@@ -215,6 +194,26 @@ export default {
       } catch (error) {
         console.error('Error adding to queue:', error);
         alert('Error adding to queue. Please try again.');
+      }
+    },
+    async startConsultation(queue) {
+      try {
+        // First update the queue status to 'in_consultation'
+        await axios.put(`/api/queue/${queue.id}/status`, { status: 'in_consultation' });
+        
+        // Then redirect to consultation form with queue information
+        // We'll pass the queue number as a query parameter so the form can auto-fill patient info
+        this.$router.push({
+          path: '/consultations/new',
+          query: {
+            queueNumber: queue.queueNumber,
+            patientId: queue.patient.id,
+            doctorId: queue.doctor.id
+          }
+        });
+      } catch (error) {
+        console.error('Error starting consultation:', error);
+        alert('Error starting consultation. Please try again.');
       }
     },
     async updateStatus(queueId, newStatus) {

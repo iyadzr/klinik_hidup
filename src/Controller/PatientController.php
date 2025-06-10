@@ -161,13 +161,25 @@ class PatientController extends AbstractController
         $patient = new Patient();
         $patient->setName($data['name']);
         $patient->setNric($data['nric']);
-        $patient->setEmail($data['email']);
+        $patient->setEmail($data['email'] ?? '');
         $patient->setPhone($data['phone']);
         if (isset($data['dateOfBirth'])) {
             $patient->setDateOfBirth(new \DateTime($data['dateOfBirth']));
         }
         if (isset($data['medicalHistory'])) {
             $patient->setMedicalHistory($data['medicalHistory']);
+        }
+        if (isset($data['gender'])) {
+            $patient->setGender($data['gender']);
+        }
+        if (isset($data['address'])) {
+            $patient->setAddress($data['address']);
+        }
+        if (isset($data['company'])) {
+            $patient->setCompany($data['company']);
+        }
+        if (isset($data['preInformedIllness'])) {
+            $patient->setPreInformedIllness($data['preInformedIllness']);
         }
 
         $entityManager->persist($patient);
@@ -180,11 +192,19 @@ class PatientController extends AbstractController
 
         return $this->json([
             'message' => 'Patient created successfully',
+            'id' => $patient->getId(),
+            'registrationNumber' => null, // This will be set when added to queue
             'patient' => [
                 'id' => $patient->getId(),
                 'name' => $patient->getName(),
                 'nric' => $patient->getNric(),
                 'email' => $patient->getEmail(),
+                'phone' => $patient->getPhone(),
+                'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                'gender' => $patient->getGender(),
+                'address' => $patient->getAddress(),
+                'company' => $patient->getCompany(),
+                'preInformedIllness' => $patient->getPreInformedIllness(),
             ]
         ], Response::HTTP_CREATED);
     }

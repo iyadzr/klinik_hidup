@@ -3,6 +3,7 @@ import Dashboard from '../views/Dashboard.vue';
 import PatientList from '../views/patients/PatientList.vue';
 import DoctorList from '../views/doctors/DoctorList.vue';
 import QueueManagement from '../views/queue/QueueManagement.vue';
+import QueueDisplay from '../views/queue/QueueDisplay.vue';
 import ConsultationForm from '../views/consultations/ConsultationForm.vue';
 import ConsultationList from '../views/consultations/ConsultationList.vue';
 import PatientRegistration from '../views/registration/PatientRegistration.vue';
@@ -11,6 +12,7 @@ import Login from '../views/auth/Login.vue';
 import PaymentList from '../views/payments/PaymentList.vue';
 import AppointmentDashboard from '../views/appointments/AppointmentDashboard.vue';
 import PrescriptionForm from '../views/prescriptions/PrescriptionForm.vue';
+import UserProfile from '../views/UserProfile.vue';
 
 const routes = [
   {
@@ -33,6 +35,12 @@ const routes = [
     path: '/queue',
     name: 'Queue',
     component: QueueManagement,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/queue-display',
+    name: 'QueueDisplay',
+    component: QueueDisplay,
     meta: { requiresAuth: true }
   },
   {
@@ -81,6 +89,12 @@ const routes = [
     path: '/prescriptions/new',
     name: 'prescription-form',
     component: PrescriptionForm,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: UserProfile,
     meta: { requiresAuth: true }
   },
   {

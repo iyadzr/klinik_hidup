@@ -166,8 +166,9 @@ export default {
           nric: ''
         };
         this.selectedPatient = null;
-        // Optionally reset queue info (doctor assignment)
-        this.queueInfo = { doctorId: '' };
+        // Keep the doctor selection (don't reset to maintain first doctor default)
+        // If you want to reset doctor selection too, uncomment the line below:
+        // this.queueInfo = { doctorId: '' };
       }
     }
   },
@@ -265,6 +266,11 @@ export default {
       try {
         const response = await axios.get('/api/doctors');
         this.doctors = response.data;
+        
+        // Auto-select the first doctor if available
+        if (this.doctors && this.doctors.length > 0) {
+          this.queueInfo.doctorId = this.doctors[0].id;
+        }
       } catch (error) {
         console.error('Error loading doctors:', error);
       }
