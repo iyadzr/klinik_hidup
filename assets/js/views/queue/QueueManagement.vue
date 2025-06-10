@@ -75,7 +75,8 @@ export default {
       newQueue: {
         patientId: '',
         doctorId: ''
-      }
+      },
+      eventSource: null
     };
   },
   computed: {
@@ -85,12 +86,17 @@ export default {
   },
   created() {
     this.loadData();
-    // Refresh queue list every 30 seconds
+    // Refresh queue list every 30 seconds as backup
     this.refreshInterval = setInterval(this.loadQueueList, 30000);
+    // Initialize real-time updates
+    this.initializeSSE();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
+    }
+    if (this.eventSource) {
+      this.eventSource.close();
     }
   },
   methods: {
@@ -238,6 +244,86 @@ export default {
         cancelled: 'badge bg-danger'
       };
       return classes[status] || 'badge bg-secondary';
+    },
+    initializeSSE() {
+      // Initialize Server-Sent Events for real-time queue updates
+      try {
+        this.eventSource = new EventSource('/api/sse/queue-updates');
+        
+        this.eventSource.onmessage = (event) => {
+          try {
+            const update = JSON.parse(event.data);
+            
+            if (update.type === 'queue_status_update') {
+              this.handleQueueUpdate(update.data);
+            }
+          } catch (error) {
+            console.error('Error parsing SSE message:', error);
+          }
+        };
+        
+        this.eventSource.addEventListener('heartbeat', (event) => {
+          // Just keep the connection alive, no action needed
+          console.log('SSE heartbeat received');
+        });
+        
+        this.eventSource.onerror = (error) => {
+          console.error('SSE connection error:', error);
+          
+          // Attempt to reconnect after 5 seconds
+          setTimeout(() => {
+            if (this.eventSource.readyState === EventSource.CLOSED) {
+              console.log('Attempting to reconnect SSE...');
+              this.initializeSSE();
+            }
+          }, 5000);
+        };
+        
+        this.eventSource.onopen = () => {
+          console.log('SSE connection established for queue updates');
+        };
+      } catch (error) {
+        console.error('Failed to initialize SSE:', error);
+      }
+    },
+    handleQueueUpdate(queueData) {
+      // Find and update the specific queue item in the list
+      const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
+      
+      if (queueIndex !== -1) {
+        // Update existing queue item
+        this.queueList[queueIndex] = {
+          ...this.queueList[queueIndex],
+          status: queueData.status,
+          patient: queueData.patient,
+          doctor: queueData.doctor,
+          queueDateTime: queueData.queueDateTime
+        };
+        
+        // Show notification
+        this.showUpdateNotification(queueData);
+      } else {
+        // If queue item not found, refresh the entire list
+        this.loadQueueList();
+      }
+    },
+    showUpdateNotification(queueData) {
+      // Create a simple notification (you can enhance this with a proper notification library)
+      const message = `Queue #${this.formatQueueNumber(queueData.queueNumber)} status updated to: ${this.formatStatus(queueData.status)}`;
+      
+      // Simple browser notification (optional)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Queue Update', {
+          body: message,
+          icon: '/favicon.ico',
+          timeout: 3000
+        });
+      }
+      
+      // Console log for development
+      console.log('Queue update:', message);
+      
+      // You could also add a toast notification here using a library like vue-toastification
     },
     formatDateTime(datetime) {
       if (!datetime) return '';

@@ -14,7 +14,7 @@
 
     <form @submit.prevent="saveConsultation" class="row g-4">
       <!-- Patient Information -->
-      <div class="col-12 col-lg-7">
+      <div class="col-12 col-lg-8">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
@@ -129,6 +129,36 @@
                 </div>
               </div>
 
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pre-Informed Illness -->
+      <div class="col-12 col-lg-4">
+        <div class="card section-card mb-4">
+          <div class="card-body">
+            <h5 class="section-title mb-4">
+              <i class="fas fa-clipboard-check text-primary me-2"></i>
+              Pre-Informed Illness
+            </h5>
+            <div v-if="selectedPatient && selectedPatient.preInformedIllness">
+              <div class="pre-illness-content p-3 bg-light rounded">
+                <div class="d-flex align-items-start gap-3">
+                  <div>
+                    <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
+                  </div>
+                  <div class="flex-grow-1">
+                    <h6 class="fw-bold text-dark mb-2">Patient's Initial Symptoms/Complaint</h6>
+                    <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center text-muted py-4">
+              <i class="fas fa-clipboard fa-2x mb-2"></i>
+              <div>No pre-informed illness data available</div>
+              <small class="text-muted">Patient did not provide initial symptoms during registration</small>
             </div>
           </div>
         </div>
@@ -264,8 +294,8 @@
           Cancel
         </button>
         <button type="submit" class="btn btn-primary">
-          <i class="fas fa-save me-2"></i>
-          {{ isEditing ? 'Submit' : 'Save' }} Consultation
+          <i class="fas fa-check me-2"></i>
+          Complete Consultation
         </button>
       </div>
     </form>

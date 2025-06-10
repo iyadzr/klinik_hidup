@@ -83,7 +83,8 @@ export default {
       queueList: [],
       doctorList: [],
       lastUpdated: new Date().toLocaleTimeString(),
-      refreshInterval: null
+      refreshInterval: null,
+      eventSource: null
     };
   },
   computed: {
@@ -105,12 +106,17 @@ export default {
   },
   created() {
     this.loadData();
-    // Auto-refresh every 10 seconds
+    // Auto-refresh every 10 seconds as backup
     this.refreshInterval = setInterval(this.loadData, 10000);
+    // Initialize real-time updates
+    this.initializeSSE();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
+    }
+    if (this.eventSource) {
+      this.eventSource.close();
     }
   },
   methods: {
@@ -217,6 +223,68 @@ export default {
       
       // Fallback: use doctor ID to determine room
       return `Room ${((doctor.id - 1) % 10) + 1}`;
+    },
+    initializeSSE() {
+      // Initialize Server-Sent Events for real-time queue updates
+      try {
+        this.eventSource = new EventSource('/api/sse/queue-updates');
+        
+        this.eventSource.onmessage = (event) => {
+          try {
+            const update = JSON.parse(event.data);
+            
+            if (update.type === 'queue_status_update') {
+              this.handleQueueUpdate(update.data);
+            }
+          } catch (error) {
+            console.error('Error parsing SSE message:', error);
+          }
+        };
+        
+        this.eventSource.addEventListener('heartbeat', (event) => {
+          // Just keep the connection alive
+          console.log('Queue Display SSE heartbeat received');
+        });
+        
+        this.eventSource.onerror = (error) => {
+          console.error('Queue Display SSE connection error:', error);
+          
+          // Attempt to reconnect after 5 seconds
+          setTimeout(() => {
+            if (this.eventSource.readyState === EventSource.CLOSED) {
+              console.log('Attempting to reconnect Queue Display SSE...');
+              this.initializeSSE();
+            }
+          }, 5000);
+        };
+        
+        this.eventSource.onopen = () => {
+          console.log('Queue Display SSE connection established');
+        };
+      } catch (error) {
+        console.error('Failed to initialize Queue Display SSE:', error);
+      }
+    },
+    handleQueueUpdate(queueData) {
+      // Find and update the specific queue item in the list
+      const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
+      
+      if (queueIndex !== -1) {
+        // Update existing queue item
+        this.queueList[queueIndex] = {
+          ...this.queueList[queueIndex],
+          status: queueData.status,
+          patient: queueData.patient,
+          doctor: queueData.doctor,
+          queueDateTime: queueData.queueDateTime
+        };
+        
+        // Update last updated time
+        this.lastUpdated = new Date().toLocaleTimeString();
+      } else {
+        // If queue item not found, refresh the entire list
+        this.loadData();
+      }
     }
   }
 };

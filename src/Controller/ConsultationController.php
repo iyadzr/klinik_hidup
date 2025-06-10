@@ -21,6 +21,50 @@ class ConsultationController extends AbstractController
     {
         $this->entityManager = $entityManager;
     }
+    
+    private function broadcastQueueUpdate($queue): void
+    {
+        // Store the update in a temporary file for SSE to pick up
+        $updateData = [
+            'type' => 'queue_status_update',
+            'timestamp' => time(),
+            'data' => [
+                'id' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'status' => $queue->getStatus(),
+                'patient' => [
+                    'id' => $queue->getPatient()->getId(),
+                    'name' => $queue->getPatient()->getName(),
+                ],
+                'doctor' => [
+                    'id' => $queue->getDoctor()->getId(),
+                    'name' => $queue->getDoctor()->getName(),
+                ],
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+            ]
+        ];
+        
+        // Write to temporary file that SSE endpoint will read
+        $tempDir = sys_get_temp_dir();
+        $updateFile = $tempDir . '/queue_updates.json';
+        
+        // Read existing updates
+        $updates = [];
+        if (file_exists($updateFile)) {
+            $content = file_get_contents($updateFile);
+            $updates = json_decode($content, true) ?: [];
+        }
+        
+        // Add new update
+        $updates[] = $updateData;
+        
+        // Keep only last 10 updates to prevent file from growing too large
+        $updates = array_slice($updates, -10);
+        
+        // Write back to file
+        file_put_contents($updateFile, json_encode($updates));
+    }
 
     #[Route('', name: 'app_consultation_create', methods: ['POST'])]
     public function create(Request $request, LoggerInterface $logger): JsonResponse
@@ -78,9 +122,26 @@ class ConsultationController extends AbstractController
             $this->entityManager->persist($consultation);
             $this->entityManager->flush();
             
+            // Update queue status to 'completed' for this patient/doctor combination
+            $queueRepository = $this->entityManager->getRepository(\App\Entity\Queue::class);
+            $queue = $queueRepository->findOneBy([
+                'patient' => $patient,
+                'doctor' => $doctor,
+                'status' => 'in_consultation'
+            ]);
+            
+            if ($queue) {
+                $queue->setStatus('completed');
+                $this->entityManager->flush();
+                
+                // Trigger real-time update
+                $this->broadcastQueueUpdate($queue);
+            }
+            
             return new JsonResponse([
                 'id' => $consultation->getId(),
-                'message' => 'Consultation created successfully'
+                'message' => 'Consultation created successfully',
+                'queueUpdated' => $queue ? true : false
             ], 201);
         } catch (\Exception $e) {
             $logger->error('Error creating consultation: ' . $e->getMessage(), [
