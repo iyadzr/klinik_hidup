@@ -9,7 +9,7 @@
     <div class="row mb-3">
       <div class="col-md-6">
         <div class="input-group">
-          <input type="text" class="form-control" placeholder="Search by name, NRIC, or phone" v-model="searchQuery" v-enter-submit>
+          <input type="text" class="form-control" placeholder="Search by name, NRIC, or phone" v-model="searchQuery" @keyup.enter="searchPatients">
           <button class="btn btn-outline-primary" @click="searchPatients">Search</button>
           <button class="btn btn-outline-secondary" @click="clearSearch" v-if="searchQuery">Clear</button>
         </div>
