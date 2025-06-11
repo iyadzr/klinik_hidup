@@ -58,10 +58,11 @@ class PatientController extends AbstractController
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                'gender' => $patient->getGender(),
+                'address' => $patient->getAddress(),
+                'company' => $patient->getCompany(),
+                'preInformedIllness' => $patient->getPreInformedIllness(),
                 'medicalHistory' => $patient->getMedicalHistory(),
-                'company' => method_exists($patient, 'getCompany') ? $patient->getCompany() : null,
-                'preInformedIllness' => method_exists($patient, 'getPreInformedIllness') ? $patient->getPreInformedIllness() : null,
-
                 'displayName' => $patient->getName(),
             ];
         }, $patients);
@@ -143,8 +144,11 @@ class PatientController extends AbstractController
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
-                'gender' => method_exists($patient, 'getGender') ? $patient->getGender() : null,
-                'address' => method_exists($patient, 'getAddress') ? $patient->getAddress() : null,
+                'gender' => $patient->getGender(),
+                'address' => $patient->getAddress(),
+                'company' => $patient->getCompany(),
+                'preInformedIllness' => $patient->getPreInformedIllness(),
+                'medicalHistory' => $patient->getMedicalHistory(),
                 'registrationNumber' => $registrationNumber
             ];
         }, $patients);
@@ -219,9 +223,11 @@ class PatientController extends AbstractController
             'email' => $patient->getEmail(),
             'phone' => $patient->getPhone(),
             'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
-            'medicalHistory' => $patient->getMedicalHistory(),
+            'gender' => $patient->getGender(),
+            'address' => $patient->getAddress(),
             'company' => $patient->getCompany(),
             'preInformedIllness' => $patient->getPreInformedIllness(),
+            'medicalHistory' => $patient->getMedicalHistory(),
             'displayName' => $patient->getName(),
         ]);
     }
@@ -249,6 +255,18 @@ class PatientController extends AbstractController
         if (isset($data['medicalHistory'])) {
             $patient->setMedicalHistory($data['medicalHistory']);
         }
+        if (isset($data['gender'])) {
+            $patient->setGender($data['gender']);
+        }
+        if (isset($data['address'])) {
+            $patient->setAddress($data['address']);
+        }
+        if (isset($data['company'])) {
+            $patient->setCompany($data['company']);
+        }
+        if (isset($data['preInformedIllness'])) {
+            $patient->setPreInformedIllness($data['preInformedIllness']);
+        }
 
         $entityManager->flush();
 
@@ -266,6 +284,10 @@ class PatientController extends AbstractController
                 'email' => $patient->getEmail(),
                 'phone' => $patient->getPhone(),
                 'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                'gender' => $patient->getGender(),
+                'address' => $patient->getAddress(),
+                'company' => $patient->getCompany(),
+                'preInformedIllness' => $patient->getPreInformedIllness(),
                 'medicalHistory' => $patient->getMedicalHistory(),
             ]
         ]);

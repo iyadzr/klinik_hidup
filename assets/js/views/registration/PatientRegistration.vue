@@ -152,7 +152,7 @@ export default {
   watch: {
     patientType(newType, oldType) {
       if (newType === 'new') {
-        // Reset all patient fields
+        // Reset all patient fields when switching to new patient
         this.patient = {
           name: '',
           email: '',
@@ -166,9 +166,10 @@ export default {
           nric: ''
         };
         this.selectedPatient = null;
+        this.searchQuery = '';
+        this.searchResults = [];
+        this.searchPerformed = false;
         // Keep the doctor selection (don't reset to maintain first doctor default)
-        // If you want to reset doctor selection too, uncomment the line below:
-        // this.queueInfo = { doctorId: '' };
       }
     }
   },
@@ -289,16 +290,49 @@ export default {
     selectExistingPatient(patient) {
       this.selectedPatient = patient;
       this.patientType = 'existing';
-      // Populate the patient form with the selected patient's data
+      // Populate the patient form with the selected patient's data (including all fields)
       this.patient = {
-        name: patient.name,
-        nric: patient.nric,
-        phone: patient.phone,
-        address: patient.address,
-        gender: patient.gender,
-        dateOfBirth: patient.dateOfBirth,
-        company: patient.company
+        name: patient.name || '',
+        nric: patient.nric || '',
+        email: patient.email || '',
+        phone: patient.phone || '',
+        address: patient.address || '',
+        gender: patient.gender || '',
+        dateOfBirth: patient.dateOfBirth || '',
+        company: patient.company || '',
+        companyAddress: patient.companyAddress || '',
+        preInformedIllness: patient.preInformedIllness || ''
       };
+    },
+
+    resetForm() {
+      // Clear all patient fields
+      this.patient = {
+        name: '',
+        email: '',
+        phone: '',
+        dateOfBirth: '',
+        gender: '',
+        address: '',
+        company: '',
+        companyAddress: '',
+        preInformedIllness: '',
+        nric: ''
+      };
+      
+      // Reset search and selection
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.searchPerformed = false;
+      this.selectedPatient = null;
+      
+      // Reset to new patient type
+      this.patientType = 'new';
+      
+      // Keep doctor selection (auto-select first doctor)
+      if (this.doctors && this.doctors.length > 0) {
+        this.queueInfo.doctorId = this.doctors[0].id;
+      }
     },
     
     async registerPatient() {
@@ -312,7 +346,8 @@ export default {
           patientId = response.data.id;
           regNumber = response.data.registrationNumber;
         } else if (this.selectedPatient) {
-          // Use existing patient
+          // Update existing patient with any modifications
+          await axios.put(`/api/patients/${this.selectedPatient.id}`, this.patient);
           patientId = this.selectedPatient.id;
           regNumber = this.selectedPatient.registrationNumber;
         } else {
@@ -327,6 +362,8 @@ export default {
         });
 
         if (queueResponse.data) {
+          // Reset the form for next registration
+          this.resetForm();
           this.$router.push('/queue');
         }
       } catch (error) {

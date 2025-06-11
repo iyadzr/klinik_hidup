@@ -37,13 +37,7 @@
                     >
                       Start Consultation
                     </button>
-                    <button 
-                      v-if="queue.status === 'in_consultation'"
-                      class="btn btn-sm btn-primary"
-                      @click="updateStatus(queue.id, 'completed')"
-                    >
-                      Complete
-                    </button>
+
                     <button 
                       v-if="queue.status === 'waiting'"
                       class="btn btn-sm btn-danger"

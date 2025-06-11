@@ -142,7 +142,7 @@
               <i class="fas fa-clipboard-check text-primary me-2"></i>
               Pre-Informed Illness
             </h5>
-            <div v-if="selectedPatient && selectedPatient.preInformedIllness">
+            <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
               <div class="pre-illness-content p-3 bg-light rounded">
                 <div class="d-flex align-items-start gap-3">
                   <div>
@@ -244,24 +244,82 @@
       <div id="mc-print-content" style="display:none">
         <div v-if="familyPatients && familyPatients.length > 1">
           <div v-for="patient in familyPatients" :key="patient.id" v-if="mcSelectedPatientIds.includes(patient.id)">
-            <div style="font-family: Arial, sans-serif; width: 400px; padding: 24px; border: 2px solid #222; page-break-after: always;">
-              <h2 style="text-align:center; margin-bottom: 20px;">Medical Certificate</h2>
-              <p><strong>MC Number:</strong> {{ consultation.mcRunningNumber }}</p>
-              <p><strong>Patient Name:</strong> {{ patient.name || patient.displayName }}</p>
-              <p><strong>MC Period:</strong> {{ consultation.mcStartDate }} to {{ consultation.mcEndDate }}</p>
-              <p>This is to certify that the above patient is medically unfit for work during the stated period.</p>
-              <p style="margin-top:40px;">Doctor's Signature: ____________________</p>
+            <div style="background-color: #e8e5b0; padding: 20px; border: 1px solid #000; font-family: Arial, sans-serif; page-break-after: always;">
+              <!-- Clinic Header -->
+              <div style="text-align: center; margin-bottom: 15px;">
+                <h3 style="margin-bottom: 0; font-weight: bold;">KLINIK HIDUPsihat</h3>
+                <p style="margin-bottom: 5px;">No 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor.</p>
+                <p style="margin-bottom: 5px;">Tel: 03-8740 0678</p>
+              </div>
+              
+              <!-- MC Running Number -->
+              <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                <div>
+                  <p style="margin-bottom: 0; font-size: 0.9rem; color: #a52a2a;">No: {{ consultation.mcRunningNumber || '426740' }}</p>
+                </div>
+              </div>
+              
+              <h4 style="text-align: center; margin-bottom: 20px;">SURAT AKUAN SAKIT (MC)</h4>
+              
+              <div style="display: flex; justify-content: space-between;">
+                <p>Saya mengesahkan telah memeriksa;</p>
+                <p><strong>Tarikh:</strong> {{ formatDate(new Date()) }}</p>
+              </div>
+              <p style="margin-left: 15px; margin-bottom: 5px;"><strong>Nama dan No KP:</strong> {{ patient.name || patient.displayName || 'Unknown' }} ({{ patient.nric || patient.ic || '******' }})</p>
+              <p style="margin-left: 15px; margin-bottom: 20px;"><strong>dari:</strong> {{ patient.company || 'yang berkenaan' }}</p>
+              
+              <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
+              <p style="margin-left: 15px; margin-bottom: 15px;">
+                <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+              </p>
+              
+              <div style="display: flex; justify-content: flex-end; margin-top: 40px;">
+                <div style="text-align: center;">
+                  <!-- Signature Line -->
+                  <div style="border-bottom: 1px dotted #000; width: 150px; margin-bottom: 10px;">&nbsp;</div>
+                  <p style="margin-bottom: 0;">Tandatangan</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
         <div v-else>
-          <div style="font-family: Arial, sans-serif; width: 400px; padding: 24px; border: 2px solid #222;">
-            <h2 style="text-align:center; margin-bottom: 20px;">Medical Certificate</h2>
-            <p><strong>MC Number:</strong> {{ consultation.mcRunningNumber }}</p>
-            <p><strong>Patient Name:</strong> {{ selectedPatient?.name || selectedPatient?.displayName }}</p>
-            <p><strong>MC Period:</strong> {{ consultation.mcStartDate }} to {{ consultation.mcEndDate }}</p>
-            <p>This is to certify that the above patient is medically unfit for work during the stated period.</p>
-            <p style="margin-top:40px;">Doctor's Signature: ____________________</p>
+          <div style="background-color: #e8e5b0; padding: 20px; border: 1px solid #000; font-family: Arial, sans-serif;">
+            <!-- Clinic Header -->
+            <div style="text-align: center; margin-bottom: 15px;">
+              <h3 style="margin-bottom: 0; font-weight: bold;">KLINIK HIDUPsihat</h3>
+              <p style="margin-bottom: 5px;">No 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor.</p>
+              <p style="margin-bottom: 5px;">Tel: 03-8740 0678</p>
+            </div>
+            
+            <!-- MC Running Number -->
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+              <div>
+                <p style="margin-bottom: 0; font-size: 0.9rem; color: #a52a2a;">No: {{ consultation.mcRunningNumber || '426740' }}</p>
+              </div>
+            </div>
+            
+            <h4 style="text-align: center; margin-bottom: 20px;">SURAT AKUAN SAKIT (MC)</h4>
+            
+            <div style="display: flex; justify-content: space-between;">
+              <p>Saya mengesahkan telah memeriksa;</p>
+              <p><strong>Tarikh:</strong> {{ formatDate(new Date()) }}</p>
+            </div>
+            <p style="margin-left: 15px; margin-bottom: 5px;"><strong>Nama dan No KP:</strong> {{ selectedPatient?.name || selectedPatient?.displayName || 'Unknown' }} ({{ selectedPatient?.nric || selectedPatient?.ic || '******' }})</p>
+            <p style="margin-left: 15px; margin-bottom: 20px;"><strong>dari:</strong> {{ selectedPatient?.company || 'yang berkenaan' }}</p>
+            
+            <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
+            <p style="margin-left: 15px; margin-bottom: 15px;">
+              <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+            </p>
+            
+            <div style="display: flex; justify-content: flex-end; margin-top: 40px;">
+              <div style="text-align: center;">
+                <!-- Signature Line -->
+                <div style="border-bottom: 1px dotted #000; width: 150px; margin-bottom: 10px;">&nbsp;</div>
+                <p style="margin-bottom: 0;">Tandatangan</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
