@@ -6,6 +6,7 @@
  */
 
 import './styles/app.scss';
+import './styles/global-improvements.css';
 
 import { createApp } from 'vue';
 import App from './js/App.vue';

@@ -13,6 +13,7 @@ import PaymentList from '../views/payments/PaymentList.vue';
 import AppointmentDashboard from '../views/appointments/AppointmentDashboard.vue';
 import PrescriptionForm from '../views/prescriptions/PrescriptionForm.vue';
 import UserProfile from '../views/UserProfile.vue';
+import FinancialDashboard from '../views/finance/FinancialDashboard.vue';
 
 const routes = [
   {
@@ -95,6 +96,12 @@ const routes = [
     path: '/profile',
     name: 'Profile',
     component: UserProfile,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/financial',
+    name: 'Financial',
+    component: FinancialDashboard,
     meta: { requiresAuth: true }
   },
   {

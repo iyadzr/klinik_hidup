@@ -68,6 +68,12 @@
               <span>Payments</span>
             </router-link>
           </li>
+          <li class="nav-item">
+            <router-link to="/financial" class="nav-link">
+              <i class="fas fa-chart-bar fa-fw"></i>
+              <span>Financial</span>
+            </router-link>
+          </li>
         </ul>
       </nav>
 

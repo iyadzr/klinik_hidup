@@ -179,10 +179,125 @@
                   <label for="remark">Remark</label>
                 </div>
               </div>
+              <!-- Enhanced Medication Prescription Section -->
               <div class="col-md-12">
-                <div class="form-floating">
-                  <textarea class="form-control" id="medications" v-model="consultation.medications" style="height: 100px" required></textarea>
-                  <label for="medications">Prescribed Medications</label>
+                <h6 class="fw-bold mb-3">
+                  <i class="fas fa-pills me-2"></i>
+                  Prescribed Medications
+                </h6>
+                
+                <!-- Add Medication Button -->
+                <div class="mb-3">
+                  <button type="button" class="btn btn-outline-primary btn-sm" @click="addMedicationRow">
+                    <i class="fas fa-plus me-1"></i>Add Medication
+                  </button>
+                </div>
+
+                <!-- Medication List -->
+                <div v-for="(medItem, index) in prescribedMedications" :key="index" class="medication-row mb-3 p-3 border rounded">
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="form-floating">
+                        <input
+                          type="text"
+                          class="form-control"
+                          :id="`medication-${index}`"
+                          v-model="medItem.name"
+                          @input="searchMedications(medItem, $event)"
+                          @blur="handleMedicationBlur(medItem)"
+                          @keydown.enter.prevent="selectFirstSuggestion(medItem)"
+                          @keydown.escape="clearSuggestions(medItem)"
+                          placeholder="Type to search medications..."
+                          autocomplete="off"
+                        >
+                        <label :for="`medication-${index}`">Medication Name</label>
+                        
+                        <!-- Medication Suggestions Dropdown -->
+                        <div v-if="medItem.suggestions && medItem.suggestions.length > 0" class="medication-suggestions">
+                          <div class="suggestions-header">
+                            <small class="text-muted"><i class="fas fa-search me-1"></i>Select from existing medications:</small>
+                          </div>
+                          <div 
+                            v-for="(suggestion, suggestionIndex) in medItem.suggestions" 
+                            :key="suggestion.id"
+                            class="suggestion-item"
+                            :class="{ 'suggestion-highlighted': suggestionIndex === medItem.selectedSuggestionIndex }"
+                            @click="selectMedication(medItem, suggestion)"
+                            @mouseenter="medItem.selectedSuggestionIndex = suggestionIndex"
+                          >
+                            <div class="suggestion-main">
+                              <strong>{{ suggestion.name }}</strong>
+                              <span v-if="suggestion.category" class="badge bg-primary ms-2">{{ suggestion.category }}</span>
+                            </div>
+                            <small class="text-muted">{{ suggestion.unitDescription || suggestion.unitType }}</small>
+                          </div>
+                          
+                          <!-- Create new medication option -->
+                          <div v-if="medItem.name && !medItem.suggestions.some(s => s.name.toLowerCase() === medItem.name.toLowerCase())" 
+                               class="suggestion-item suggestion-create-new"
+                               @click="showCreateMedicationModal(medItem)">
+                            <div class="suggestion-main">
+                              <i class="fas fa-plus text-success me-2"></i>
+                              <strong>Create new: "{{ medItem.name }}"</strong>
+                            </div>
+                            <small class="text-muted">Add this medication to the database</small>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="col-md-3">
+                      <div class="form-floating">
+                        <input
+                          type="number"
+                          class="form-control"
+                          :id="`quantity-${index}`"
+                          v-model.number="medItem.quantity"
+                          min="1"
+                          required
+                        >
+                        <label :for="`quantity-${index}`">Quantity</label>
+                      </div>
+                      <small class="text-muted">{{ medItem.unitDescription || medItem.unitType || 'pieces' }}</small>
+                    </div>
+                    
+                    <div class="col-md-2">
+                      <button type="button" class="btn btn-outline-danger btn-sm h-100" @click="removeMedicationRow(index)">
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
+                    
+                    <div class="col-md-12" v-if="medItem.showInstructions">
+                      <div class="form-floating">
+                        <textarea
+                          class="form-control"
+                          :id="`instructions-${index}`"
+                          v-model="medItem.instructions"
+                          style="height: 60px"
+                          placeholder="Dosage instructions..."
+                        ></textarea>
+                        <label :for="`instructions-${index}`">Instructions</label>
+                      </div>
+                    </div>
+                    
+                    <div class="col-md-12">
+                      <button 
+                        type="button" 
+                        class="btn btn-link btn-sm p-0" 
+                        @click="medItem.showInstructions = !medItem.showInstructions"
+                      >
+                        {{ medItem.showInstructions ? 'Hide' : 'Add' }} Instructions
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Legacy text area for backward compatibility -->
+                <div class="mt-3">
+                  <div class="form-floating">
+                    <textarea class="form-control" id="medications-legacy" v-model="consultation.medications" style="height: 100px"></textarea>
+                    <label for="medications-legacy">Additional Notes (Legacy)</label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -539,8 +654,98 @@
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
+          </div>
+    
+    <!-- Create New Medication Modal -->
+    <div class="modal fade" id="createMedicationModal" tabindex="-1" aria-labelledby="createMedicationModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="createMedicationModalLabel">
+              <i class="fas fa-plus-circle text-success me-2"></i>
+              Add New Medication to Database
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info">
+              <i class="fas fa-info-circle me-2"></i>
+              This medication will be added to the database and available for future prescriptions.
+            </div>
+            
+            <form @submit.prevent="createNewMedication">
+              <div class="row g-3">
+                <div class="col-md-12">
+                  <label class="form-label fw-bold">Medication Name</label>
+                  <input type="text" class="form-control" v-model="newMedicationForm.name" readonly>
+                </div>
+                
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Unit Type</label>
+                  <select class="form-select" v-model="newMedicationForm.unitType" required>
+                    <option value="">Select unit type</option>
+                    <option value="pieces">Pieces (tablets, capsules)</option>
+                    <option value="bottles">Bottles</option>
+                    <option value="tubes">Tubes</option>
+                    <option value="sachets">Sachets</option>
+                    <option value="boxes">Boxes</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="mg">Milligrams (mg)</option>
+                    <option value="g">Grams (g)</option>
+                    <option value="vials">Vials</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Unit Description</label>
+                  <input type="text" class="form-control" v-model="newMedicationForm.unitDescription" 
+                         placeholder="e.g., 500mg tablets, 75ml bottle">
+                  <small class="text-muted">Optional: Specific description of the unit</small>
+                </div>
+                
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Category</label>
+                  <select class="form-select" v-model="newMedicationForm.category">
+                    <option value="">Select category (optional)</option>
+                    <option value="pain reliever">Pain Reliever</option>
+                    <option value="antibiotic">Antibiotic</option>
+                    <option value="cough syrup">Cough Syrup</option>
+                    <option value="fever reducer">Fever Reducer</option>
+                    <option value="antacid">Antacid</option>
+                    <option value="allergy medicine">Allergy Medicine</option>
+                    <option value="vitamin">Vitamin/Supplement</option>
+                    <option value="topical">Topical/External</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                
+                <div class="col-md-6">
+                  <label class="form-label">Custom Category</label>
+                  <input type="text" class="form-control" v-model="newMedicationForm.customCategory" 
+                         placeholder="Enter custom category"
+                         :disabled="newMedicationForm.category !== 'other'">
+                  <small class="text-muted">Only if "Other" is selected above</small>
+                </div>
+                
+                <div class="col-md-12">
+                  <label class="form-label">Description (Optional)</label>
+                  <textarea class="form-control" v-model="newMedicationForm.description" rows="3"
+                            placeholder="Additional notes about this medication..."></textarea>
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-success" @click="createNewMedication" :disabled="!newMedicationForm.unitType">
+              <i class="fas fa-plus me-2"></i>Add Medication
+            </button>
+          </div>
+        </div>
       </div>
     </div>
+  </div>
 </template>
 
 <script>
@@ -603,6 +808,7 @@ export default {
       isLoading: false,
       showPrescriptionForm: false,
       medications: [],
+      prescribedMedications: [],
       selectedMedication: null,
       dosage: '',
       frequency: '',
@@ -610,6 +816,17 @@ export default {
       instructions: '',
       selectedVisit: null,
       visitDetailsModal: null,
+      medicationSearchTimeout: null,
+      newMedicationForm: {
+        name: '',
+        unitType: '',
+        unitDescription: '',
+        category: '',
+        customCategory: '',
+        description: ''
+      },
+      currentMedicationItem: null,
+      createMedicationModal: null,
     };
   },
   computed: {
@@ -820,6 +1037,163 @@ export default {
         alert(error.response?.data?.message || error.message || 'Error saving consultation');
       }
     },
+    // Enhanced Medication Methods
+    addMedicationRow() {
+      this.prescribedMedications.push({
+        id: null,
+        name: '',
+        medicationId: null,
+        quantity: 1,
+        unitType: 'pieces',
+        unitDescription: '',
+        category: '',
+        instructions: '',
+        showInstructions: false,
+        suggestions: [],
+        selectedSuggestionIndex: -1
+      });
+    },
+    
+    removeMedicationRow(index) {
+      this.prescribedMedications.splice(index, 1);
+    },
+    
+    async searchMedications(medItem, event) {
+      const searchTerm = event.target.value;
+      
+      if (this.medicationSearchTimeout) {
+        clearTimeout(this.medicationSearchTimeout);
+      }
+      
+      if (searchTerm.length < 2) {
+        medItem.suggestions = [];
+        medItem.selectedSuggestionIndex = -1;
+        return;
+      }
+      
+      this.medicationSearchTimeout = setTimeout(async () => {
+        try {
+          const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
+          medItem.suggestions = response.data;
+          medItem.selectedSuggestionIndex = 0; // Pre-select first suggestion
+        } catch (error) {
+          console.error('Error searching medications:', error);
+          medItem.suggestions = [];
+          medItem.selectedSuggestionIndex = -1;
+        }
+      }, 300);
+    },
+    
+    selectMedication(medItem, medication) {
+      medItem.id = medication.id;
+      medItem.medicationId = medication.id;
+      medItem.name = medication.name;
+      medItem.unitType = medication.unitType;
+      medItem.unitDescription = medication.unitDescription;
+      medItem.category = medication.category;
+      medItem.suggestions = [];
+      medItem.selectedSuggestionIndex = -1;
+    },
+    
+    handleMedicationBlur(medItem) {
+      // Delay hiding suggestions to allow clicking on them
+      setTimeout(() => {
+        if (!medItem.medicationId && medItem.name) {
+          // Check if exact match exists in current suggestions
+          const exactMatch = medItem.suggestions.find(med => 
+            med.name.toLowerCase() === medItem.name.toLowerCase()
+          );
+          
+          if (exactMatch) {
+            this.selectMedication(medItem, exactMatch);
+          }
+        }
+        medItem.suggestions = [];
+        medItem.selectedSuggestionIndex = -1;
+      }, 200);
+    },
+    
+    selectFirstSuggestion(medItem) {
+      if (medItem.suggestions && medItem.suggestions.length > 0) {
+        this.selectMedication(medItem, medItem.suggestions[0]);
+      }
+    },
+    
+    clearSuggestions(medItem) {
+      medItem.suggestions = [];
+      medItem.selectedSuggestionIndex = -1;
+    },
+    
+    showCreateMedicationModal(medItem) {
+      this.currentMedicationItem = medItem;
+      this.newMedicationForm = {
+        name: medItem.name,
+        unitType: '',
+        unitDescription: '',
+        category: '',
+        customCategory: '',
+        description: ''
+      };
+      
+      if (!this.createMedicationModal) {
+        this.createMedicationModal = new bootstrap.Modal(document.getElementById('createMedicationModal'));
+      }
+      this.createMedicationModal.show();
+      
+      // Clear suggestions when showing modal
+      medItem.suggestions = [];
+    },
+    
+    async createNewMedication() {
+      try {
+        if (!this.newMedicationForm.unitType) {
+          alert('Please select a unit type.');
+          return;
+        }
+        
+        const finalCategory = this.newMedicationForm.category === 'other' 
+          ? this.newMedicationForm.customCategory 
+          : this.newMedicationForm.category;
+        
+        const newMedication = {
+          name: this.newMedicationForm.name,
+          unitType: this.newMedicationForm.unitType,
+          unitDescription: this.newMedicationForm.unitDescription || null,
+          category: finalCategory || null,
+          description: this.newMedicationForm.description || null
+        };
+        
+        const response = await axios.post('/api/medications', newMedication);
+        
+        // Select the newly created medication
+        if (this.currentMedicationItem) {
+          this.selectMedication(this.currentMedicationItem, response.data);
+        }
+        
+        // Close modal
+        this.createMedicationModal.hide();
+        
+        // Reset form
+        this.newMedicationForm = {
+          name: '',
+          unitType: '',
+          unitDescription: '',
+          category: '',
+          customCategory: '',
+          description: ''
+        };
+        this.currentMedicationItem = null;
+        
+        console.log('New medication added to database:', response.data);
+        alert('Medication successfully added to the database!');
+        
+      } catch (error) {
+        console.error('Error creating new medication:', error);
+        const errorMessage = error.response?.data?.message || 'Error adding medication to database. Please try again.';
+        alert(errorMessage);
+      }
+    },
+    
     onPrescriptionGenerated(prescriptionData) {
       // Here you would typically make an API call to save the prescription
       console.log('Prescription generated:', prescriptionData);
@@ -877,7 +1251,7 @@ export default {
       if (queueNumber.length === 3) return '0' + queueNumber;
       if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
       return queueNumber;
-    }
+          }
   },
   watch: {
     // Whenever familyPatients changes, default all selected for MC
@@ -950,6 +1324,9 @@ export default {
 
     // Initialize visit details modal
     this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
+    
+    // Initialize with one empty medication row
+    this.addMedicationRow();
   }
 }
 </script>
@@ -1084,6 +1461,81 @@ export default {
 }
 
 
+
+/* Medication Prescription Styling */
+.medication-row {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6 !important;
+  border-radius: 12px;
+  position: relative;
+}
+
+.medication-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.suggestions-header {
+  padding: 0.5rem 0.75rem;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  font-size: 0.85rem;
+}
+
+.suggestion-item {
+  padding: 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f3f4;
+  transition: all 0.2s ease;
+}
+
+.suggestion-item:hover,
+.suggestion-highlighted {
+  background-color: #e3f2fd;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-main {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.suggestion-create-new {
+  background-color: #f0f9f0;
+  border-top: 2px solid #28a745;
+}
+
+.suggestion-create-new:hover {
+  background-color: #e8f5e8;
+}
+
+.suggestion-create-new .suggestion-main {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.medication-row .btn-outline-danger {
+  border: 1px solid #dc3545;
+  color: #dc3545;
+}
+
+.medication-row .btn-outline-danger:hover {
+  background: #dc3545;
+  color: white;
+}
 
 /* Visit Details Modal Styling */
 .visit-details-modal {

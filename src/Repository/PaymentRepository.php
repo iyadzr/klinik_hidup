@@ -92,4 +92,46 @@ class PaymentRepository extends ServiceEntityRepository
             'paymentMethods' => $methodPercentages
         ];
     }
+
+    public function findPaginated(int $page, int $limit, array $criteria = []): array
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->leftJoin('p.consultation', 'c')
+            ->leftJoin('c.patient', 'patient')
+            ->leftJoin('c.doctor', 'doctor');
+
+        if (isset($criteria['start_date'])) {
+            $qb->andWhere('p.paymentDate >= :start_date')
+               ->setParameter('start_date', $criteria['start_date']);
+        }
+
+        if (isset($criteria['end_date'])) {
+            $qb->andWhere('p.paymentDate <= :end_date')
+               ->setParameter('end_date', $criteria['end_date']);
+        }
+
+        return $qb->orderBy('p.paymentDate', 'DESC')
+            ->setFirstResult(($page - 1) * $limit)
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function countFiltered(array $criteria = []): int
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->select('COUNT(p.id)');
+
+        if (isset($criteria['start_date'])) {
+            $qb->andWhere('p.paymentDate >= :start_date')
+               ->setParameter('start_date', $criteria['start_date']);
+        }
+
+        if (isset($criteria['end_date'])) {
+            $qb->andWhere('p.paymentDate <= :end_date')
+               ->setParameter('end_date', $criteria['end_date']);
+        }
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
 }

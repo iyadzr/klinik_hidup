@@ -1,8 +1,24 @@
 <template>
   <div class="queue-management">
     <div class="card">
-      <div class="card-header">
+      <div class="card-header d-flex justify-content-between align-items-center">
         <h4 class="mb-0">Queue List</h4>
+        <div class="d-flex gap-3 align-items-center">
+          <div class="d-flex align-items-center gap-2">
+            <label for="queueDate" class="form-label mb-0">Date:</label>
+            <input 
+              type="date" 
+              id="queueDate"
+              v-model="selectedDate" 
+              @change="loadQueueList"
+              class="form-control form-control-sm"
+              style="width: auto;"
+            >
+          </div>
+          <button @click="setToday" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-calendar-day"></i> Today
+          </button>
+        </div>
       </div>
       <div class="card-body">
         <div class="table-responsive">
@@ -66,6 +82,7 @@ export default {
       patients: [],
       doctors: [],
       queueList: [],
+      selectedDate: new Date().toISOString().split('T')[0], // Today's date
       newQueue: {
         patientId: '',
         doctorId: ''
@@ -168,7 +185,7 @@ export default {
     },
     async loadQueueList() {
       try {
-        const response = await axios.get('/api/queue');
+        const response = await axios.get(`/api/queue?date=${this.selectedDate}`);
         console.log('Queue API response:', response);
         
         if (response.data && Array.isArray(response.data)) {
@@ -182,6 +199,11 @@ export default {
         console.error('Error loading queue:', error);
         this.queueList = [];
       }
+    },
+    
+    setToday() {
+      this.selectedDate = new Date().toISOString().split('T')[0];
+      this.loadQueueList();
     },
     async addToQueue() {
       try {

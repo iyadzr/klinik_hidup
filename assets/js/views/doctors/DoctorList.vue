@@ -13,20 +13,18 @@
             <thead>
               <tr>
                 <th>Name</th>
-                
-                
+                <th>Email</th>
                 <th>Phone</th>
-                
+                <th>Specialization</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="doctor in doctors" :key="doctor.id">
                 <td>{{ doctor.name }}</td>
-                
-                
+                <td>{{ doctor.email }}</td>
                 <td>{{ doctor.phone }}</td>
-                
+                <td>{{ doctor.specialization }}</td>
                 <td>
                   <button class="btn btn-sm btn-info me-2" @click="editDoctor(doctor)">Edit</button>
                   <button class="btn btn-sm btn-danger" @click="deleteDoctor(doctor)">Delete</button>
@@ -50,16 +48,28 @@
             <form @submit.prevent="handleSubmit">
               <div class="mb-3">
                 <label class="form-label">Name</label>
-                <input type="text" class="form-control" v-model="form.name" required v-enter-submit>
+                <input type="text" class="form-control" v-model="form.name" required>
               </div>
               
-              
+              <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" v-model="form.email" required>
+              </div>
               
               <div class="mb-3">
                 <label class="form-label">Phone</label>
                 <input type="tel" class="form-control" v-model="form.phone" required>
               </div>
               
+              <div class="mb-3">
+                <label class="form-label">Specialization</label>
+                <input type="text" class="form-control" v-model="form.specialization" required placeholder="e.g., General Practice, Cardiology, etc.">
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label">License Number (Optional)</label>
+                <input type="text" class="form-control" v-model="form.licenseNumber">
+              </div>
               
               <div class="text-end">
                 <button type="button" class="btn btn-secondary me-2" @click="closeModal">Cancel</button>
@@ -85,7 +95,10 @@ export default {
       editingDoctor: null,
       form: {
         name: '',
-        phone: ''
+        email: '',
+        phone: '',
+        specialization: '',
+        licenseNumber: ''
       }
     };
   },
@@ -106,7 +119,10 @@ export default {
       this.editingDoctor = doctor;
       this.form = {
         name: doctor.name || '',
-        phone: doctor.phone || ''
+        email: doctor.email || '',
+        phone: doctor.phone || '',
+        specialization: doctor.specialization || '',
+        licenseNumber: doctor.licenseNumber || ''
       };
       this.showAddModal = true;
     },
@@ -128,7 +144,10 @@ export default {
         
         const response = await axios[method](endpoint, {
           name: this.form.name,
-          phone: this.form.phone
+          email: this.form.email,
+          phone: this.form.phone,
+          specialization: this.form.specialization,
+          licenseNumber: this.form.licenseNumber || null
         });
         console.log('Server response:', response.data);
         
@@ -147,7 +166,10 @@ export default {
       this.editingDoctor = null;
       this.form = {
         name: '',
-        phone: ''
+        email: '',
+        phone: '',
+        specialization: '',
+        licenseNumber: ''
       };
     }
   }

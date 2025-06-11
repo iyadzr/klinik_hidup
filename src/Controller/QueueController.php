@@ -22,9 +22,10 @@ class QueueController extends AbstractController
     }
 
     #[Route('', name: 'app_queue_list', methods: ['GET'])]
-    public function list(): JsonResponse
+    public function list(Request $request): JsonResponse
     {
-        $queues = $this->entityManager->getRepository(Queue::class)->findTodayQueue();
+        $date = $request->query->get('date', date('Y-m-d'));
+        $queues = $this->entityManager->getRepository(Queue::class)->findByDate($date);
         
         $queueData = [];
         foreach ($queues as $queue) {

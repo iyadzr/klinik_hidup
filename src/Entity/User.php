@@ -35,6 +35,24 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Assert\NotBlank]
     private ?string $name = null;
 
+    #[ORM\Column(type: 'json', nullable: true)]
+    private array $allowedPages = [];
+
+    #[ORM\Column]
+    private ?\DateTimeImmutable $createdAt = null;
+
+    #[ORM\Column]
+    private ?\DateTimeImmutable $updatedAt = null;
+
+    #[ORM\Column(type: 'boolean')]
+    private bool $isActive = true;
+
+    public function __construct()
+    {
+        $this->createdAt = new \DateTimeImmutable();
+        $this->updatedAt = new \DateTimeImmutable();
+    }
+
     public function getId(): ?int
     {
         return $this->id;
@@ -104,6 +122,51 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setName(string $name): static
     {
         $this->name = $name;
+        $this->updatedAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function getAllowedPages(): array
+    {
+        return $this->allowedPages ?? [];
+    }
+
+    public function setAllowedPages(array $allowedPages): static
+    {
+        $this->allowedPages = $allowedPages;
+        $this->updatedAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function hasPageAccess(string $page): bool
+    {
+        return in_array($page, $this->getAllowedPages()) || $this->hasRole('ROLE_SUPER_ADMIN');
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return in_array($role, $this->getRoles());
+    }
+
+    public function getCreatedAt(): ?\DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): ?\DateTimeImmutable
+    {
+        return $this->updatedAt;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->isActive;
+    }
+
+    public function setIsActive(bool $isActive): static
+    {
+        $this->isActive = $isActive;
+        $this->updatedAt = new \DateTimeImmutable();
         return $this;
     }
 }
