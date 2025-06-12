@@ -33,6 +33,9 @@ class Queue
     #[ORM\Column(type: "integer")]
     private ?int $registrationNumber = null;
 
+    #[ORM\Column(type: "text", nullable: true)]
+    private ?string $metadata = null;
+
     public function getRegistrationNumber(): ?int
     {
         return $this->registrationNumber;
@@ -102,5 +105,36 @@ class Queue
     {
         $this->queueNumber = $queueNumber;
         return $this;
+    }
+
+    public function getMetadata(): ?string
+    {
+        return $this->metadata;
+    }
+
+    public function setMetadata(?string $metadata): self
+    {
+        $this->metadata = $metadata;
+        return $this;
+    }
+
+    public function getMetadataArray(): ?array
+    {
+        if ($this->metadata === null) {
+            return null;
+        }
+        return json_decode($this->metadata, true);
+    }
+
+    public function isGroupConsultation(): bool
+    {
+        $metadata = $this->getMetadataArray();
+        return $metadata && isset($metadata['isGroupConsultation']) && $metadata['isGroupConsultation'] === true;
+    }
+
+    public function getGroupId(): ?string
+    {
+        $metadata = $this->getMetadataArray();
+        return $metadata['groupId'] ?? null;
     }
 }

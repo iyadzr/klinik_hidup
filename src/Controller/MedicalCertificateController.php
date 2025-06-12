@@ -21,6 +21,33 @@ class MedicalCertificateController extends AbstractController
         $this->entityManager = $entityManager;
     }
 
+    #[Route('/next-number', name: 'app_medical_certificate_next_number', methods: ['GET'])]
+    public function getNextNumber(): JsonResponse
+    {
+        try {
+            // Get the next MC ID by finding the highest current ID and adding 1
+            $lastMC = $this->entityManager
+                ->getRepository(MedicalCertificate::class)
+                ->createQueryBuilder('mc')
+                ->select('MAX(mc.id) as maxId')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            $nextNumber = ($lastMC ?? 0) + 1;
+            
+            // Format as 6-digit running number (e.g., 426741, 426742, etc.)
+            $runningNumber = str_pad($nextNumber + 426740, 6, '0', STR_PAD_LEFT);
+            
+            return new JsonResponse([
+                'runningNumber' => $runningNumber
+            ]);
+        } catch (\Exception $e) {
+            return new JsonResponse([
+                'runningNumber' => '426741' // Fallback number
+            ]);
+        }
+    }
+
     #[Route('', name: 'app_medical_certificate_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {

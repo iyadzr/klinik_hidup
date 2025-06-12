@@ -97,8 +97,9 @@ class ConsultationController extends AbstractController
                 $consultation->setDoctor($doctor);
             }
             
-            // Set consultation date to now if not provided
-            $consultation->setConsultationDate(new \DateTime());
+            // Set consultation date to now in MYT timezone
+            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
+            $consultation->setConsultationDate(new \DateTime('now', $myt));
             
             // Set all fields from the request data
             if (isset($data['symptoms'])) $consultation->setSymptoms($data['symptoms']);
@@ -159,13 +160,37 @@ class ConsultationController extends AbstractController
 
         $history = [];
         foreach ($consultations as $consultation) {
+            // Parse medications if it's stored as JSON string
+            $medications = $consultation->getMedications();
+            $parsedMedications = [];
+            if ($medications) {
+                $decoded = json_decode($medications, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $parsedMedications = $decoded;
+                }
+            }
+
             $history[] = [
                 'id' => $consultation->getId(),
                 'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d\TH:i'),
                 'diagnosis' => $consultation->getDiagnosis(),
-                'medications' => $consultation->getMedications(),
+                'medications' => $parsedMedications, // Parsed medications array
                 'notes' => $consultation->getNotes(),
+                'symptoms' => $consultation->getSymptoms(),
+                'treatment' => $consultation->getTreatment(),
                 'followUpPlan' => $consultation->getFollowUpPlan(),
+                'consultationFee' => $consultation->getConsultationFee(),
+                'medicinesFee' => $consultation->getMedicinesFee(),
+                'totalAmount' => $consultation->getTotalAmount(),
+                'isPaid' => $consultation->getIsPaid(),
+                'status' => $consultation->getIsPaid() ? 'Paid' : 'Unpaid',
+                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+                'hasMedicalCertificate' => $consultation->getHasMedicalCertificate() ?? false,
+                'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
+                'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
+                'mcNotes' => method_exists($consultation, 'getMcNotes') ? $consultation->getMcNotes() : null,
+                'mcNumber' => method_exists($consultation, 'getMcNumber') ? $consultation->getMcNumber() : null,
+                'queueNumber' => method_exists($consultation, 'getQueueNumber') ? $consultation->getQueueNumber() : null,
                 'doctor' => [
                     'id' => $consultation->getDoctor()->getId(),
                     'name' => $consultation->getDoctor()->getName()
@@ -190,6 +215,20 @@ class ConsultationController extends AbstractController
             $patient = $consultation->getPatient();
             $doctor = $consultation->getDoctor();
 
+            // Get prescribed medications
+            $prescribedMedications = $entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->findBy(['consultation' => $consultation]);
+
+            $medicationsArray = [];
+            foreach ($prescribedMedications as $prescribedMed) {
+                $medicationsArray[] = [
+                    'name' => $prescribedMed->getMedication()->getName(),
+                    'quantity' => $prescribedMed->getQuantity(),
+                    'unitType' => $prescribedMed->getMedication()->getUnitType(),
+                    'instructions' => $prescribedMed->getInstructions()
+                ];
+            }
+
             $data[] = [
                 'id' => $consultation->getId(),
                 'patientId' => $patient->getId(),
@@ -200,10 +239,15 @@ class ConsultationController extends AbstractController
                 'symptoms' => $consultation->getSymptoms(),
                 'diagnosis' => $consultation->getDiagnosis(),
                 'treatment' => $consultation->getTreatment(),
+                'notes' => $consultation->getNotes(), // Remarks field
+                'remarks' => $consultation->getNotes(), // Alternative field name
+                'medications' => $consultation->getMedications(), // Legacy text field
+                'prescribedMedications' => $medicationsArray, // Structured medications
                 'consultationFee' => $consultation->getConsultationFee(),
                 'medicinesFee' => $consultation->getMedicinesFee(),
                 'totalAmount' => $consultation->getTotalAmount(),
                 'isPaid' => $consultation->getIsPaid(),
+                'status' => $consultation->getIsPaid() ? 'Paid' : 'Unpaid',
                 'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null
             ];
         }
@@ -244,10 +288,12 @@ class ConsultationController extends AbstractController
     #[Route('/{id}/payment', name: 'app_consultation_payment', methods: ['POST'])]
     public function updatePaymentStatus(
         int $id,
+        Request $request,
         EntityManagerInterface $entityManager,
         LoggerInterface $logger
     ): JsonResponse {
         try {
+            $data = json_decode($request->getContent(), true);
             $consultation = $entityManager->getRepository(Consultation::class)->find($id);
             
             if (!$consultation) {
@@ -259,7 +305,21 @@ class ConsultationController extends AbstractController
             }
             
             $consultation->setIsPaid(true);
-            $consultation->setPaidAt(new \DateTime());
+            
+            // Set payment date in MYT timezone
+            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
+            $consultation->setPaidAt(new \DateTime('now', $myt));
+            
+            // Store payment method if provided
+            if (isset($data['paymentMethod'])) {
+                // You might want to add a paymentMethod field to the Consultation entity
+                // For now, we'll just log it
+                $logger->info('Payment processed', [
+                    'consultation_id' => $id,
+                    'payment_method' => $data['paymentMethod'],
+                    'amount' => $consultation->getTotalAmount()
+                ]);
+            }
             
             $entityManager->flush();
             

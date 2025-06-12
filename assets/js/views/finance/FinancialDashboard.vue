@@ -183,7 +183,19 @@ export default {
     },
 
     formatDate(dateString) {
-      return new Date(dateString).toLocaleDateString();
+      if (!dateString) return 'N/A';
+      try {
+        const dateObj = new Date(dateString);
+        return dateObj.toLocaleDateString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Invalid Date';
+      }
     }
   }
 };

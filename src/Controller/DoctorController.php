@@ -63,8 +63,7 @@ class DoctorController extends AbstractController
 
         $doctor = new Doctor();
         $doctor->setName($data['name']);
-
-        $doctor->setEmail($data['email']);
+        $doctor->setEmail($data['email'] ?? ''); // Default empty email
         $doctor->setPhone($data['phone']);
         $doctor->setSpecialization($data['specialization']);
         if (isset($data['licenseNumber'])) {

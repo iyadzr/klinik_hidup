@@ -78,7 +78,8 @@ class Consultation
 
     public function __construct()
     {
-        $this->createdAt = new \DateTime();
+        $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
+        $this->createdAt = new \DateTime('now', $myt);
     }
 
     public function getId(): ?int

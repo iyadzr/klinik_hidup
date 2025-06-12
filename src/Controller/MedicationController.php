@@ -135,6 +135,30 @@ class MedicationController extends AbstractController
         ]);
     }
 
+    #[Route('/{id}', name: 'api_medication_delete', methods: ['DELETE'])]
+    public function delete(int $id): JsonResponse
+    {
+        $medication = $this->medicationRepository->find($id);
+
+        if (!$medication) {
+            return new JsonResponse(['error' => 'Medication not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Check if medication is being used in prescriptions
+        $prescriptions = $this->prescribedMedicationRepository->findBy(['medication' => $medication]);
+        if (count($prescriptions) > 0) {
+            return new JsonResponse([
+                'error' => 'Cannot delete medication that is used in prescriptions',
+                'message' => 'This medication is referenced in ' . count($prescriptions) . ' prescription(s)'
+            ], Response::HTTP_CONFLICT);
+        }
+
+        $this->entityManager->remove($medication);
+        $this->entityManager->flush();
+
+        return new JsonResponse(['message' => 'Medication deleted successfully']);
+    }
+
     #[Route('/usage-stats', name: 'api_medication_usage_stats', methods: ['GET'])]
     public function usageStats(Request $request): JsonResponse
     {

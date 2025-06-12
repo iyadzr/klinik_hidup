@@ -55,6 +55,64 @@
       </div>
       -->
     </div>
+
+    <!-- Admin Section -->
+    <div class="row mt-4">
+      <div class="col-12">
+        <h3 class="mb-3">
+          <i class="fas fa-tools text-warning me-2"></i>
+          Administration
+        </h3>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-warning">
+          <div class="card-body">
+            <h5 class="card-title text-warning d-flex align-items-center gap-2">
+              <i class="fas fa-pills"></i> 
+              Medication Management
+            </h5>
+            <p class="card-text">
+              Manage medications, unit types, categories, and dosages in the system.
+            </p>
+            <router-link to="/admin/medications" class="btn btn-warning">
+              <i class="fas fa-pills me-2"></i>Manage Medications
+            </router-link>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-danger">
+          <div class="card-body">
+            <h5 class="card-title text-danger d-flex align-items-center gap-2">
+              <i class="fas fa-users"></i> 
+              User Management
+            </h5>
+            <p class="card-text">
+              Manage system users, roles, permissions, and access control.
+            </p>
+            <router-link to="/admin/users" class="btn btn-danger">
+              <i class="fas fa-users me-2"></i>Manage Users
+            </router-link>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border-info">
+          <div class="card-body">
+            <h5 class="card-title text-info d-flex align-items-center gap-2">
+              <i class="fas fa-cog"></i> 
+              System Settings
+            </h5>
+            <p class="card-text">
+              Configure clinic settings, backup data, and system preferences.
+            </p>
+            <router-link to="/admin/settings" class="btn btn-info">
+              <i class="fas fa-cog me-2"></i>Manage Settings
+            </router-link>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

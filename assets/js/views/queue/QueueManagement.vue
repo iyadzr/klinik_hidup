@@ -78,11 +78,23 @@ import axios from 'axios';
 export default {
   name: 'QueueManagement',
   data() {
+    // Helper function to get today's date in MYT
+    const getTodayInMYT = () => {
+      const now = new Date();
+      const options = {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      };
+      return now.toLocaleDateString('en-CA', options); // en-CA gives YYYY-MM-DD format
+    };
+
     return {
       patients: [],
       doctors: [],
       queueList: [],
-      selectedDate: new Date().toISOString().split('T')[0], // Today's date
+      selectedDate: getTodayInMYT(), // Today's date in MYT
       newQueue: {
         patientId: '',
         doctorId: ''
@@ -201,8 +213,20 @@ export default {
       }
     },
     
+    getTodayInMYT() {
+      // Create a new date in MYT timezone and format as YYYY-MM-DD
+      const now = new Date();
+      const options = {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      };
+      const mytDateString = now.toLocaleDateString('en-CA', options); // en-CA gives YYYY-MM-DD format
+      return mytDateString;
+    },
     setToday() {
-      this.selectedDate = new Date().toISOString().split('T')[0];
+      this.selectedDate = this.getTodayInMYT();
       this.loadQueueList();
     },
     async addToQueue() {

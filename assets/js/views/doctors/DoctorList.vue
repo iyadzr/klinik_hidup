@@ -13,7 +13,6 @@
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Email</th>
                 <th>Phone</th>
                 <th>Specialization</th>
                 <th>Actions</th>
@@ -22,7 +21,6 @@
             <tbody>
               <tr v-for="doctor in doctors" :key="doctor.id">
                 <td>{{ doctor.name }}</td>
-                <td>{{ doctor.email }}</td>
                 <td>{{ doctor.phone }}</td>
                 <td>{{ doctor.specialization }}</td>
                 <td>
@@ -37,8 +35,8 @@
     </div>
 
     <!-- Add/Edit Doctor Modal -->
-    <div class="modal" :class="{ 'd-block': showAddModal }" tabindex="-1" v-if="showAddModal">
-      <div class="modal-dialog">
+    <div class="modal" :class="{ 'd-block': showAddModal }" tabindex="-1" v-if="showAddModal" style="padding-top: 80px;">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">{{ editingDoctor ? 'Edit Doctor' : 'Add Doctor' }}</h5>
@@ -52,18 +50,23 @@
               </div>
               
               <div class="mb-3">
-                <label class="form-label">Email</label>
-                <input type="email" class="form-control" v-model="form.email" required>
-              </div>
-              
-              <div class="mb-3">
                 <label class="form-label">Phone</label>
                 <input type="tel" class="form-control" v-model="form.phone" required>
               </div>
               
               <div class="mb-3">
                 <label class="form-label">Specialization</label>
-                <input type="text" class="form-control" v-model="form.specialization" required placeholder="e.g., General Practice, Cardiology, etc.">
+                <select class="form-select" v-model="form.specialization" required>
+                  <option value="General Practice (GP)">General Practice (GP)</option>
+                  <option value="Internal Medicine">Internal Medicine</option>
+                  <option value="Pediatrics">Pediatrics</option>
+                  <option value="Cardiology">Cardiology</option>
+                  <option value="Dermatology">Dermatology</option>
+                  <option value="Orthopedics">Orthopedics</option>
+                  <option value="Gynecology">Gynecology</option>
+                  <option value="Psychiatry">Psychiatry</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               
               <div class="mb-3">
@@ -95,9 +98,8 @@ export default {
       editingDoctor: null,
       form: {
         name: '',
-        email: '',
         phone: '',
-        specialization: '',
+        specialization: 'General Practice (GP)',
         licenseNumber: ''
       }
     };
@@ -119,9 +121,8 @@ export default {
       this.editingDoctor = doctor;
       this.form = {
         name: doctor.name || '',
-        email: doctor.email || '',
         phone: doctor.phone || '',
-        specialization: doctor.specialization || '',
+        specialization: doctor.specialization || 'General Practice (GP)',
         licenseNumber: doctor.licenseNumber || ''
       };
       this.showAddModal = true;
@@ -144,7 +145,6 @@ export default {
         
         const response = await axios[method](endpoint, {
           name: this.form.name,
-          email: this.form.email,
           phone: this.form.phone,
           specialization: this.form.specialization,
           licenseNumber: this.form.licenseNumber || null
@@ -166,9 +166,8 @@ export default {
       this.editingDoctor = null;
       this.form = {
         name: '',
-        email: '',
         phone: '',
-        specialization: '',
+        specialization: 'General Practice (GP)',
         licenseNumber: ''
       };
     }

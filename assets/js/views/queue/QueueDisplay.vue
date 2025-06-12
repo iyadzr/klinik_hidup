@@ -48,28 +48,7 @@
       </div>
     </div>
 
-    <!-- Bottom Status Bar -->
-    <div class="status-bar position-fixed bottom-0 w-100 bg-dark text-white py-2">
-      <div class="container-fluid">
-        <div class="row align-items-center">
-          <div class="col-md-3">
-            <small>Last Updated: {{ lastUpdated }}</small>
-          </div>
-          <div class="col-md-6 text-center">
-            <small>
-              Total Today: {{ totalToday }} | 
-              Completed: {{ completedToday }} | 
-              Waiting: {{ waitingCount }}
-            </small>
-          </div>
-          <div class="col-md-3 text-end">
-            <button class="btn btn-sm btn-outline-light" @click="refreshData">
-              <i class="fas fa-sync-alt"></i> Refresh
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+
   </div>
 </template>
 

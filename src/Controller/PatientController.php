@@ -85,77 +85,56 @@ class PatientController extends AbstractController
     #[Route('/search', name: 'app_patient_search', methods: ['GET'])]
     public function search(Request $request, EntityManagerInterface $entityManager): JsonResponse
     {
-        $query = $request->query->get('query', '');
-        
-        if (empty($query)) {
-            return $this->json([]);
-        }
-        
-        $qb = $entityManager->createQueryBuilder();
-        $qb->select('p')
-           ->from(Patient::class, 'p')
-           ->where('p.name LIKE :query')
-           ->orWhere('p.nric LIKE :query')
-           ->orWhere('p.phone LIKE :query')
-           ->setParameter('query', '%' . $query . '%')
-           ->setMaxResults(10);
-        
-        $patients = $qb->getQuery()->getResult();
-        
-        // Also search for registration numbers in the Queue entity
-        if (is_numeric($query)) {
-            $queueQb = $entityManager->createQueryBuilder();
-            $queueQb->select('q')
-                   ->from('App\\Entity\\Queue', 'q')
-                   ->where('q.registrationNumber = :regNum')
-                   ->setParameter('regNum', (int)$query);
+        try {
+            $query = trim($request->query->get('query', ''));
             
-            $queues = $queueQb->getQuery()->getResult();
-            
-            foreach($queues as $queue) {
-                $patient = $queue->getPatient();
-                if ($patient) {
-                    // Check if this patient is already in our results
-                    $found = false;
-                    foreach ($patients as $p) {
-                        if ($p->getId() === $patient->getId()) {
-                            $found = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!$found) {
-                        $patients[] = $patient;
-                    }
-                }
+            if (empty($query)) {
+                return $this->json([]);
             }
-        }
-        
-        // Format the patient data for the response
-        $result = array_map(function($patient) use ($entityManager) {
-            // Try to find registration number
-            $queue = $entityManager->getRepository('App\\Entity\\Queue')->findOneBy(['patient' => $patient]);
-            $registrationNumber = $queue ? $queue->getRegistrationNumber() : null;
             
-            return [
-                'id' => $patient->getId(),
-                'name' => $patient->getName(),
-                'nric' => $patient->getNric(),
-                'email' => $patient->getEmail(),
-                'phone' => $patient->getPhone(),
-                'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
-                'gender' => $patient->getGender(),
-                'address' => $patient->getAddress(),
-                'company' => $patient->getCompany(),
-                'preInformedIllness' => $patient->getPreInformedIllness(),
-                'medicalHistory' => $patient->getMedicalHistory(),
-                'registrationNumber' => $registrationNumber
-            ];
-        }, $patients);
-        
-        return $this->json($result);
+            $searchPattern = '%' . $query . '%';
+            
+            // Optimized database query with proper indexing
+            $qb = $entityManager->createQueryBuilder();
+            $qb->select('p')
+               ->from(Patient::class, 'p')
+               ->where('p.name LIKE :query')
+               ->orWhere('p.phone LIKE :query')
+               ->orWhere('p.nric LIKE :query')
+               ->setParameter('query', $searchPattern)
+               ->setMaxResults(50); // Limit results for performance
+            
+            $patients = $qb->getQuery()->getResult();
+            
+            // Format results
+            $result = array_map(function($patient) {
+                return [
+                    'id' => $patient->getId(),
+                    'name' => $patient->getName(),
+                    'nric' => $patient->getNric(),
+                    'email' => $patient->getEmail(),
+                    'phone' => $patient->getPhone(),
+                    'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                    'gender' => $patient->getGender(),
+                    'address' => $patient->getAddress(),
+                    'company' => $patient->getCompany(),
+                    'preInformedIllness' => $patient->getPreInformedIllness(),
+                    'medicalHistory' => $patient->getMedicalHistory(),
+                    'registrationNumber' => null
+                ];
+            }, $patients);
+            
+            return $this->json($result);
+            
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Search failed',
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ], 500);
+        }
     }
-
 
     #[Route('', name: 'app_patient_create', methods: ['POST'])]
     public function create(Request $request, EntityManagerInterface $entityManager): JsonResponse

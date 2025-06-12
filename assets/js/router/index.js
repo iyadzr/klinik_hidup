@@ -14,6 +14,9 @@ import AppointmentDashboard from '../views/appointments/AppointmentDashboard.vue
 import PrescriptionForm from '../views/prescriptions/PrescriptionForm.vue';
 import UserProfile from '../views/UserProfile.vue';
 import FinancialDashboard from '../views/finance/FinancialDashboard.vue';
+import MedicationAdmin from '../views/admin/MedicationAdmin.vue';
+import UserAdmin from '../views/admin/UserAdmin.vue';
+import SystemSettings from '../views/admin/SystemSettings.vue';
 
 const routes = [
   {
@@ -103,6 +106,24 @@ const routes = [
     name: 'Financial',
     component: FinancialDashboard,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin/medications',
+    name: 'MedicationAdmin',
+    component: MedicationAdmin,
+    meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: '/admin/users',
+    name: 'UserAdmin',
+    component: UserAdmin,
+    meta: { requiresAuth: true, role: 'admin' }
+  },
+  {
+    path: '/admin/settings',
+    name: 'SystemSettings',
+    component: SystemSettings,
+    meta: { requiresAuth: true, role: 'admin' }
   },
   {
     path: '/login',

@@ -9,10 +9,24 @@
     <div class="row mb-3">
       <div class="col-md-6">
         <div class="input-group">
-          <input type="text" class="form-control" placeholder="Search by name, NRIC, or phone" v-model="searchQuery" @keyup.enter="searchPatients">
-          <button class="btn btn-outline-primary" @click="searchPatients">Search</button>
+          <input 
+            type="text" 
+            class="form-control" 
+            placeholder="Search by name, NRIC, or phone" 
+            v-model="searchQuery" 
+            @keyup.enter="searchPatients"
+            @input="onSearchInput"
+          >
+          <button class="btn btn-outline-primary" @click="searchPatients" :disabled="loading">
+            <i v-if="loading" class="fas fa-spinner fa-spin me-1"></i>
+            Search
+          </button>
           <button class="btn btn-outline-secondary" @click="clearSearch" v-if="searchQuery">Clear</button>
         </div>
+        <small v-if="searchQuery && !loading" class="text-muted mt-1 d-block">
+          <i class="fas fa-filter me-1"></i>
+          Showing results for "{{ searchQuery }}" ({{ patients.length }} found)
+        </small>
       </div>
     </div>
     <!-- Patient List -->
@@ -43,14 +57,35 @@
                 <td>{{ patient.nric || 'N/A' }}</td>
                 <td>{{ patient.phone }}</td>
                 <td>{{ patient.gender === 'M' ? 'Male' : patient.gender === 'F' ? 'Female' : 'N/A' }}</td>
-                <td>{{ patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString() : 'N/A' }}</td>
+                                    <td>{{ formatDateOfBirth(patient.dateOfBirth) }}</td>
                 <td>
-                  <button class="btn btn-sm btn-info me-2" @click="editPatient(patient)">Edit</button>
-                  <button class="btn btn-sm btn-danger" @click="deletePatient(patient)">Delete</button>
+                  <button class="btn btn-sm btn-secondary me-1" @click="showVisitHistory(patient)" title="View Visit History">
+                    <i class="fas fa-history"></i>
+                  </button>
+                  <button class="btn btn-sm btn-info me-1" @click="editPatient(patient)" title="Edit Patient">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="btn btn-sm btn-danger" @click="deletePatient(patient)" title="Delete Patient">
+                    <i class="fas fa-trash"></i>
+                  </button>
                 </td>
               </tr>
               <tr v-if="patients.length === 0">
-                <td colspan="7" class="text-center">No patients found</td>
+                <td colspan="7" class="text-center">
+                  <div class="py-4">
+                    <i class="fas fa-search fa-2x text-muted mb-2"></i>
+                    <div v-if="searchQuery">
+                      No patients found matching "{{ searchQuery }}"
+                      <br>
+                      <small class="text-muted">Try a different search term or clear the search to see all patients</small>
+                    </div>
+                    <div v-else>
+                      No patients found
+                      <br>
+                      <small class="text-muted">Start by adding a new patient</small>
+                    </div>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -158,6 +193,289 @@
       </div>
     </div>
     <div class="modal-backdrop fade show" v-if="showAddModal"></div>
+
+    <!-- Visit History Modal -->
+    <div class="modal fade" :class="{ show: showVisitHistoryModal }" tabindex="-1" v-if="showVisitHistoryModal">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-history me-2"></i>
+              Visit History - {{ selectedPatientForHistory?.name }}
+            </h5>
+            <button type="button" class="btn-close btn-close-white" @click="closeVisitHistoryModal"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Patient Summary -->
+            <div class="row mb-4">
+              <div class="col-12">
+                <div class="card bg-light">
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col-md-3">
+                        <strong>Name:</strong> {{ selectedPatientForHistory?.name }}
+                      </div>
+                      <div class="col-md-3">
+                        <strong>NRIC:</strong> {{ selectedPatientForHistory?.nric || 'N/A' }}
+                      </div>
+                      <div class="col-md-3">
+                        <strong>Phone:</strong> {{ selectedPatientForHistory?.phone }}
+                      </div>
+                      <div class="col-md-3">
+                        <strong>Age:</strong> {{ calculateAge(selectedPatientForHistory?.dateOfBirth) }} years
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Visit History -->
+            <div v-if="loadingVisitHistory" class="text-center py-4">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading visit history...</span>
+              </div>
+              <p class="mt-2">Loading visit history...</p>
+            </div>
+
+            <div v-else-if="visitHistory.length === 0" class="text-center py-5">
+              <i class="fas fa-file-medical-alt fa-3x text-muted mb-3"></i>
+              <h5 class="text-muted">No Visit History</h5>
+              <p class="text-muted">This patient has not visited the clinic yet.</p>
+            </div>
+
+            <div v-else>
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0">Total Visits: <span class="badge bg-primary">{{ visitHistory.length }}</span></h6>
+                <small class="text-muted">Click on any visit to view detailed information</small>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead class="table-dark">
+                    <tr>
+                      <th>Date</th>
+                      <th>Doctor</th>
+                      <th>Diagnosis</th>
+                      <th>Status</th>
+                      <th>Fees</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="visit in visitHistory" :key="visit.id" class="cursor-pointer">
+                      <td>
+                        <strong>{{ formatDate(visit.consultationDate) }}</strong>
+                        <br>
+                        <small class="text-muted">{{ formatTime(visit.consultationDate) }}</small>
+                      </td>
+                      <td>
+                        <div class="d-flex align-items-center">
+                          <i class="fas fa-user-md text-primary me-2"></i>
+                          Dr. {{ visit.doctor?.name || 'Unknown' }}
+                        </div>
+                      </td>
+                      <td>
+                        <span v-if="visit.diagnosis" class="badge bg-info">{{ visit.diagnosis }}</span>
+                        <span v-else class="text-muted">No diagnosis</span>
+                      </td>
+                      <td>
+                        <span :class="getStatusBadgeClass(visit.status)">
+                          {{ visit.status || 'Completed' }}
+                        </span>
+                      </td>
+                      <td>
+                        <div v-if="visit.consultationFee || visit.medicinesFee">
+                          <div v-if="visit.consultationFee">
+                            <small class="text-muted">Consultation:</small> RM{{ visit.consultationFee }}
+                          </div>
+                          <div v-if="visit.medicinesFee">
+                            <small class="text-muted">Medicines:</small> RM{{ visit.medicinesFee }}
+                          </div>
+                          <div class="fw-bold">
+                            <small class="text-muted">Total:</small> RM{{ (parseFloat(visit.consultationFee || 0) + parseFloat(visit.medicinesFee || 0)).toFixed(2) }}
+                          </div>
+                        </div>
+                        <span v-else class="text-muted">No fee data</span>
+                      </td>
+                      <td>
+                        <button class="btn btn-sm btn-primary" @click="viewVisitDetails(visit)">
+                          <i class="fas fa-eye me-1"></i>Details
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeVisitHistoryModal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop fade show" v-if="showVisitHistoryModal"></div>
+
+    <!-- Visit Details Modal -->
+    <div class="modal fade" :class="{ show: showVisitDetailsModal }" tabindex="-1" v-if="showVisitDetailsModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-info text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-file-medical me-2"></i>
+              Visit Details - {{ formatDate(selectedVisit?.consultationDate) }}
+            </h5>
+            <button type="button" class="btn-close btn-close-white" @click="closeVisitDetailsModal"></button>
+          </div>
+          <div class="modal-body" v-if="selectedVisit">
+            <div class="row g-4">
+              <!-- Visit Information -->
+              <div class="col-md-6">
+                <div class="card h-100">
+                  <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Visit Information</h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="mb-2">
+                      <strong>Date & Time:</strong><br>
+                      {{ formatDate(selectedVisit.consultationDate) }} at {{ formatTime(selectedVisit.consultationDate) }}
+                    </div>
+                    <div class="mb-2">
+                      <strong>Doctor:</strong><br>
+                      Dr. {{ selectedVisit.doctor?.name || 'Unknown' }}
+                    </div>
+                    <div class="mb-2">
+                      <strong>Status:</strong><br>
+                      <span :class="getStatusBadgeClass(selectedVisit.status)">
+                        {{ selectedVisit.status || 'Completed' }}
+                      </span>
+                    </div>
+                    <div v-if="selectedVisit.queueNumber">
+                      <strong>Queue Number:</strong><br>
+                      {{ selectedVisit.queueNumber }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Medical Information -->
+              <div class="col-md-6">
+                <div class="card h-100">
+                  <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-stethoscope me-2"></i>Medical Information</h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="mb-3">
+                      <strong>Diagnosis:</strong><br>
+                      <span v-if="selectedVisit.diagnosis" class="badge bg-info">{{ selectedVisit.diagnosis }}</span>
+                      <span v-else class="text-muted">No diagnosis recorded</span>
+                    </div>
+                    <div>
+                      <strong>Notes:</strong><br>
+                      <div v-if="selectedVisit.notes" class="bg-light p-2 rounded">
+                        {{ selectedVisit.notes }}
+                      </div>
+                      <span v-else class="text-muted">No notes recorded</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Medications -->
+              <div class="col-12" v-if="selectedVisit.medications && selectedVisit.medications.length > 0">
+                <div class="card">
+                  <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-pills me-2"></i>Prescribed Medications</h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="table-responsive">
+                      <table class="table table-sm">
+                        <thead>
+                          <tr>
+                            <th>Medication</th>
+                            <th>Quantity</th>
+                            <th>Instructions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="(med, index) in selectedVisit.medications" :key="index">
+                            <td>
+                              <strong>{{ med.name }}</strong>
+                              <small v-if="med.category" class="text-muted d-block">({{ med.category }})</small>
+                            </td>
+                            <td>{{ med.quantity }} {{ med.unitType || 'units' }}</td>
+                            <td>{{ med.instructions || 'No instructions' }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Financial Information -->
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-money-bill me-2"></i>Financial Summary</h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col-md-4">
+                        <div class="text-center">
+                          <h5 class="text-primary">RM{{ selectedVisit.consultationFee || '0.00' }}</h5>
+                          <small class="text-muted">Consultation Fee</small>
+                        </div>
+                      </div>
+                      <div class="col-md-4">
+                        <div class="text-center">
+                          <h5 class="text-info">RM{{ selectedVisit.medicinesFee || '0.00' }}</h5>
+                          <small class="text-muted">Medicines Fee</small>
+                        </div>
+                      </div>
+                      <div class="col-md-4">
+                        <div class="text-center">
+                          <h5 class="text-success">RM{{ (parseFloat(selectedVisit.consultationFee || 0) + parseFloat(selectedVisit.medicinesFee || 0)).toFixed(2) }}</h5>
+                          <small class="text-muted">Total Amount</small>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Medical Certificate -->
+              <div class="col-12" v-if="selectedVisit.mcStartDate || selectedVisit.mcEndDate">
+                <div class="card">
+                  <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-certificate me-2"></i>Medical Certificate</h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="row">
+                      <div class="col-md-6" v-if="selectedVisit.mcStartDate">
+                        <strong>Start Date:</strong> {{ formatDate(selectedVisit.mcStartDate) }}
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcEndDate">
+                        <strong>End Date:</strong> {{ formatDate(selectedVisit.mcEndDate) }}
+                      </div>
+                      <div class="col-12" v-if="selectedVisit.mcNotes">
+                        <strong>MC Notes:</strong><br>
+                        <div class="bg-light p-2 rounded">{{ selectedVisit.mcNotes }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeVisitDetailsModal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop fade show" v-if="showVisitDetailsModal"></div>
   </div>
 </template>
 
@@ -188,11 +506,27 @@ export default {
         company: '',
         preInformedIllness: '',
         medicalHistory: ''
-      }
+      },
+      // Visit History Modal
+      showVisitHistoryModal: false,
+      selectedPatientForHistory: null,
+      visitHistory: [],
+      loadingVisitHistory: false,
+      // Visit Details Modal
+      showVisitDetailsModal: false,
+      selectedVisit: null,
+      // Search functionality
+      searchTimeout: null
     };
   },
   created() {
     this.loadPatients();
+  },
+  
+  beforeUnmount() {
+    if (this.searchTimeout) {
+      clearTimeout(this.searchTimeout);
+    }
   },
   methods: {
     async loadPatients() {
@@ -207,18 +541,49 @@ export default {
       }
     },
     async searchPatients() {
-      if (!this.searchQuery) {
+      const trimmedQuery = this.searchQuery ? this.searchQuery.trim() : '';
+      console.log('Search method called with query:', `"${this.searchQuery}"`, 'trimmed:', `"${trimmedQuery}"`);
+      
+      if (!trimmedQuery || trimmedQuery === '') {
+        console.log('Empty search query, loading all patients');
         this.loadPatients();
         return;
       }
+      
       this.loading = true;
       try {
+        console.log('Making search API call for:', trimmedQuery);
         const response = await axios.get('/api/patients/search', {
-          params: { query: this.searchQuery }
+          params: { query: trimmedQuery }
         });
-        this.patients = response.data;
+        console.log('Raw search API response:', response);
+        console.log('Response data:', response.data);
+        
+        // Handle debug response format
+        let patientsData;
+        if (response.data.debug && response.data.data !== undefined) {
+          console.log('Debug info from backend:', response.data.debug);
+          patientsData = response.data.data;
+        } else if (response.data.data !== undefined) {
+          patientsData = response.data.data;
+        } else {
+          patientsData = response.data;
+        }
+        
+        console.log('Processed patients data:', patientsData);
+        console.log('Search results count:', patientsData ? patientsData.length : 0);
+        
+        this.patients = Array.isArray(patientsData) ? patientsData : [];
+        console.log('Patients array updated, length:', this.patients.length);
       } catch (error) {
         console.error('Failed to search patients:', error);
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+        }
+        // Reset to all patients on error
+        console.log('Error occurred, loading all patients');
+        this.loadPatients();
       } finally {
         this.loading = false;
       }
@@ -226,6 +591,21 @@ export default {
     clearSearch() {
       this.searchQuery = '';
       this.loadPatients();
+    },
+    
+    onSearchInput() {
+      // Temporarily disabled auto-search for debugging
+      // Clear previous timeout
+      if (this.searchTimeout) {
+        clearTimeout(this.searchTimeout);
+      }
+      
+      // Only clear search if input is empty
+      if (!this.searchQuery || this.searchQuery.trim() === '') {
+        this.loadPatients();
+      }
+      
+      // Manual search only - user must click search button or press Enter
     },
     editPatient(patient) {
       this.editingPatient = patient;
@@ -312,6 +692,128 @@ export default {
         preInformedIllness: '',
         medicalHistory: ''
       };
+    },
+    formatDateOfBirth(dateOfBirth) {
+      if (!dateOfBirth) return 'N/A';
+      try {
+        const dateObj = new Date(dateOfBirth);
+        return dateObj.toLocaleDateString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Invalid Date';
+      }
+    },
+
+    // Visit History Methods
+    async showVisitHistory(patient) {
+      this.selectedPatientForHistory = patient;
+      this.showVisitHistoryModal = true;
+      await this.loadVisitHistory(patient.id);
+    },
+
+    async loadVisitHistory(patientId) {
+      this.loadingVisitHistory = true;
+      this.visitHistory = [];
+      
+      try {
+        const response = await axios.get(`/api/consultations/patient/${patientId}`);
+        this.visitHistory = response.data.map(visit => {
+          // Parse medications if it's a JSON string
+          let medications = [];
+          if (visit.medications) {
+            try {
+              medications = typeof visit.medications === 'string' 
+                ? JSON.parse(visit.medications) 
+                : visit.medications;
+            } catch (e) {
+              console.warn('Error parsing medications:', e);
+              medications = [];
+            }
+          }
+          
+          return {
+            ...visit,
+            medications: medications
+          };
+        });
+      } catch (error) {
+        console.error('Error loading visit history:', error);
+        this.visitHistory = [];
+      } finally {
+        this.loadingVisitHistory = false;
+      }
+    },
+
+    closeVisitHistoryModal() {
+      this.showVisitHistoryModal = false;
+      this.selectedPatientForHistory = null;
+      this.visitHistory = [];
+    },
+
+    viewVisitDetails(visit) {
+      this.selectedVisit = visit;
+      this.showVisitDetailsModal = true;
+    },
+
+    closeVisitDetailsModal() {
+      this.showVisitDetailsModal = false;
+      this.selectedVisit = null;
+    },
+
+    calculateAge(dateOfBirth) {
+      if (!dateOfBirth) return 0;
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return 'N/A';
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-MY', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+      } catch (error) {
+        return 'Invalid Date';
+      }
+    },
+
+    formatTime(dateString) {
+      if (!dateString) return 'N/A';
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('en-MY', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (error) {
+        return 'Invalid Time';
+      }
+    },
+
+    getStatusBadgeClass(status) {
+      const statusClasses = {
+        'completed': 'badge bg-success',
+        'in_progress': 'badge bg-warning text-dark',
+        'pending': 'badge bg-info',
+        'cancelled': 'badge bg-danger',
+        'waiting': 'badge bg-secondary'
+      };
+      return statusClasses[status?.toLowerCase()] || 'badge bg-success';
     }
   }
 };
@@ -329,5 +831,75 @@ export default {
 
 .modal {
   z-index: 1050;
+}
+
+/* Visit History Styling */
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+}
+
+.card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  font-weight: 600;
+}
+
+/* Action buttons styling */
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.btn-sm i {
+  font-size: 0.75rem;
+}
+
+/* Modal enhancements */
+.modal-xl {
+  max-width: 1200px;
+}
+
+.modal-header.bg-primary,
+.modal-header.bg-info {
+  border-bottom: none;
+}
+
+.btn-close-white {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+/* Badge styling */
+.badge {
+  font-size: 0.75em;
+}
+
+/* Financial summary styling */
+.text-center h5 {
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.bg-light {
+  background-color: #f8f9fa !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .modal-xl {
+    max-width: 95%;
+  }
+  
+  .btn-sm {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+  }
+  
+  .table-responsive {
+    font-size: 0.9rem;
+  }
 }
 </style>

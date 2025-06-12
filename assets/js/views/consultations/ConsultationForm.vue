@@ -13,6 +13,56 @@
     </div>
 
     <form @submit.prevent="saveConsultation" class="row g-4">
+      <!-- Group Consultation Toggle and Patient Selector -->
+      <div v-if="isGroupConsultation" class="col-12">
+        <div class="card border-info mb-4">
+          <div class="card-header bg-info text-white">
+            <h5 class="mb-0">
+              <i class="fas fa-users me-2"></i>
+              Group Consultation - Queue #{{ queueNumber }}
+            </h5>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-bold">Select Patient for Consultation:</label>
+                <select 
+                  class="form-select" 
+                  v-model="consultation.patientId" 
+                  @change="fetchPatientDetails"
+                  required
+                >
+                  <option value="">Choose patient to consult...</option>
+                  <option 
+                    v-for="patient in groupPatients" 
+                    :key="patient.id" 
+                    :value="patient.id"
+                  >
+                    {{ patient.name }} ({{ patient.relationship || 'N/A' }})
+                  </option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <div class="group-members-info">
+                  <label class="form-label fw-bold">Group Members ({{ groupPatients.length }}):</label>
+                  <div class="members-list">
+                    <span 
+                      v-for="(member, index) in groupPatients" 
+                      :key="member.id"
+                      class="badge me-2 mb-1"
+                      :class="member.id === consultation.patientId ? 'bg-primary' : 'bg-secondary'"
+                    >
+                      {{ member.name }}
+                      <small v-if="member.relationship" class="ms-1">({{ member.relationship }})</small>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Patient Information -->
       <div class="col-12 col-lg-8">
         <div class="card section-card mb-4">
@@ -20,6 +70,9 @@
             <h5 class="section-title mb-4">
               <i class="fas fa-user-injured text-primary me-2"></i>
               Patient Information
+              <span v-if="isGroupConsultation && selectedPatient" class="badge bg-info ms-2">
+                {{ selectedPatient.relationship || 'Group Member' }}
+              </span>
             </h5>
             <div class="row g-3">
               <div class="col-12" v-if="selectedPatient">
@@ -33,10 +86,7 @@
                         <small class="text-muted d-block">Name</small>
                         <span class="fw-bold">{{ selectedPatient?.name || selectedPatient?.displayName || 'N/A' }}</span>
                       </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Registration Number</small>
-                        <span>{{ selectedPatient?.registrationNumber || 'N/A' }}</span>
-                      </div>
+
                       <div class="col-md-6">
                         <small class="text-muted d-block">IC/Passport</small>
                         <span>{{ selectedPatient?.nric || selectedPatient?.ic || 'N/A' }}</span>
@@ -47,39 +97,19 @@
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Date of Birth</small>
-                        <span>{{ selectedPatient?.dateOfBirth ? new Date(selectedPatient.dateOfBirth).toLocaleDateString() : 'N/A' }}</span>
+                        <span>{{ formatDateOfBirth(selectedPatient?.dateOfBirth) }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Gender</small>
-                        <span>{{ selectedPatient?.gender || 'N/A' }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Race</small>
-                        <span>{{ selectedPatient?.race || 'N/A' }}</span>
+                        <span>{{ getFullGender(selectedPatient?.gender) }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Phone Number</small>
                         <span>{{ selectedPatient?.phoneNumber || selectedPatient?.phone || 'N/A' }}</span>
                       </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Email</small>
-                        <span>{{ selectedPatient?.email || 'N/A' }}</span>
-                      </div>
                       <div class="col-12">
                         <small class="text-muted d-block">Address</small>
                         <span>{{ selectedPatient?.address || 'N/A' }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Blood Type</small>
-                        <span>{{ selectedPatient?.bloodType || 'N/A' }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Allergies</small>
-                        <span>{{ selectedPatient?.allergies || 'None' }}</span>
-                      </div>
-                      <div class="col-12">
-                        <small class="text-muted d-block">Medical Conditions</small>
-                        <span>{{ selectedPatient?.medicalConditions || 'None' }}</span>
                       </div>
                     </div>
                   </div>
@@ -92,43 +122,53 @@
                 </div>
               </div>
 
-              <div class="medical-history">
-                <h4>Medical History</h4>
-                <div v-if="visitHistories && visitHistories.length > 0" class="history-list">
-                  <table class="table table-hover">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Doctor</th>
-                        <th>Diagnosis</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr 
-                        v-for="visit in visitHistories" 
-                        :key="visit.id" 
-                        class="history-item"
-                        @click="showVisitDetails(visit)"
-                        style="cursor: pointer;"
-                      >
-                        <td>{{ visit.consultationDate ? new Date(visit.consultationDate).toLocaleDateString() : 'N/A' }}</td>
-                        <td>Dr. {{ visit.doctor?.name || 'Unknown' }}</td>
-                        <td>{{ visit.diagnosis || 'No diagnosis recorded' }}</td>
-                        <td>
-                          <span :class="getStatusClass(visit.status)">
-                            {{ visit.status || 'Completed' }}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div v-else class="no-history">
-                  No medical history found
-                </div>
-              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
+      <!-- Medical History Section -->
+      <div class="col-12 col-lg-8">
+        <div class="card section-card mb-4">
+          <div class="card-body">
+            <h5 class="section-title mb-4">
+              <i class="fas fa-history text-primary me-2"></i>
+              Medical History
+            </h5>
+            <div v-if="visitHistories && visitHistories.length > 0" class="history-list">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Doctor</th>
+                    <th>Diagnosis</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr 
+                    v-for="visit in visitHistories" 
+                    :key="visit.id" 
+                    class="history-item"
+                    @click="showVisitDetails(visit)"
+                    style="cursor: pointer;"
+                  >
+                    <td>{{ formatDateOfBirth(visit.consultationDate) }}</td>
+                    <td>Dr. {{ visit.doctor?.name || 'Unknown' }}</td>
+                    <td>{{ visit.diagnosis || 'No diagnosis recorded' }}</td>
+                    <td>
+                      <span :class="getStatusClass(visit.status)">
+                        {{ visit.status || 'Completed' }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="text-center text-muted py-4">
+              <i class="fas fa-file-medical-alt fa-2x mb-2"></i>
+              <div>No medical history found</div>
+              <small class="text-muted">This is the patient's first visit</small>
             </div>
           </div>
         </div>
@@ -232,8 +272,8 @@
                             <small class="text-muted">{{ suggestion.unitDescription || suggestion.unitType }}</small>
                           </div>
                           
-                          <!-- Create new medication option -->
-                          <div v-if="medItem.name && !medItem.suggestions.some(s => s.name.toLowerCase() === medItem.name.toLowerCase())" 
+                          <!-- Create new medication option - Always show if there's a name and no exact match -->
+                          <div v-if="medItem.name && medItem.name.length >= 2 && !medItem.suggestions.some(s => s.name.toLowerCase() === medItem.name.toLowerCase())" 
                                class="suggestion-item suggestion-create-new"
                                @click="showCreateMedicationModal(medItem)">
                             <div class="suggestion-main">
@@ -315,7 +355,7 @@
             </h5>
             <div class="d-flex align-items-center gap-3 mb-3">
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="hasMedicalCertificate" v-model="consultation.hasMedicalCertificate">
+                <input class="form-check-input" type="checkbox" id="hasMedicalCertificate" v-model="consultation.hasMedicalCertificate" @change="onMCCheckboxChange">
                 <label class="form-check-label fw-bold" for="hasMedicalCertificate">
                   Issue Medical Certificate (MC) for this visit
                 </label>
@@ -330,14 +370,33 @@
               </button>
             </div>
             <div v-if="consultation.hasMedicalCertificate">
-              <!-- If multiple patients, show checkboxes for each -->
-              <div v-if="familyPatients && familyPatients.length > 1" class="mb-3">
+              <!-- If group consultation, show checkboxes for each patient -->
+              <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="mb-3">
                 <label class="form-label fw-bold">Select patients to print MC for:</label>
-                <div v-for="patient in familyPatients" :key="patient.id" class="form-check">
-                  <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
+                <div v-for="patient in groupPatients" :key="patient.id" class="form-check">
+                  <input 
+                    class="form-check-input" 
+                    type="checkbox" 
+                    :id="'mc-patient-' + patient.id" 
+                    :value="patient.id" 
+                    v-model="mcSelectedPatientIds"
+                  >
                   <label class="form-check-label" :for="'mc-patient-' + patient.id">
                     {{ patient.name || patient.displayName || 'Unknown' }}
+                    <small v-if="patient.relationship" class="text-muted">({{ patient.relationship }})</small>
                   </label>
+                </div>
+                <small class="text-muted d-block mt-2">
+                  <i class="fas fa-info-circle me-1"></i>
+                  Each selected patient will get a separate MC with the same dates
+                </small>
+              </div>
+              
+              <!-- Single patient MC (default behavior) -->
+              <div v-else-if="!isGroupConsultation && selectedPatient" class="mb-3">
+                <div class="alert alert-info">
+                  <i class="fas fa-user me-2"></i>
+                  MC will be issued for: <strong>{{ selectedPatient.name }}</strong>
                 </div>
               </div>
               <div class="row g-3">
@@ -357,8 +416,8 @@
 
       <!-- Hidden MC Print Template for Multiple Patients -->
       <div id="mc-print-content" style="display:none">
-        <div v-if="familyPatients && familyPatients.length > 1">
-          <div v-for="patient in familyPatients" :key="patient.id" v-if="mcSelectedPatientIds.includes(patient.id)">
+        <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1">
+          <div v-for="patient in groupPatients" :key="patient.id" v-if="mcSelectedPatientIds.includes(patient.id)">
             <div style="background-color: #e8e5b0; padding: 20px; border: 1px solid #000; font-family: Arial, sans-serif; page-break-after: always;">
               <!-- Clinic Header -->
               <div style="text-align: center; margin-bottom: 15px;">
@@ -798,8 +857,11 @@ export default {
       isEditing: !!this.$route.params.id,
       patients: [],
       doctors: [],
-      familyPatients: [],
+      groupPatients: [],
       mcSelectedPatientIds: [],
+      isGroupConsultation: false,
+      queueNumber: null,
+      groupId: null,
       visitHistories: [],
       fullPatientDetails: null,
       medicalCertificateModal: null,
@@ -834,6 +896,12 @@ export default {
       if (this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
         return this.fullPatientDetails;
       }
+      
+      // For group consultations, check group patients first
+      if (this.isGroupConsultation && this.groupPatients.length > 0) {
+        return this.groupPatients.find(p => p.id === this.consultation.patientId);
+      }
+      
       return this.patients.find(p => p.id === this.consultation.patientId) || null;
     }
   },
@@ -848,6 +916,25 @@ export default {
         age--;
       }
       return age;
+    },
+    getFullGender(gender) {
+      if (!gender) return 'N/A';
+      return gender === 'M' ? 'Male' : gender === 'F' ? 'Female' : gender;
+    },
+    formatDateOfBirth(dateOfBirth) {
+      if (!dateOfBirth) return 'N/A';
+      try {
+        const dateObj = new Date(dateOfBirth);
+        return dateObj.toLocaleDateString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Invalid Date';
+      }
     },
     isEditing() {
       return !!this.$route.params.id;
@@ -904,20 +991,24 @@ export default {
         year: 'numeric'
       });
     },
-    generateMCNumber() {
-      // Generate a clinic-specific identifier for the MC
-      // Typically includes location code + date components
-      const now = new Date();
-      const locationCode = 'KHS'; // Klinik HIDUPsihat
-      const year = now.getFullYear().toString().substring(2); // Last 2 digits of year
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const day = now.getDate().toString().padStart(2, '0');
-      
-      if (!this.consultation.mcNumber) {
-        this.consultation.mcNumber = `${locationCode}/${year}${month}${day}`;
+    async generateMCNumber() {
+      try {
+        // Get the next MC number from the backend
+        const response = await axios.get('/api/medical-certificates/next-number');
+        this.consultation.mcRunningNumber = response.data.runningNumber;
+        return this.consultation.mcRunningNumber;
+      } catch (error) {
+        console.error('Error generating MC number:', error);
+        // Fallback to timestamp-based number if API fails
+        const now = new Date();
+        this.consultation.mcRunningNumber = now.getTime().toString().slice(-6);
+        return this.consultation.mcRunningNumber;
       }
-      
-      return this.consultation.mcNumber;
+    },
+    async onMCCheckboxChange() {
+      if (this.consultation.hasMedicalCertificate && !this.consultation.mcRunningNumber) {
+        await this.generateMCNumber();
+      }
     },
     showVisitHistoryModal() {
       if (!this.visitHistoryModalInstance) {
@@ -1019,7 +1110,10 @@ export default {
           medications: JSON.stringify(this.consultation.medications || []), // Convert array to JSON string
           mcStartDate: this.consultation.mcStartDate || null,
           mcEndDate: this.consultation.mcEndDate || null,
-          mcNotes: this.consultation.mcNotes || ''
+          mcNotes: this.consultation.mcNotes || '',
+          queueNumber: this.queueNumber,
+          groupId: this.isGroupConsultation ? this.groupId : null,
+          isGroupConsultation: this.isGroupConsultation
         };
 
         console.log('Sending consultation data:', consultationData);
@@ -1076,10 +1170,14 @@ export default {
           const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
           medItem.suggestions = response.data;
           medItem.selectedSuggestionIndex = 0; // Pre-select first suggestion
+          
+          // Always ensure the "create new" option is visible by adding a flag
+          medItem.showCreateNew = true;
         } catch (error) {
           console.error('Error searching medications:', error);
           medItem.suggestions = [];
           medItem.selectedSuggestionIndex = -1;
+          medItem.showCreateNew = true; // Still show create new on error
         }
       }, 300);
     },
@@ -1098,7 +1196,7 @@ export default {
     handleMedicationBlur(medItem) {
       // Delay hiding suggestions to allow clicking on them
       setTimeout(() => {
-        if (!medItem.medicationId && medItem.name) {
+        if (!medItem.medicationId && medItem.name && medItem.name.length >= 2) {
           // Check if exact match exists in current suggestions
           const exactMatch = medItem.suggestions.find(med => 
             med.name.toLowerCase() === medItem.name.toLowerCase()
@@ -1106,6 +1204,10 @@ export default {
           
           if (exactMatch) {
             this.selectMedication(medItem, exactMatch);
+          } else {
+            // Always show create new option if no exact match and there's a name
+            this.showCreateMedicationModal(medItem);
+            return; // Don't clear suggestions immediately
           }
         }
         medItem.suggestions = [];
@@ -1251,11 +1353,43 @@ export default {
       if (queueNumber.length === 3) return '0' + queueNumber;
       if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
       return queueNumber;
+    },
+    
+    async loadGroupPatients() {
+      if (!this.groupId) return;
+      
+      try {
+        const response = await axios.get(`/api/queue/group/${this.groupId}`);
+        const queueEntry = response.data;
+        
+        if (queueEntry && queueEntry.metadata && queueEntry.metadata.patients) {
+          this.groupPatients = queueEntry.metadata.patients.map(patient => ({
+            id: patient.id,
+            name: patient.name,
+            displayName: patient.name,
+            nric: patient.nric,
+            age: patient.age,
+            gender: patient.gender,
+            phone: patient.phone,
+            relationship: patient.relationship,
+            symptoms: patient.symptoms || ''
+          }));
+          
+          // Set the currently selected patient to the primary patient if not already set
+          if (!this.consultation.patientId && this.groupPatients.length > 0) {
+            const primaryPatient = this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
+            this.consultation.patientId = primaryPatient.id;
           }
+        }
+      } catch (error) {
+        console.error('Error loading group patients:', error);
+        this.groupPatients = [];
+      }
+    }
   },
   watch: {
-    // Whenever familyPatients changes, default all selected for MC
-    familyPatients: {
+    // Whenever groupPatients changes, default all selected for MC
+    groupPatients: {
       handler(newVal) {
         if (Array.isArray(newVal) && newVal.length > 1) {
           this.mcSelectedPatientIds = newVal.map(p => p.id);
@@ -1280,6 +1414,14 @@ export default {
       // Auto-fill from queue information
       this.consultation.patientId = parseInt(routeQuery.patientId);
       this.consultation.doctorId = parseInt(routeQuery.doctorId);
+      this.queueNumber = routeQuery.queueNumber;
+      
+      // Check if this is a group consultation
+      if (routeQuery.groupId) {
+        this.isGroupConsultation = true;
+        this.groupId = routeQuery.groupId;
+        await this.loadGroupPatients();
+      }
       
       // Load patient details
       await this.fetchPatientDetails();
