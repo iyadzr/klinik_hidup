@@ -80,9 +80,18 @@
         </div>
 
         <div v-else class="table-responsive">
+          <!-- Bulk Actions -->
+          <div class="mb-3 d-flex align-items-center gap-2">
+            <input type="checkbox" id="selectAll" v-model="selectAll" @change="toggleSelectAll">
+            <label for="selectAll" class="me-3 mb-0">Select All</label>
+            <button class="btn btn-danger btn-sm" :disabled="selectedMedications.length === 0" @click="confirmBulkDelete">
+              <i class="fas fa-trash me-1"></i>Delete Selected ({{ selectedMedications.length }})
+            </button>
+          </div>
           <table class="table table-hover">
             <thead>
               <tr>
+                <th><input type="checkbox" v-model="selectAll" @change="toggleSelectAll"></th>
                 <th>ID</th>
                 <th>Name</th>
                 <th>Category</th>
@@ -95,6 +104,9 @@
             </thead>
             <tbody>
               <tr v-for="medication in paginatedMedications" :key="medication.id">
+                <td>
+                  <input type="checkbox" :value="medication.id" v-model="selectedMedications">
+                </td>
                 <td>{{ medication.id }}</td>
                 <td>
                   <strong>{{ medication.name }}</strong>
@@ -140,7 +152,7 @@
                 </td>
               </tr>
               <tr v-if="filteredMedications.length === 0">
-                <td colspan="8" class="text-center text-muted py-4">
+                <td colspan="9" class="text-center text-muted py-4">
                   <i class="fas fa-search fa-2x mb-2"></i>
                   <div>No medications found</div>
                 </td>
@@ -393,7 +405,9 @@ export default {
       
       // Delete
       medicationToDelete: null,
-      deleting: false
+      deleting: false,
+      selectedMedications: [],
+      selectAll: false
     };
   },
   computed: {
@@ -434,6 +448,16 @@ export default {
   mounted() {
     this.medicationModal = new bootstrap.Modal(document.getElementById('medicationModal'));
     this.deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+  },
+  watch: {
+    paginatedMedications: {
+      handler(newVal) {
+        // Deselect all if page changes
+        this.selectAll = false;
+        this.selectedMedications = [];
+      },
+      immediate: false
+    }
   },
   methods: {
     async loadMedications() {
@@ -588,6 +612,27 @@ export default {
       } catch {
         return '-';
       }
+    },
+    toggleSelectAll() {
+      if (this.selectAll) {
+        this.selectedMedications = this.paginatedMedications.map(m => m.id);
+      } else {
+        this.selectedMedications = [];
+      }
+    },
+    async confirmBulkDelete() {
+      if (this.selectedMedications.length === 0) return;
+      if (!confirm(`Are you sure you want to delete ${this.selectedMedications.length} medications? This action cannot be undone.`)) return;
+      try {
+        for (const id of this.selectedMedications) {
+          await axios.delete(`/api/medications/${id}`);
+        }
+        this.selectedMedications = [];
+        this.selectAll = false;
+        await this.loadMedications();
+      } catch (error) {
+        alert('Error deleting medications: ' + (error.response?.data?.message || error.message));
+      }
     }
   }
 };
@@ -625,5 +670,9 @@ export default {
 .pagination .page-item.active .page-link {
   background-color: #0d6efd;
   border-color: #0d6efd;
+}
+
+.bulk-actions {
+  margin-bottom: 1rem;
 }
 </style> 

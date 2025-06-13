@@ -125,6 +125,7 @@ class FinancialController extends AbstractController
 
     private function getDailyStats(\DateTime $startDate, \DateTime $endDate): array
     {
+        // Get payment stats
         $qb = $this->paymentRepository->createQueryBuilder('p')
             ->select('COUNT(p.id) as total_transactions, SUM(p.amount) as total_amount')
             ->where('p.paymentDate BETWEEN :startDate AND :endDate')
@@ -133,6 +134,7 @@ class FinancialController extends AbstractController
 
         $result = $qb->getQuery()->getSingleResult();
 
+        // Get consultation stats using consultation date
         $consultationQb = $this->consultationRepository->createQueryBuilder('c')
             ->select('COUNT(c.id) as total_consultations')
             ->where('c.consultationDate BETWEEN :startDate AND :endDate')

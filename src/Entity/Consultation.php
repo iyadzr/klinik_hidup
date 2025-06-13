@@ -61,6 +61,9 @@ class Consultation
     #[ORM\Column(type: 'datetime', nullable: true)]
     private ?\DateTimeInterface $paidAt = null;
 
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $receiptNumber = null;
+
     #[ORM\Column(type: 'boolean', nullable: true)]
     private ?bool $hasMedicalCertificate = false;
     
@@ -256,6 +259,17 @@ class Consultation
     public function setPaidAt(?\DateTimeInterface $paidAt): self
     {
         $this->paidAt = $paidAt;
+        return $this;
+    }
+    
+    public function getReceiptNumber(): ?string
+    {
+        return $this->receiptNumber;
+    }
+    
+    public function setReceiptNumber(?string $receiptNumber): self
+    {
+        $this->receiptNumber = $receiptNumber;
         return $this;
     }
     

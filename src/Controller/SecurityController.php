@@ -28,7 +28,9 @@ class SecurityController extends AbstractController
             'name' => $username,
             'username' => $username
         ];
+        // Return a fake token for development
         return $this->json([
+            'token' => 'dev-token-123',
             'user' => $user
         ]);
     }

@@ -24,8 +24,20 @@ class QueueController extends AbstractController
     #[Route('', name: 'app_queue_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
-        $date = $request->query->get('date', date('Y-m-d'));
-        $queues = $this->entityManager->getRepository(Queue::class)->findByDate($date);
+        $date = $request->query->get('date');
+        if (!$date) {
+            // Default to today in Asia/Kuala_Lumpur
+            $dt = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $date = $dt->format('Y-m-d');
+        }
+        $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $queues = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $start)
+            ->setParameter('end', $end)
+            ->orderBy('q.queueDateTime', 'ASC')
+            ->getQuery()->getResult();
         
         $queueData = [];
         $groupedQueues = []; // To track processed groups
@@ -277,6 +289,41 @@ class QueueController extends AbstractController
         $queue->setStatus($data['status']);
         $this->entityManager->flush();
 
+        // Broadcast queue update for SSE
+        $this->broadcastQueueUpdate($queue);
+
         return new JsonResponse(['message' => 'Queue status updated successfully']);
+    }
+
+    private function broadcastQueueUpdate($queue): void
+    {
+        $updateData = [
+            'type' => 'queue_status_update',
+            'timestamp' => time(),
+            'data' => [
+                'id' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'status' => $queue->getStatus(),
+                'patient' => [
+                    'id' => $queue->getPatient()->getId(),
+                    'name' => $queue->getPatient()->getName(),
+                ],
+                'doctor' => [
+                    'id' => $queue->getDoctor()->getId(),
+                    'name' => $queue->getDoctor()->getName(),
+                ],
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+            ]
+        ];
+        $tempDir = sys_get_temp_dir();
+        $updateFile = $tempDir . '/queue_updates.json';
+        $updates = [];
+        if (file_exists($updateFile)) {
+            $content = file_get_contents($updateFile);
+            $updates = json_decode($content, true) ?: [];
+        }
+        $updates[] = $updateData;
+        file_put_contents($updateFile, json_encode($updates));
     }
 }

@@ -1,6 +1,11 @@
 <template>
-  <div class="queue-display">
+  <div :class="['queue-display', { fullscreen: isFullscreen }]">
     <div class="container-fluid h-100">
+      <!-- Digital Date & Clock -->
+      <div class="clock-display text-center">
+        <div class="clock-date">{{ currentDate }}</div>
+        <span class="clock-time">{{ currentTime }}</span>
+      </div>
       <div class="row h-100">
         <!-- Left Column - Current Queue Number -->
         <div class="col-md-6 d-flex align-items-center justify-content-center bg-primary text-white">
@@ -46,9 +51,13 @@
           </div>
         </div>
       </div>
+      <button v-if="!isFullscreen" @click="enterFullscreen" class="fullscreen-btn">
+        <i class="fas fa-expand"></i> Fullscreen
+      </button>
+      <button v-if="isFullscreen" @click="exitFullscreen" class="fullscreen-btn exit">
+        <i class="fas fa-compress"></i> Exit Fullscreen
+      </button>
     </div>
-
-
   </div>
 </template>
 
@@ -63,7 +72,10 @@ export default {
       doctorList: [],
       lastUpdated: new Date().toLocaleTimeString(),
       refreshInterval: null,
-      eventSource: null
+      eventSource: null,
+      isFullscreen: false,
+      currentTime: '',
+      currentDate: ''
     };
   },
   computed: {
@@ -85,10 +97,15 @@ export default {
   },
   created() {
     this.loadData();
-    // Auto-refresh every 10 seconds as backup
     this.refreshInterval = setInterval(this.loadData, 10000);
-    // Initialize real-time updates
     this.initializeSSE();
+  },
+  mounted() {
+    this.enterFullscreen();
+    document.body.classList.add('queue-fullscreen');
+    window.addEventListener('keydown', this.handleKeydown);
+    this.updateClock();
+    this.clockInterval = setInterval(this.updateClock, 1000);
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -97,6 +114,11 @@ export default {
     if (this.eventSource) {
       this.eventSource.close();
     }
+    if (this.clockInterval) {
+      clearInterval(this.clockInterval);
+    }
+    document.body.classList.remove('queue-fullscreen');
+    window.removeEventListener('keydown', this.handleKeydown);
   },
   methods: {
     formatQueueNumber(queueNumber) {
@@ -111,7 +133,11 @@ export default {
     },
     async loadQueueList() {
       try {
-        const response = await axios.get('/api/queue');
+        // Always request today's queue
+        const now = new Date();
+        const options = { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' };
+        const todayMYT = now.toLocaleDateString('en-CA', options); // YYYY-MM-DD
+        const response = await axios.get(`/api/queue?date=${todayMYT}`);
         console.log('Queue API response:', response);
         
         if (response.data && Array.isArray(response.data)) {
@@ -264,6 +290,50 @@ export default {
         // If queue item not found, refresh the entire list
         this.loadData();
       }
+    },
+    enterFullscreen() {
+      this.isFullscreen = true;
+      document.body.classList.add('queue-fullscreen');
+      // Try browser fullscreen API
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+      else if (el.msRequestFullscreen) el.msRequestFullscreen();
+    },
+    exitFullscreen() {
+      this.isFullscreen = false;
+      document.body.classList.remove('queue-fullscreen');
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+      else if (document.msExitFullscreen) document.msExitFullscreen();
+    },
+    handleKeydown(e) {
+      if (e.key === 'Escape' && this.isFullscreen) {
+        this.exitFullscreen();
+      }
+    },
+    updateClock() {
+      const now = new Date();
+      // Asia/Kuala_Lumpur time for clock (12-hour with AM/PM)
+      const timeOptions = {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kuala_Lumpur'
+      };
+      this.currentTime = now.toLocaleTimeString('en-MY', timeOptions);
+      // Asia/Kuala_Lumpur time for date
+      const dateOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: '2-digit',
+        timeZone: 'Asia/Kuala_Lumpur'
+      };
+      this.currentDate = now.toLocaleDateString('en-MY', dateOptions);
     }
   }
 };
@@ -273,6 +343,7 @@ export default {
 .queue-display {
   height: 100vh;
   overflow: hidden;
+  background: linear-gradient(90deg, #007bff 50%, #ffc107 50%);
 }
 
 .container-fluid {
@@ -388,6 +459,55 @@ body.queue-fullscreen {
   width: 100vw;
   height: 100vh;
   z-index: 9999;
-  background: white;
+  background: linear-gradient(90deg, #007bff 50%, #ffc107 50%);
+}
+
+.fullscreen-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10001;
+  background: rgba(0,0,0,0.2);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.fullscreen-btn.exit {
+  right: 180px;
+  background: rgba(0,0,0,0.4);
+}
+
+.clock-display {
+  width: 100vw;
+  padding-top: 2rem;
+  padding-bottom: 1.5rem;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  pointer-events: none;
+}
+.clock-date {
+  font-size: 2.2rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 2px 2px 8px rgba(0,0,0,0.18);
+  margin-bottom: 0.2em;
+  letter-spacing: 0.04em;
+}
+.clock-time {
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 2px 2px 8px rgba(0,0,0,0.25);
+  letter-spacing: 0.1em;
+}
+.queue-display.fullscreen .clock-display {
+  position: fixed;
 }
 </style> 

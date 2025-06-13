@@ -53,6 +53,46 @@ body, html {
     max-width: calc(100vw - 20px) !important;
     width: auto !important;
   }
+  .card, .modal-content {
+    border-radius: 8px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
+    padding: 0.5rem !important;
+  }
+  .table {
+    font-size: 0.85rem !important;
+    overflow-x: auto;
+    display: block;
+    width: 100%;
+  }
+  .form-control, .form-select {
+    font-size: 0.95rem !important;
+    padding: 0.5rem !important;
+  }
+  .btn {
+    font-size: 0.85rem !important;
+    padding: 0.5rem 1rem !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .card, .modal-content {
+    border-radius: 6px !important;
+    padding: 0.25rem !important;
+  }
+  .table {
+    font-size: 0.8rem !important;
+  }
+  .btn {
+    font-size: 0.8rem !important;
+    padding: 0.4rem 0.8rem !important;
+  }
+  .form-control, .form-select {
+    font-size: 0.9rem !important;
+    padding: 0.4rem !important;
+  }
+  .content-wrapper {
+    padding: 0.25rem !important;
+  }
 }
 
 /* Improved button styling */

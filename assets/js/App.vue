@@ -12,7 +12,7 @@
 
     <div class="main-area">
       <!-- Sidebar (move below backdrop for proper stacking) -->
-      <nav :class="['sidebar', { open: sidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
+      <nav :class="['sidebar', { open: isSidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
         <ul class="nav flex-column sidebar-nav">
           <li class="nav-item">
             <router-link to="/dashboard" class="nav-link">
@@ -204,104 +204,76 @@
     padding: 1rem;
   }
 }
+@media (max-width: 576px) {
+  .sidebar {
+    width: 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    z-index: 2000;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0.5rem !important;
+  }
+  .content-wrapper {
+    padding: 0.5rem !important;
+  }
+}
 </style>
 
 <script>
-import axios from 'axios';
-import mitt from 'mitt';
+import { ref, onMounted, computed } from 'vue';
+import { useRouter } from 'vue-router';
+import AuthService from './services/AuthService';
 import UserProfileMenu from './components/UserProfileMenu.vue';
-
-export const emitter = mitt();
 
 export default {
   name: 'App',
   components: { UserProfileMenu },
-  data() {
-    return {
-      sidebarOpen: false,
-      currentUser: JSON.parse(localStorage.getItem('user')) || null
+  setup() {
+    const router = useRouter();
+    const isSidebarOpen = ref(false);
+    const currentUser = ref(null);
+
+    const isAuthenticated = computed(() => AuthService.isAuthenticated());
+    const isSuperAdmin = computed(() => AuthService.isSuperAdmin());
+    const userRoles = computed(() => currentUser.value?.roles || []);
+
+    const toggleSidebar = () => {
+      isSidebarOpen.value = !isSidebarOpen.value;
     };
-  },
-  computed: {
-    isAuthenticated() {
-      return !!this.currentUser;
-    },
-    isAssistant() {
-      return this.currentUser && this.currentUser.role === 'assistant';
-    },
-    isAuthPage() {
-      return this.$route.path === '/login' || this.$route.path === '/register';
-    }
-  },
-  created() {
-    this.checkAuth();
-    this.setupAxiosInterceptors();
 
-    // Listen for data change events
-    emitter.on('data-change', () => {
-      this.handleDataChange();
+    const handleLogout = () => {
+      AuthService.logout();
+      currentUser.value = null;
+      router.push('/login');
+    };
+
+    onMounted(() => {
+      const user = AuthService.getCurrentUser();
+      if (user) {
+        currentUser.value = user;
+        AuthService.setAuthHeader(user.token);
+      }
     });
 
-    // Listen for auth change events
-    emitter.on('auth-change', () => {
-      this.checkAuth();
-    });
-  },
-  beforeUnmount() {
-    emitter.off('data-change');
-    emitter.off('auth-change');
-  },
-  methods: {
-    checkAuth() {
-      const user = localStorage.getItem('user');
-      if (!user && this.$route.path !== '/login') {
-        this.$router.push('/login');
-      }
-    },
-    setupAxiosInterceptors() {
-      axios.interceptors.response.use(
-        response => response,
-        error => {
-          if (error.response?.status === 401) {
-            this.logout();
-          }
-          return Promise.reject(error);
-        }
-      );
-    },
-    handleLoginSuccess() {
-      this.currentUser = JSON.parse(localStorage.getItem('user'));
-      this.sidebarOpen = true;
-      if (this.$route.path !== '/dashboard') {
-        this.$router.push('/dashboard');
-      }
-    },
-    handleDataChange() {
-      // Find the dashboard component if it exists
-      const dashboard = this.$refs.currentView?.$refs?.dashboard;
-      if (dashboard && typeof dashboard.fetchData === 'function') {
-        dashboard.fetchData();
-      }
-    },
-    async logout() {
-      localStorage.removeItem('user');
-      delete axios.defaults.headers.common['Authorization'];
-      this.currentUser = null;
-      this.sidebarOpen = false;
-      this.$router.push('/login');
-    }
-  },
-  watch: {
-    currentUser(newVal, oldVal) {
-      if (newVal) {
-        this.sidebarOpen = true;
-      } else {
-        this.sidebarOpen = false;
-      }
-    },
-    '$route'() {
-      this.checkAuth();
-    }
+    return {
+      isSidebarOpen,
+      currentUser,
+      isAuthenticated,
+      isSuperAdmin,
+      userRoles,
+      toggleSidebar,
+      handleLogout
+    };
   }
 };
 </script>

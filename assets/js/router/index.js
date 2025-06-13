@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import AuthService from '../services/AuthService';
 import Dashboard from '../views/Dashboard.vue';
 import PatientList from '../views/patients/PatientList.vue';
 import DoctorList from '../views/doctors/DoctorList.vue';
@@ -39,7 +40,7 @@ const routes = [
     path: '/queue',
     name: 'Queue',
     component: QueueManagement,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/queue-display',
@@ -128,7 +129,8 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login
+    component: Login,
+    meta: { requiresAuth: false }
   }
 ];
 
@@ -138,13 +140,21 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  if (to.matched.some(record => record.meta.requiresAuth)) {
-    if (!localStorage.getItem('user')) {
-      next('/login');
-      return;
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiredRoles = to.meta.roles;
+
+  if (requiresAuth && !AuthService.isAuthenticated()) {
+    next('/login');
+  } else if (requiresAuth && requiredRoles) {
+    const hasRequiredRole = requiredRoles.some(role => AuthService.hasRole(role));
+    if (!hasRequiredRole) {
+      next('/dashboard'); // Redirect to dashboard if user doesn't have required role
+    } else {
+      next();
     }
+  } else {
+    next();
   }
-  next();
 });
 
 export default router;

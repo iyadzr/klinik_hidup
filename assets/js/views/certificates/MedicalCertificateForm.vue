@@ -69,11 +69,11 @@
           <div class="modal-body">
             <div v-if="previewData" class="certificate-preview">
               <div class="text-center mb-4">
-                <h2>Medical Certificate</h2>
-                <p class="mb-0">Certificate No: {{ previewData.certificateNumber }}</p>
-                <p>Issue Date: {{ formatDate(previewData.issueDate) }}</p>
+                <h2 style="margin-bottom: 0; font-weight: bold;">KLINIK HIDUPsihat</h2>
+                <p style="margin-bottom: 5px;">No 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor.</p>
+                <p style="margin-bottom: 5px;">Tel: 03-8740 0678</p>
               </div>
-
+              <h4 style="text-align: center; margin-bottom: 20px;">SURAT AKUAN SAKIT (MC)</h4>
               <div class="mb-4">
                 <p>This is to certify that</p>
                 <h4 class="mb-3">{{ previewData.patient.name }}</h4>
@@ -89,7 +89,6 @@
                   <strong>Remarks:</strong> {{ previewData.remarks }}
                 </p>
               </div>
-
               <div class="text-end mt-5">
                 <p class="mb-0">{{ previewData.doctor.name }}</p>
                 <p>Attending Physician</p>

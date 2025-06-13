@@ -117,7 +117,11 @@ class UserController extends AbstractController
             $user->setIsActive($data['isActive'] ?? true);
 
             // Set allowed pages
-            $user->setAllowedPages($data['allowedPages'] ?? []);
+            if (!isset($data['allowedPages']) && in_array('ROLE_DOCTOR', $roles)) {
+                $user->setAllowedPages(['dashboard','queue','queue-display','consultations']);
+            } else {
+                $user->setAllowedPages($data['allowedPages'] ?? []);
+            }
 
             $errors = $this->validator->validate($user);
             if (count($errors) > 0) {

@@ -1,340 +1,128 @@
 <template>
-  <div class="login-page">
-    <div class="container">
-      <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
-          <div class="card shadow-sm">
-            <div class="card-body p-5">
-              <div class="text-center mb-4">
-                <i class="fas fa-clinic-medical fa-3x text-primary"></i>
-                <h4 class="mt-3">Klinik HiDUP sihat</h4>
-                <p class="text-muted">{{ isLogin ? 'Sign in to your account' : 'Create a new account' }}</p>
-              </div>
-
-              <!-- Login Form -->
-              <form v-if="isLogin" @submit.prevent="login">
-                <div class="mb-3">
-                  <label class="form-label">Username</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-user"></i>
-                    </span>
-                    <input type="text" 
-                           v-model="form.username" 
-                           class="form-control" 
-                           required
-                           autocomplete="username"
-                           v-enter-submit>
-                  </div>
-                </div>
-
-                <div class="mb-4">
-                  <label class="form-label">Password</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-lock"></i>
-                    </span>
-                    <input :type="showPassword ? 'text' : 'password'"
-                           v-model="form.password" 
-                           class="form-control" 
-                           required
-                           autocomplete="current-password"
-                           v-enter-submit>
-                    <button type="button" 
-                            class="btn btn-outline-secondary" 
-                            @click="showPassword = !showPassword">
-                      <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-                    </button>
-                  </div>
-                </div>
-
-                <button type="submit" 
-                        class="btn btn-primary w-100" 
-                        :disabled="loading">
-                  <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
-                  {{ loading ? 'Signing in...' : 'Sign In' }}
-                </button>
-
-                <div class="text-center mt-4">
-                  <p class="mb-0">
-                    Don't have an account? 
-                    <a href="#" @click.prevent="isLogin = false">Register here</a>
-                  </p>
-                </div>
-              </form>
-
-              <!-- Registration Form -->
-              <form v-else @submit.prevent="register">
-                <div class="mb-3">
-                  <label class="form-label">Full Name</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-user"></i>
-                    </span>
-                    <input type="text" 
-                           v-model="form.name" 
-                           class="form-control" 
-                           required>
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Email</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-envelope"></i>
-                    </span>
-                    <input type="email" 
-                           v-model="form.email" 
-                           class="form-control" 
-                           required>
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Username</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-user-circle"></i>
-                    </span>
-                    <input type="text" 
-                           v-model="form.username" 
-                           class="form-control" 
-                           required>
-                  </div>
-                </div>
-
-                <div class="mb-3">
-                  <label class="form-label">Password</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-lock"></i>
-                    </span>
-                    <input :type="showPassword ? 'text' : 'password'"
-                           v-model="form.password" 
-                           class="form-control" 
-                           required
-                           minlength="8">
-                    <button type="button" 
-                            class="btn btn-outline-secondary" 
-                            @click="showPassword = !showPassword">
-                      <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-                    </button>
-                  </div>
-                  <small class="text-muted">Password must be at least 8 characters</small>
-                </div>
-
-                <div class="mb-4">
-                  <label class="form-label">Confirm Password</label>
-                  <div class="input-group">
-                    <span class="input-group-text">
-                      <i class="fas fa-lock"></i>
-                    </span>
-                    <input :type="showPassword ? 'text' : 'password'"
-                           v-model="form.confirmPassword" 
-                           class="form-control" 
-                           required
-                           minlength="8"
-                           :class="{'is-invalid': !isPasswordMatch && form.confirmPassword}">
-                  </div>
-                  <div class="invalid-feedback" v-if="!isPasswordMatch && form.confirmPassword">
-                    Passwords do not match
-                  </div>
-                </div>
-
-                <button type="submit" 
-                        class="btn btn-primary w-100" 
-                        :disabled="loading || !isPasswordMatch">
-                  <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
-                  {{ loading ? 'Creating account...' : 'Create Account' }}
-                </button>
-
-                <div class="text-center mt-4">
-                  <p class="mb-0">
-                    Already have an account? 
-                    <a href="#" @click.prevent="isLogin = true">Login here</a>
-                  </p>
-                </div>
-              </form>
-
-              <div class="alert alert-danger mt-3" v-if="error">
-                {{ error }}
-              </div>
-            </div>
+  <div class="login-container">
+    <div class="login-box">
+      <h2 class="text-center mb-4">Login</h2>
+      <form @submit.prevent="handleLogin" class="login-form">
+        <div class="mb-3">
+          <label for="email" class="form-label">Email</label>
+          <input
+            type="email"
+            class="form-control"
+            id="email"
+            v-model="email"
+            required
+            :class="{ 'is-invalid': errors.email }"
+          >
+          <div class="invalid-feedback" v-if="errors.email">
+            {{ errors.email }}
           </div>
         </div>
-      </div>
+
+        <div class="mb-3">
+          <label for="password" class="form-label">Password</label>
+          <input
+            type="password"
+            class="form-control"
+            id="password"
+            v-model="password"
+            required
+            :class="{ 'is-invalid': errors.password }"
+          >
+          <div class="invalid-feedback" v-if="errors.password">
+            {{ errors.password }}
+          </div>
+        </div>
+
+        <div class="alert alert-danger" v-if="loginError">
+          {{ loginError }}
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100" :disabled="loading">
+          <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
+          Login
+        </button>
+      </form>
     </div>
   </div>
 </template>
 
 <script>
-import axios from 'axios';
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import AuthService from '../../services/AuthService';
 
 export default {
   name: 'Login',
-  data() {
-    return {
-      isLogin: true,
-      form: {
-        name: '',
-        email: '',
-        username: '',
-        password: '',
-        confirmPassword: ''
-      },
-      showPassword: false,
-      loading: false,
-      error: null
+  setup() {
+    const router = useRouter();
+    const email = ref('');
+    const password = ref('');
+    const loading = ref(false);
+    const loginError = ref('');
+    const errors = ref({});
+
+    const validateForm = () => {
+      errors.value = {};
+      if (!email.value) {
+        errors.value.email = 'Email is required';
+      } else if (!/\S+@\S+\.\S+/.test(email.value)) {
+        errors.value.email = 'Please enter a valid email';
+      }
+      if (!password.value) {
+        errors.value.password = 'Password is required';
+      }
+      return Object.keys(errors.value).length === 0;
     };
-  },
-  computed: {
-    isPasswordMatch() {
-      return !this.isLogin && 
-             this.form.password && 
-             this.form.password === this.form.confirmPassword;
-    }
-  },
-  methods: {
-    async login() {
-      this.loading = true;
-      this.error = null;
+
+    const handleLogin = async () => {
+      if (!validateForm()) return;
+
+      loading.value = true;
+      loginError.value = '';
 
       try {
-        const response = await axios.post('/api/login', {
-          username: this.form.username,
-          password: this.form.password
-        });
-
-        // Store user data in localStorage
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        
-        // Redirect to dashboard, then emit login success event
-        console.log('Login successful, moving to dashboard');
-        // Update parent App.vue's currentUser directly for instant reactivity
-        if (this.$root && this.$root.currentUser !== undefined) {
-          this.$root.currentUser = JSON.parse(localStorage.getItem('user'));
+        const response = await AuthService.login(email.value, password.value);
+        if (response.token) {
+          router.push('/dashboard');
         }
-        this.$router.push('/dashboard').then(() => {
-          this.$emit('login-success');
-        });
       } catch (error) {
-        this.error = error.response?.data?.message || 'Invalid username or password';
+        loginError.value = error.response?.data?.message || 'Login failed. Please try again.';
       } finally {
-        this.loading = false;
+        loading.value = false;
       }
-    },
-    async register() {
-      // Clear any previous errors
-      this.error = null;
+    };
 
-      // Log form data
-      console.log('Form data before submission:', this.form);
-
-      // Frontend validation
-      const frontendValidation = ['name', 'email', 'username', 'password', 'confirmPassword'];
-      for (const field of frontendValidation) {
-        if (!this.form[field] || this.form[field].trim() === '') {
-          this.error = `Please fill in your ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`;
-          console.log('Validation failed for field:', field);
-          return;
-        }
-      }
-
-      if (!this.isPasswordMatch) {
-        this.error = 'Passwords do not match';
-        console.log('Password match validation failed');
-        return;
-      }
-
-      this.loading = true;
-
-      try {
-        // Only send required fields to backend
-        const formData = {
-          name: this.form.name.trim(),
-          email: this.form.email.trim(),
-          username: this.form.username.trim(),
-          password: this.form.password
-        };
-
-        console.log('Sending registration data:', formData);
-
-        // First try without JSON.stringify
-        const response = await axios({
-          method: 'POST',
-          url: '/api/register',
-          data: formData,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        
-        console.log('Registration successful:', response.data);
-        
-        // Clear form data
-        this.form = {
-          name: '',
-          email: '',
-          username: '',
-          password: '',
-          confirmPassword: ''
-        };
-        
-        // Auto login after registration
-        await this.login();
-      } catch (error) {
-        console.error('Registration error details:', {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          headers: error.response?.headers,
-          config: error.config
-        });
-
-        if (error.response?.data?.message) {
-          this.error = error.response.data.message;
-        } else if (error.response?.status === 400) {
-          this.error = 'Please check all required fields are filled correctly';
-        } else {
-          this.error = 'Error creating account. Please try again.';
-        }
-      } finally {
-        this.loading = false;
-      }
-    }
+    return {
+      email,
+      password,
+      loading,
+      loginError,
+      errors,
+      handleLogin
+    };
   }
 };
 </script>
 
 <style scoped>
-.login-page {
+.login-container {
   min-height: 100vh;
   display: flex;
   align-items: center;
+  justify-content: center;
   background-color: #f8f9fa;
 }
 
-.card {
-  border: none;
-  border-radius: 10px;
+.login-box {
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.input-group-text {
-  background-color: transparent;
-}
-
-.btn-outline-secondary {
-  border-left: none;
-}
-
-.btn-outline-secondary:hover {
-  background-color: transparent;
-  color: #6c757d;
-}
-
-.fa-clinic-medical {
-  color: #0d6efd;
+.login-form {
+  margin-top: 1.5rem;
 }
 </style>

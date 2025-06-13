@@ -198,7 +198,8 @@ class ConsultationController extends AbstractController
                 'patient' => [
                     'id' => $consultation->getPatient()->getId(),
                     'name' => $consultation->getPatient()->getName()
-                ]
+                ],
+                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
             ];
         }
 
@@ -248,7 +249,8 @@ class ConsultationController extends AbstractController
                 'totalAmount' => $consultation->getTotalAmount(),
                 'isPaid' => $consultation->getIsPaid(),
                 'status' => $consultation->getIsPaid() ? 'Paid' : 'Unpaid',
-                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null
+                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
             ];
         }
 
@@ -281,7 +283,8 @@ class ConsultationController extends AbstractController
             'medicinesFee' => $consultation->getMedicinesFee(),
             'totalAmount' => $consultation->getTotalAmount(),
             'isPaid' => $consultation->getIsPaid(),
-            'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null
+            'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+            'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
         ]);
     }
 
@@ -293,49 +296,41 @@ class ConsultationController extends AbstractController
         LoggerInterface $logger
     ): JsonResponse {
         try {
-            $data = json_decode($request->getContent(), true);
             $consultation = $entityManager->getRepository(Consultation::class)->find($id);
             
             if (!$consultation) {
-                return new JsonResponse(['message' => 'Consultation not found'], 404);
+                return new JsonResponse(['error' => 'Consultation not found'], 404);
             }
             
-            if ($consultation->getIsPaid()) {
-                return new JsonResponse(['message' => 'Consultation is already paid'], 400);
-            }
+            $data = json_decode($request->getContent(), true);
+            $paymentMethod = $data['paymentMethod'] ?? 'Cash';
+            
+            // Generate running receipt number
+            $receiptRepository = $entityManager->getRepository(\App\Entity\ReceiptCounter::class);
+            $receiptNumber = $receiptRepository->getNextReceiptNumber();
             
             $consultation->setIsPaid(true);
-            
-            // Set payment date in MYT timezone
-            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
-            $consultation->setPaidAt(new \DateTime('now', $myt));
-            
-            // Store payment method if provided
-            if (isset($data['paymentMethod'])) {
-                // You might want to add a paymentMethod field to the Consultation entity
-                // For now, we'll just log it
-                $logger->info('Payment processed', [
-                    'consultation_id' => $id,
-                    'payment_method' => $data['paymentMethod'],
-                    'amount' => $consultation->getTotalAmount()
-                ]);
-            }
+            $consultation->setPaidAt(new \DateTime());
+            $consultation->setReceiptNumber((string)$receiptNumber);
             
             $entityManager->flush();
             
+            $logger->info('Payment processed', [
+                'consultationId' => $consultation->getId(),
+                'receiptNumber' => $receiptNumber,
+                'paymentMethod' => $paymentMethod,
+                'amount' => $consultation->getTotalAmount()
+            ]);
+            
             return new JsonResponse([
-                'message' => 'Payment processed successfully',
-                'consultation' => [
-                    'id' => $consultation->getId(),
-                    'isPaid' => $consultation->getIsPaid(),
-                    'paidAt' => $consultation->getPaidAt()->format('Y-m-d H:i:s'),
-                    'totalAmount' => $consultation->getTotalAmount()
-                ]
+                'message' => 'Payment status updated successfully',
+                'receiptNumber' => (string)$receiptNumber,
+                'paidAt' => $consultation->getPaidAt()->format('Y-m-d H:i:s')
             ]);
             
         } catch (\Exception $e) {
-            $logger->error('Error processing payment: ' . $e->getMessage());
-            return new JsonResponse(['message' => 'Error processing payment'], 500);
+            $logger->error('Payment processing error: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to process payment'], 500);
         }
     }
 }

@@ -526,7 +526,7 @@ export default {
     selectExistingPatient(patient) {
       this.selectedPatient = patient;
       this.patientType = 'existing';
-      // Populate the patient form with the selected patient's data (including all fields)
+      // Populate the patient form with the selected patient's data (excluding preInformedIllness)
       this.patient = {
         name: patient.name || '',
         nric: patient.nric || '',
@@ -537,7 +537,7 @@ export default {
         dateOfBirth: patient.dateOfBirth || '',
         company: patient.company || '',
         companyAddress: patient.companyAddress || '',
-        preInformedIllness: patient.preInformedIllness || ''
+        preInformedIllness: '' // Reset preInformedIllness for new visit
       };
     },
 
