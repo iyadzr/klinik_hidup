@@ -10,8 +10,8 @@ import ConsultationList from '../views/consultations/ConsultationList.vue';
 import PatientRegistration from '../views/registration/PatientRegistration.vue';
 import ClinicAssistantList from '../views/clinic-assistants/ClinicAssistantList.vue';
 import Login from '../views/auth/Login.vue';
+import Register from '../views/auth/Register.vue';
 import PaymentList from '../views/payments/PaymentList.vue';
-import AppointmentDashboard from '../views/appointments/AppointmentDashboard.vue';
 import PrescriptionForm from '../views/prescriptions/PrescriptionForm.vue';
 import UserProfile from '../views/UserProfile.vue';
 import FinancialDashboard from '../views/finance/FinancialDashboard.vue';
@@ -52,13 +52,19 @@ const routes = [
     path: '/consultations',
     name: 'Consultations',
     component: ConsultationList,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/consultations/new',
     name: 'NewConsultation',
     component: ConsultationForm,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/consultations/:id',
+    name: 'EditConsultation',
+    component: ConsultationForm,
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/patients',
@@ -82,13 +88,7 @@ const routes = [
     path: '/payments',
     name: 'payments',
     component: PaymentList,
-    meta: { requiresAuth: true, role: 'assistant' }
-  },
-  {
-    path: '/appointments',
-    name: 'appointments',
-    component: AppointmentDashboard,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/prescriptions/new',
@@ -106,30 +106,42 @@ const routes = [
     path: '/financial',
     name: 'Financial',
     component: FinancialDashboard,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
+  },
+  {
+    path: '/medications',
+    name: 'Medications',
+    component: MedicationAdmin,
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/admin/medications',
     name: 'MedicationAdmin',
     component: MedicationAdmin,
-    meta: { requiresAuth: true, role: 'admin' }
+    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/admin/users',
     name: 'UserAdmin',
     component: UserAdmin,
-    meta: { requiresAuth: true, role: 'admin' }
+    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/admin/settings',
     name: 'SystemSettings',
     component: SystemSettings,
-    meta: { requiresAuth: true, role: 'admin' }
+    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/login',
     name: 'Login',
     component: Login,
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: Register,
     meta: { requiresAuth: false }
   }
 ];
@@ -142,19 +154,42 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
   const requiredRoles = to.meta.roles;
+  const isAuthenticated = AuthService.isAuthenticated();
 
-  if (requiresAuth && !AuthService.isAuthenticated()) {
+  // If user is authenticated and trying to access login/register, redirect to dashboard
+  if (isAuthenticated && ['/login', '/register'].includes(to.path)) {
+    next('/dashboard');
+    return;
+  }
+
+  if (requiresAuth && !isAuthenticated) {
     next('/login');
-  } else if (requiresAuth && requiredRoles) {
+    return;
+  }
+  
+  if (requiresAuth && requiredRoles && requiredRoles.length > 0) {
     const hasRequiredRole = requiredRoles.some(role => AuthService.hasRole(role));
     if (!hasRequiredRole) {
       next('/dashboard'); // Redirect to dashboard if user doesn't have required role
-    } else {
-      next();
+      return;
     }
-  } else {
-    next();
   }
+  
+  next();
+});
+
+// Add error handling for navigation failures
+router.onError((error) => {
+  console.error('Router navigation error:', error);
+});
+
+// Add navigation completion handler
+router.afterEach((to, from) => {
+  // Ensure the page title is updated
+  document.title = to.meta.title || 'Klinik HiDUP sihat';
+  
+  // Scroll to top on route change
+  window.scrollTo(0, 0);
 });
 
 export default router;

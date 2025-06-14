@@ -832,9 +832,6 @@ export default {
     'patientAdded',
     'patientUpdated',
     'patientDeleted',
-    'appointmentAdded',
-    'appointmentUpdated',
-    'appointmentDeleted',
     'loginSuccess'
   ],
   data() {

@@ -3,9 +3,19 @@ import axios from 'axios';
 class AuthService {
   async login(email, password) {
     const response = await axios.post('/api/login', { email, password });
-    if (response.data.token) {
-      localStorage.setItem('user', JSON.stringify(response.data));
+    
+    if (response.data) {
+      // Store both user and token data
+      const userData = {
+        token: response.data.token,
+        user: response.data.user || response.data,
+        ...response.data.user
+      };
+      
+      localStorage.setItem('user', JSON.stringify(userData));
       this.setAuthHeader(response.data.token);
+      
+      return userData;
     }
     return response.data;
   }
@@ -16,7 +26,13 @@ class AuthService {
   }
 
   getCurrentUser() {
-    return JSON.parse(localStorage.getItem('user'));
+    try {
+      const userStr = localStorage.getItem('user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (e) {
+      console.error('Error parsing user data:', e);
+      return null;
+    }
   }
 
   setAuthHeader(token) {
@@ -34,7 +50,7 @@ class AuthService {
 
   hasRole(role) {
     const user = this.getCurrentUser();
-    return user && user.roles && user.roles.includes(role);
+    return user && user.roles && Array.isArray(user.roles) && user.roles.includes(role);
   }
 
   isSuperAdmin() {

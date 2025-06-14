@@ -1,7 +1,11 @@
 <template>
   <div class="login-container">
     <div class="login-box">
-      <h2 class="text-center mb-4">Login</h2>
+      <div class="login-brand text-center mb-4">
+        <div class="login-logo mb-2">⚕️</div>
+        <h2 class="mb-0">Klinik HiDUP sihat</h2>
+        <p class="text-muted">Welcome back! Please sign in to continue.</p>
+      </div>
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="mb-3">
           <label for="email" class="form-label">Email</label>
@@ -17,7 +21,6 @@
             {{ errors.email }}
           </div>
         </div>
-
         <div class="mb-3">
           <label for="password" class="form-label">Password</label>
           <input
@@ -32,15 +35,14 @@
             {{ errors.password }}
           </div>
         </div>
-
-        <div class="alert alert-danger" v-if="loginError">
+        <div class="alert alert-danger text-center" v-if="loginError">
           {{ loginError }}
         </div>
-
-        <button type="submit" class="btn btn-primary w-100" :disabled="loading">
+        <button type="submit" class="btn btn-primary w-100 mb-2" :disabled="loading">
           <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
           Login
         </button>
+        <router-link to="/register" class="btn btn-outline-secondary w-100">Sign Up</router-link>
       </form>
     </div>
   </div>
@@ -53,7 +55,8 @@ import AuthService from '../../services/AuthService';
 
 export default {
   name: 'Login',
-  setup() {
+  emits: ['login-success'],
+  setup(props, { emit }) {
     const router = useRouter();
     const email = ref('');
     const password = ref('');
@@ -82,8 +85,15 @@ export default {
 
       try {
         const response = await AuthService.login(email.value, password.value);
-        if (response.token) {
-          router.push('/dashboard');
+        if (response && (response.token || response.user)) {
+          // Small delay to ensure authentication state is set
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Emit login success event to parent App component
+          emit('login-success');
+          
+          // Use Vue router for navigation
+          await router.push('/dashboard');
         }
       } catch (error) {
         loginError.value = error.response?.data?.message || 'Login failed. Please try again.';
@@ -110,19 +120,42 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f8f9fa;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f8fafc 100%);
 }
-
 .login-box {
   width: 100%;
   max-width: 400px;
-  padding: 2rem;
+  padding: 2.5rem 2rem 2rem 2rem;
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
 }
-
+.login-brand {
+  margin-bottom: 1.5rem;
+}
+.login-logo {
+  font-size: 3rem;
+  display: block;
+  margin: 0 auto 0.5rem auto;
+  width: 60px;
+  text-align: center;
+}
 .login-form {
-  margin-top: 1.5rem;
+  margin-top: 1rem;
+}
+.btn-primary {
+  background: #1e293b;
+  border: none;
+  font-weight: 600;
+}
+.btn-outline-secondary {
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  font-weight: 500;
+}
+.alert-danger {
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
 }
 </style>

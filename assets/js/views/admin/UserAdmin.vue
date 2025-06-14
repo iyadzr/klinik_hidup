@@ -540,7 +540,6 @@ export default {
         { value: 'queue', label: 'Queue Management', icon: 'fas fa-list-ol' },
         { value: 'registration', label: 'Patient Registration', icon: 'fas fa-user-plus' },
         { value: 'financial', label: 'Financial Dashboard', icon: 'fas fa-chart-line' },
-        { value: 'appointments', label: 'Appointments', icon: 'fas fa-calendar-alt' },
         { value: 'medications', label: 'Medication Admin', icon: 'fas fa-pills' },
         { value: 'users', label: 'User Management', icon: 'fas fa-users' },
         { value: 'reports', label: 'Reports', icon: 'fas fa-chart-bar' },

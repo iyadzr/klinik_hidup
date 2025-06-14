@@ -6,90 +6,44 @@
         <span class="header-title">Klinik HiDUP sihat</span>
       </div>
       <div class="header-right">
-        <UserProfileMenu />
+        <UserProfileMenu :user="currentUser" />
       </div>
     </header>
 
     <div class="main-area">
       <!-- Sidebar (move below backdrop for proper stacking) -->
-      <nav :class="['sidebar', { open: isSidebarOpen } ]" v-if="isAuthenticated && !isAuthPage">
+      <nav v-if="isAuthenticated && !isAuthPage" :class="['sidebar', { open: isSidebarOpen }]">
         <ul class="nav flex-column sidebar-nav">
-          <li class="nav-item">
-            <router-link to="/dashboard" class="nav-link">
-              <i class="fas fa-chart-line fa-fw"></i>
-              <span>Dashboard</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/registration" class="nav-link">
-              <i class="fas fa-user-plus fa-fw"></i>
-              <span>Registration</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/queue" class="nav-link">
-              <i class="fas fa-list-ol fa-fw"></i>
-              <span>Queue</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/queue-display" class="nav-link">
-              <i class="fas fa-tv fa-fw"></i>
-              <span>Queue Display</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/consultations" class="nav-link">
-              <i class="fas fa-stethoscope fa-fw"></i>
-              <span>Consultations</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/patients" class="nav-link">
-              <i class="fas fa-user-injured fa-fw"></i>
-              <span>Patients</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/doctors" class="nav-link">
-              <i class="fas fa-user-md fa-fw"></i>
-              <span>Doctors</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/clinic-assistants" class="nav-link">
-              <i class="fas fa-user-nurse fa-fw"></i>
-              <span>Clinic Assistants</span>
-            </router-link>
-          </li>
-          <li class="nav-item" v-if="isAssistant">
-            <router-link to="/payments" class="nav-link">
-              <i class="fas fa-money-bill fa-fw"></i>
-              <span>Payments</span>
-            </router-link>
-          </li>
-          <li class="nav-item">
-            <router-link to="/financial" class="nav-link">
-              <i class="fas fa-chart-bar fa-fw"></i>
-              <span>Financial</span>
+          <li v-for="item in filteredMenu" :key="item.path" class="nav-item">
+            <router-link :to="item.path" class="nav-link" active-class="active">
+              <i :class="item.icon"></i> {{ item.label }}
             </router-link>
           </li>
         </ul>
       </nav>
 
       <!-- Main Content -->
-      <main class="main-content">
+      <main :class="['main-content', { 'auth-page': isAuthPage }]">
         <div class="content-wrapper">
-          <router-view 
-            @patient-added="handleDataChange" 
-            @patient-updated="handleDataChange" 
-            @patient-deleted="handleDataChange"
-            @appointment-added="handleDataChange"
-            @appointment-updated="handleDataChange"
-            @appointment-deleted="handleDataChange"
-            @login-success="handleLoginSuccess"
-            ref="currentView"
-          ></router-view>
+          <Suspense>
+            <template #default>
+              <router-view 
+                :key="$route.fullPath"
+                @patient-added="handleDataChange" 
+                @patient-updated="handleDataChange" 
+                @patient-deleted="handleDataChange"
+                @login-success="handleLoginSuccess"
+                ref="currentView"
+              ></router-view>
+            </template>
+            <template #fallback>
+              <div class="d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+              </div>
+            </template>
+          </Suspense>
         </div>
       </main>
     </div>
@@ -184,6 +138,11 @@
   overflow-x: auto;
   margin-left: 260px;
 }
+.main-content.auth-page {
+  margin-left: 0;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f8fafc 100%);
+}
 .content-wrapper {
   padding: 2rem;
   max-width: 1400px;
@@ -230,8 +189,8 @@
 </style>
 
 <script>
-import { ref, onMounted, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import AuthService from './services/AuthService';
 import UserProfileMenu from './components/UserProfileMenu.vue';
 
@@ -240,12 +199,96 @@ export default {
   components: { UserProfileMenu },
   setup() {
     const router = useRouter();
+    const route = useRoute();
     const isSidebarOpen = ref(false);
     const currentUser = ref(null);
 
-    const isAuthenticated = computed(() => AuthService.isAuthenticated());
-    const isSuperAdmin = computed(() => AuthService.isSuperAdmin());
+    // Make computed properties reactive to currentUser changes
+    const isAuthenticated = computed(() => !!currentUser.value && !!currentUser.value.token);
+    const isSuperAdmin = computed(() => currentUser.value?.roles?.includes('ROLE_SUPER_ADMIN') || false);
     const userRoles = computed(() => currentUser.value?.roles || []);
+    const isAuthPage = computed(() => ['/login', '/register'].includes(route.path));
+
+    // Define the menu items with role-based access
+    const menu = [
+      // Core menu items - available to ALL authenticated users
+      {
+        path: '/dashboard',
+        label: 'Dashboard',
+        icon: 'fas fa-tachometer-alt',
+        roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/patients',
+        label: 'Patients',
+        icon: 'fas fa-user-injured',
+        roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/doctors',
+        label: 'Doctors',
+        icon: 'fas fa-user-md',
+        roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/queue-display',
+        label: 'Queue Display',
+        icon: 'fas fa-tv',
+        roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      
+      // Additional menu items with appropriate role restrictions
+      {
+        path: '/consultations',
+        label: 'Consultations',
+        icon: 'fas fa-notes-medical',
+        roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/medications',
+        label: 'Medications',
+        icon: 'fas fa-pills',
+        roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/registration',
+        label: 'Patient Registration',
+        icon: 'fas fa-user-plus',
+        roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/queue',
+        label: 'Queue Management',
+        icon: 'fas fa-list-ol',
+        roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/financial',
+        label: 'Financial Dashboard',
+        icon: 'fas fa-chart-line',
+        roles: ['ROLE_SUPER_ADMIN']
+      },
+      
+      // Admin-only menu items
+      {
+        path: '/admin/medications',
+        label: 'Medication Admin',
+        icon: 'fas fa-pills',
+        roles: ['ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/admin/users',
+        label: 'User Management',
+        icon: 'fas fa-users',
+        roles: ['ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/admin/settings',
+        label: 'System Settings',
+        icon: 'fas fa-cog',
+        roles: ['ROLE_SUPER_ADMIN']
+      }
+    ];
 
     const toggleSidebar = () => {
       isSidebarOpen.value = !isSidebarOpen.value;
@@ -256,13 +299,58 @@ export default {
       currentUser.value = null;
       router.push('/login');
     };
+    
 
-    onMounted(() => {
+    const handleLoginSuccess = () => {
+      // Add a small delay to ensure the login process is complete
+      setTimeout(() => {
+        loadUserData();
+        // Force reactivity update
+        currentUser.value = { ...AuthService.getCurrentUser() };
+      }, 100);
+    };
+
+    const handleDataChange = () => {
+      // Handle data changes if needed
+      // This is referenced in router-view events
+    };
+
+    const loadUserData = () => {
       const user = AuthService.getCurrentUser();
       if (user) {
         currentUser.value = user;
         AuthService.setAuthHeader(user.token);
+      } else {
+        currentUser.value = null;
       }
+    };
+
+    const filteredMenu = computed(() => {
+      if (!currentUser.value) return [];
+      
+      // Ensure all users have at least ROLE_USER
+      const currentRoles = currentUser.value.roles && currentUser.value.roles.length > 0 
+        ? currentUser.value.roles 
+        : ['ROLE_USER'];
+
+      return menu.filter(item => 
+        item.roles.some(role => currentRoles.includes(role))
+      );
+    });
+
+    // Watch for route changes to refresh authentication state
+    watch(() => route.path, (newPath) => {
+      loadUserData();
+      // If navigating to dashboard and user is authenticated, ensure state is updated
+      if (newPath === '/dashboard' && AuthService.isAuthenticated()) {
+        setTimeout(() => {
+          currentUser.value = { ...AuthService.getCurrentUser() };
+        }, 50);
+      }
+    });
+
+    onMounted(() => {
+      loadUserData();
     });
 
     return {
@@ -271,8 +359,12 @@ export default {
       isAuthenticated,
       isSuperAdmin,
       userRoles,
+      isAuthPage,
       toggleSidebar,
-      handleLogout
+      handleLogout,
+      handleLoginSuccess,
+      handleDataChange,
+      filteredMenu
     };
   }
 };

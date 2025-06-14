@@ -19,18 +19,60 @@ class SecurityController extends AbstractController
     #[Route('/login', name: 'app_login', methods: ['POST'])]
     public function login(Request $request): JsonResponse
     {
-        // DEVELOPMENT MODE: Accept any username/password and return a hardcoded user
         $data = json_decode($request->getContent(), true);
-        $username = $data['username'] ?? ($data['email'] ?? 'devuser');
-        $user = [
-            'email' => $username . '@example.com',
-            'roles' => ['ROLE_USER'],
-            'name' => $username,
-            'username' => $username
-        ];
-        // Return a fake token for development
+        $email = $data['email'] ?? $data['username'] ?? '';
+        $password = $data['password'] ?? '';
+
+        // Handle specific test users for development
+        $user = [];
+        $roles = ['ROLE_USER']; // Default role
+        
+        // Check for specific super admin email
+        if ($email === 'dhiak@gmail.com') {
+            $user = [
+                'id' => 1,
+                'email' => 'dhiak@gmail.com',
+                'name' => 'Super Admin',
+                'username' => 'superadmin'
+            ];
+            $roles = ['ROLE_USER', 'ROLE_SUPER_ADMIN'];
+        } else if ($email === 'doctor@gmail.com') {
+            $user = [
+                'id' => 2,
+                'email' => 'doctor@gmail.com',
+                'name' => 'Dr. John Doe',
+                'username' => 'doctor'
+            ];
+            $roles = ['ROLE_USER', 'ROLE_DOCTOR'];
+        } else if ($email === 'mat.hayat@ymail.com') {
+            $user = [
+                'id' => 3,
+                'email' => 'mat.hayat@ymail.com',
+                'name' => 'Dr. Mat Hayat',
+                'username' => 'mathayat'
+            ];
+            $roles = ['ROLE_USER', 'ROLE_DOCTOR'];
+        } else if ($email === 'assistant@gmail.com') {
+            $user = [
+                'id' => 4,
+                'email' => 'assistant@gmail.com',
+                'name' => 'Clinic Assistant',
+                'username' => 'assistant'
+            ];
+            $roles = ['ROLE_USER', 'ROLE_ASSISTANT'];
+        } else {
+            // Reject unregistered users
+            return $this->json([
+                'error' => 'Invalid credentials',
+                'message' => 'User not found. Please contact administrator for account registration.'
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+
+        $user['roles'] = $roles;
+
+        // Return token and user data
         return $this->json([
-            'token' => 'dev-token-123',
+            'token' => 'dev-token-' . time(),
             'user' => $user
         ]);
     }
