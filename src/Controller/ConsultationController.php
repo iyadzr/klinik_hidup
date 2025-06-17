@@ -99,7 +99,13 @@ class ConsultationController extends AbstractController
             
             // Set consultation date to now in MYT timezone
             $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
-            $consultation->setConsultationDate(new \DateTime('now', $myt));
+            $now = new \DateTime('now', $myt);
+            $consultation->setConsultationDate($now);
+            
+            // Ensure createdAt is also set properly (constructor should handle this, but let's be explicit)
+            if (!$consultation->getCreatedAt()) {
+                $consultation->setCreatedAt($now);
+            }
             
             // Set all fields from the request data
             if (isset($data['symptoms'])) $consultation->setSymptoms($data['symptoms']);
@@ -122,6 +128,45 @@ class ConsultationController extends AbstractController
             
             $this->entityManager->persist($consultation);
             $this->entityManager->flush();
+            
+            // Handle prescribed medications if provided
+            if (isset($data['prescribedMedications']) && is_array($data['prescribedMedications'])) {
+                foreach ($data['prescribedMedications'] as $medData) {
+                    if (!empty($medData['name']) && !empty($medData['quantity'])) {
+                        // Find or create medication
+                        $medication = null;
+                        if (!empty($medData['medicationId'])) {
+                            $medication = $this->entityManager->getRepository(\App\Entity\Medication::class)->find($medData['medicationId']);
+                        }
+                        
+                        // If medication not found by ID, try to find by name
+                        if (!$medication && !empty($medData['name'])) {
+                            $medication = $this->entityManager->getRepository(\App\Entity\Medication::class)->findOneBy(['name' => $medData['name']]);
+                        }
+                        
+                        // Create new medication if it doesn't exist
+                        if (!$medication) {
+                            $medication = new \App\Entity\Medication();
+                            $medication->setName($medData['name']);
+                            $medication->setUnitType($medData['unitType'] ?? 'pieces');
+                            $medication->setUnitDescription($medData['unitDescription'] ?? null);
+                            $medication->setCategory($medData['category'] ?? null);
+                            $this->entityManager->persist($medication);
+                            $this->entityManager->flush(); // Flush to get the ID
+                        }
+                        
+                        // Create prescribed medication record
+                        $prescribedMed = new \App\Entity\PrescribedMedication();
+                        $prescribedMed->setConsultation($consultation);
+                        $prescribedMed->setMedication($medication);
+                        $prescribedMed->setQuantity((int)$medData['quantity']);
+                        $prescribedMed->setInstructions($medData['instructions'] ?? null);
+                        
+                        $this->entityManager->persist($prescribedMed);
+                    }
+                }
+                $this->entityManager->flush();
+            }
             
             // Update queue status to 'completed' for this patient/doctor combination
             $queueRepository = $this->entityManager->getRepository(\App\Entity\Queue::class);
@@ -207,9 +252,35 @@ class ConsultationController extends AbstractController
     }
 
     #[Route('', name: 'app_consultations_list', methods: ['GET'])]
-    public function list(EntityManagerInterface $entityManager): JsonResponse
+    public function list(Request $request, EntityManagerInterface $entityManager): JsonResponse
     {
-        $consultations = $entityManager->getRepository(Consultation::class)->findAll();
+        $date = $request->query->get('date');
+        
+        if ($date) {
+            // Filter by specific date - use both createdAt and consultationDate for broader matching
+            $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            
+            $consultations = $entityManager->getRepository(Consultation::class)
+                ->createQueryBuilder('c')
+                ->where('(c.createdAt BETWEEN :start AND :end) OR (c.consultationDate BETWEEN :start AND :end)')
+                ->setParameter('start', $start)
+                ->setParameter('end', $end)
+                ->orderBy('c.createdAt', 'DESC')
+                ->getQuery()
+                ->getResult();
+        } else {
+            // Return consultations from the last 30 days if no date filter (performance optimization)
+            $thirtyDaysAgo = new \DateTime('-30 days', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $consultations = $entityManager->getRepository(Consultation::class)
+                ->createQueryBuilder('c')
+                ->where('c.createdAt >= :thirtyDaysAgo')
+                ->setParameter('thirtyDaysAgo', $thirtyDaysAgo)
+                ->orderBy('c.createdAt', 'DESC')
+                ->getQuery()
+                ->getResult();
+        }
+        
         $data = [];
 
         foreach ($consultations as $consultation) {
@@ -237,6 +308,7 @@ class ConsultationController extends AbstractController
                 'doctorId' => $doctor->getId(),
                 'doctorName' => $doctor->getName(),
                 'createdAt' => $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
+                'consultationDate' => $consultation->getConsultationDate() ? $consultation->getConsultationDate()->format('Y-m-d H:i:s') : $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
                 'symptoms' => $consultation->getSymptoms(),
                 'diagnosis' => $consultation->getDiagnosis(),
                 'treatment' => $consultation->getTreatment(),
@@ -332,5 +404,72 @@ class ConsultationController extends AbstractController
             $logger->error('Payment processing error: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Failed to process payment'], 500);
         }
+    }
+
+    #[Route('/debug', name: 'app_consultations_debug', methods: ['GET'])]
+    public function debug(EntityManagerInterface $entityManager): JsonResponse
+    {
+        // Get today's date in MYT
+        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $todayStr = $today->format('Y-m-d');
+        
+        // Count consultations
+        $totalConsultations = $entityManager->getRepository(Consultation::class)->count([]);
+        
+        $todayConsultations = $entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->where('DATE(c.createdAt) = :today')
+            ->setParameter('today', $todayStr)
+            ->getQuery()
+            ->getSingleScalarResult();
+            
+        // Count queues
+        $totalQueues = $entityManager->getRepository(\App\Entity\Queue::class)->count([]);
+        
+        $todayQueues = $entityManager->getRepository(\App\Entity\Queue::class)
+            ->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('DATE(q.queueDateTime) = :today')
+            ->setParameter('today', $todayStr)
+            ->getQuery()
+            ->getSingleScalarResult();
+            
+        // Get recent consultations
+        $recentConsultations = $entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('c.id, c.createdAt, c.consultationDate, p.name as patientName, d.name as doctorName')
+            ->join('c.patient', 'p')
+            ->join('c.doctor', 'd')
+            ->orderBy('c.createdAt', 'DESC')
+            ->setMaxResults(5)
+            ->getQuery()
+            ->getResult();
+            
+        // Get recent queues
+        $recentQueues = $entityManager->getRepository(\App\Entity\Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q.id, q.queueDateTime, q.status, q.queueNumber, p.name as patientName, d.name as doctorName')
+            ->join('q.patient', 'p')
+            ->join('q.doctor', 'd')
+            ->orderBy('q.queueDateTime', 'DESC')
+            ->setMaxResults(5)
+            ->getQuery()
+            ->getResult();
+        
+        return new JsonResponse([
+            'currentTime' => $today->format('Y-m-d H:i:s T'),
+            'todayDate' => $todayStr,
+            'consultations' => [
+                'total' => $totalConsultations,
+                'today' => $todayConsultations,
+                'recent' => $recentConsultations
+            ],
+            'queues' => [
+                'total' => $totalQueues,
+                'today' => $todayQueues,
+                'recent' => $recentQueues
+            ]
+        ]);
     }
 }

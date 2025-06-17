@@ -25,25 +25,40 @@ class MedicalCertificateController extends AbstractController
     public function getNextNumber(): JsonResponse
     {
         try {
-            // Get the next MC ID by finding the highest current ID and adding 1
-            $lastMC = $this->entityManager
-                ->getRepository(MedicalCertificate::class)
-                ->createQueryBuilder('mc')
+            // Get starting number from settings
+            $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
+            $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
+            $startingNumber = $startingSetting ? (int)$startingSetting->getSettingValue() : 1;
+            
+            // Check existing MC numbers in consultations
+            $consultationRepo = $this->entityManager->getRepository(\App\Entity\Consultation::class);
+            $existingMC = $consultationRepo->createQueryBuilder('c')
+                ->select('MAX(CAST(c.mcRunningNumber AS UNSIGNED)) as maxMC')
+                ->where('c.mcRunningNumber IS NOT NULL')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            // Also check in MedicalCertificate entity if it exists
+            $mcRepo = $this->entityManager->getRepository(MedicalCertificate::class);
+            $existingMCEntity = $mcRepo->createQueryBuilder('mc')
                 ->select('MAX(mc.id) as maxId')
                 ->getQuery()
                 ->getSingleScalarResult();
             
-            $nextNumber = ($lastMC ?? 0) + 1;
-            
-            // Format as 6-digit running number (e.g., 426741, 426742, etc.)
-            $runningNumber = str_pad($nextNumber + 426740, 6, '0', STR_PAD_LEFT);
+            // Use the higher of: configured starting number or (max existing + 1)
+            $nextNumber = max($startingNumber, ($existingMC ?? 0) + 1, ($existingMCEntity ?? 0) + $startingNumber);
             
             return new JsonResponse([
-                'runningNumber' => $runningNumber
+                'runningNumber' => (string)$nextNumber
             ]);
         } catch (\Exception $e) {
+            // Fallback: use starting number from settings or default
+            $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
+            $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
+            $fallbackNumber = $startingSetting ? (int)$startingSetting->getSettingValue() : 1;
+            
             return new JsonResponse([
-                'runningNumber' => '426741' // Fallback number
+                'runningNumber' => (string)$fallbackNumber
             ]);
         }
     }

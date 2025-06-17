@@ -24,20 +24,28 @@ class QueueController extends AbstractController
     #[Route('', name: 'app_queue_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
-        $date = $request->query->get('date');
-        if (!$date) {
-            // Default to today in Asia/Kuala_Lumpur
-            $dt = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
-            $date = $dt->format('Y-m-d');
-        }
-        $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $queues = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q')
-            ->where('q.queueDateTime BETWEEN :start AND :end')
-            ->setParameter('start', $start)
-            ->setParameter('end', $end)
-            ->orderBy('q.queueDateTime', 'ASC')
-            ->getQuery()->getResult();
+        try {
+            $date = $request->query->get('date');
+            if (!$date) {
+                // Default to today in Asia/Kuala_Lumpur
+                $dt = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+                $date = $dt->format('Y-m-d');
+            }
+            
+            // Create date range for the specified date
+            $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            
+            // Query with better date handling and ordering
+            $queues = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q')
+                ->leftJoin('q.patient', 'p')
+                ->leftJoin('q.doctor', 'd')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->setParameter('start', $start)
+                ->setParameter('end', $end)
+                ->orderBy('q.registrationNumber', 'ASC') // Order by registration number for better queue order
+                ->addOrderBy('q.queueDateTime', 'ASC')
+                ->getQuery()->getResult();
         
         $queueData = [];
         $groupedQueues = []; // To track processed groups
@@ -78,7 +86,8 @@ class QueueController extends AbstractController
                             'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
                         ],
                         'status' => $queue->getStatus(),
-                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a')
                     ];
                     
                     $queueData[] = $groupedQueues[$groupId];
@@ -101,12 +110,20 @@ class QueueController extends AbstractController
                         'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
                     ],
                     'status' => $queue->getStatus(),
-                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a')
                 ];
             }
         }
 
         return new JsonResponse($queueData);
+        
+        } catch (\Exception $e) {
+            return new JsonResponse([
+                'error' => 'Failed to load queue data',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     #[Route('', name: 'app_queue_create', methods: ['POST'])]
@@ -132,25 +149,38 @@ class QueueController extends AbstractController
         $queue->setQueueDateTime($queueDateTime);
         $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
         
-        // Find the latest queue number for this hour block today
+        // Find the latest registration number for today
         $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q.queueNumber')
-            ->where('q.queueDateTime >= :start')
-            ->andWhere('q.queueDateTime < :end')
-            ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
-            ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
-            ->orderBy('q.queueNumber', 'DESC')
+        $qb->select('q.registrationNumber')
+            ->where('q.queueDateTime >= :startOfDay')
+            ->andWhere('q.queueDateTime < :endOfDay')
+            ->setParameter('startOfDay', $queueDateTime->format('Y-m-d 00:00:00'))
+            ->setParameter('endOfDay', $queueDateTime->format('Y-m-d 23:59:59'))
+            ->orderBy('q.registrationNumber', 'DESC')
             ->setMaxResults(1);
         $lastQueue = $qb->getQuery()->getOneOrNullResult();
         
-        $runningNumber = 1;
-        if ($lastQueue && isset($lastQueue['queueNumber'])) {
-            $lastNum = (int)substr($lastQueue['queueNumber'], -2);
-            $runningNumber = $lastNum + 1;
+        // Generate registration number starting with current hour
+        $baseNumber = $hour * 100 + 1; // e.g., 1501 for 3pm
+        $registrationNumber = $baseNumber;
+        
+        if ($lastQueue && isset($lastQueue['registrationNumber'])) {
+            $lastRegNumber = (int)$lastQueue['registrationNumber'];
+            
+            // If we already have registrations today
+            if ($lastRegNumber >= $baseNumber) {
+                // Continue from the last number + 1
+                $registrationNumber = $lastRegNumber + 1;
+            } else {
+                // Start fresh with the hour-based number
+                $registrationNumber = $baseNumber;
+            }
         }
-        $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
+        
+        // Generate queue number (for display purposes, can be different from registration)
+        $queueNumber = sprintf('%04d', $registrationNumber);
         $queue->setQueueNumber($queueNumber);
-        $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
+        $queue->setRegistrationNumber($registrationNumber);
 
         $this->entityManager->persist($queue);
         $this->entityManager->flush();
@@ -177,26 +207,39 @@ class QueueController extends AbstractController
             return new JsonResponse(['error' => 'Doctor not found'], 404);
         }
 
-        // Generate shared queue number for the group
+        // Generate shared registration number for the group
         $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
         $hour = (int)$queueDateTime->format('G');
         
+        // Find the latest registration number for today
         $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q.queueNumber')
-            ->where('q.queueDateTime >= :start')
-            ->andWhere('q.queueDateTime < :end')
-            ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
-            ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
-            ->orderBy('q.queueNumber', 'DESC')
+        $qb->select('q.registrationNumber')
+            ->where('q.queueDateTime >= :startOfDay')
+            ->andWhere('q.queueDateTime < :endOfDay')
+            ->setParameter('startOfDay', $queueDateTime->format('Y-m-d 00:00:00'))
+            ->setParameter('endOfDay', $queueDateTime->format('Y-m-d 23:59:59'))
+            ->orderBy('q.registrationNumber', 'DESC')
             ->setMaxResults(1);
         $lastQueue = $qb->getQuery()->getOneOrNullResult();
         
-        $runningNumber = 1;
-        if ($lastQueue && isset($lastQueue['queueNumber'])) {
-            $lastNum = (int)substr($lastQueue['queueNumber'], -2);
-            $runningNumber = $lastNum + 1;
+        // Generate registration number starting with current hour
+        $baseNumber = $hour * 100 + 1; // e.g., 1501 for 3pm
+        $registrationNumber = $baseNumber;
+        
+        if ($lastQueue && isset($lastQueue['registrationNumber'])) {
+            $lastRegNumber = (int)$lastQueue['registrationNumber'];
+            
+            // If we already have registrations today
+            if ($lastRegNumber >= $baseNumber) {
+                // Continue from the last number + 1
+                $registrationNumber = $lastRegNumber + 1;
+            } else {
+                // Start fresh with the hour-based number
+                $registrationNumber = $baseNumber;
+            }
         }
-        $sharedQueueNumber = sprintf('%d%02d', $hour, $runningNumber);
+        
+        $sharedQueueNumber = sprintf('%04d', $registrationNumber);
 
         $createdQueues = [];
         $groupId = uniqid('grp_'); // Generate unique group ID
@@ -213,7 +256,7 @@ class QueueController extends AbstractController
             $queue->setQueueDateTime($queueDateTime);
             $queue->setStatus('waiting');
             $queue->setQueueNumber($sharedQueueNumber); // Same queue number for all
-            $queue->setRegistrationNumber((int)$sharedQueueNumber);
+            $queue->setRegistrationNumber($registrationNumber);
             
             // Add group consultation metadata
             $metadata = [
@@ -325,5 +368,68 @@ class QueueController extends AbstractController
         }
         $updates[] = $updateData;
         file_put_contents($updateFile, json_encode($updates));
+    }
+
+    #[Route('/debug', name: 'app_queue_debug', methods: ['GET'])]
+    public function debug(): JsonResponse
+    {
+        // Get today's date in MYT
+        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $todayStr = $today->format('Y-m-d');
+        
+        // Count total queues
+        $totalQueues = $this->entityManager->getRepository(Queue::class)->count([]);
+        
+        // Count today's queues
+        $start = new \DateTime($todayStr . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $end = new \DateTime($todayStr . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        
+        $todayQueues = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $start)
+            ->setParameter('end', $end)
+            ->getQuery()
+            ->getSingleScalarResult();
+            
+        // Get all today's queues with details
+        $todayQueueDetails = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q.id, q.queueDateTime, q.status, q.queueNumber, q.registrationNumber, p.name as patientName, d.name as doctorName')
+            ->join('q.patient', 'p')
+            ->join('q.doctor', 'd')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $start)
+            ->setParameter('end', $end)
+            ->orderBy('q.registrationNumber', 'ASC')
+            ->getQuery()
+            ->getResult();
+            
+        // Count by status
+        $statusCounts = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q.status, COUNT(q.id) as count')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $start)
+            ->setParameter('end', $end)
+            ->groupBy('q.status')
+            ->getQuery()
+            ->getResult();
+        
+        return new JsonResponse([
+            'currentTime' => $today->format('Y-m-d H:i:s T'),
+            'todayDate' => $todayStr,
+            'dateRange' => [
+                'start' => $start->format('Y-m-d H:i:s T'),
+                'end' => $end->format('Y-m-d H:i:s T')
+            ],
+            'queues' => [
+                'total' => $totalQueues,
+                'today' => $todayQueues,
+                'todayDetails' => $todayQueueDetails,
+                'statusCounts' => $statusCounts
+            ]
+        ]);
     }
 }

@@ -22,6 +22,21 @@
           </div>
         </div>
         <div class="mb-3">
+          <label for="username" class="form-label">Username</label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="username" 
+            v-model="username" 
+            required 
+            :class="{ 'is-invalid': errors.username }"
+            placeholder="Choose a unique username"
+          />
+          <div class="invalid-feedback" v-if="errors.username">
+            {{ errors.username }}
+          </div>
+        </div>
+        <div class="mb-3">
           <label for="email" class="form-label">Email</label>
           <input 
             type="email" 
@@ -75,6 +90,7 @@ export default {
   setup() {
     const router = useRouter();
     const name = ref('');
+    const username = ref('');
     const email = ref('');
     const password = ref('');
     const loading = ref(false);
@@ -86,6 +102,11 @@ export default {
       errors.value = {};
       if (!name.value) {
         errors.value.name = 'Name is required';
+      }
+      if (!username.value) {
+        errors.value.username = 'Username is required';
+      } else if (username.value.length < 3) {
+        errors.value.username = 'Username must be at least 3 characters';
       }
       if (!email.value) {
         errors.value.email = 'Email is required';
@@ -110,6 +131,7 @@ export default {
       try {
         const response = await axios.post('/api/register', {
           name: name.value,
+          username: username.value,
           email: email.value,
           password: password.value
         });
@@ -131,6 +153,7 @@ export default {
 
     return {
       name,
+      username,
       email,
       password,
       loading,

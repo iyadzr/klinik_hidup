@@ -22,3 +22,12 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+    
+    # Backup Commands Configuration
+    App\Command\BackupScheduleCommand:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+    
+    App\Service\BackupService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'

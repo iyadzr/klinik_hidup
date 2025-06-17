@@ -34,7 +34,7 @@ class FinancialController extends AbstractController
         $monthlyStats = $this->getMonthlyStats();
         
         // Medication usage stats
-        $medicationStats = $this->prescribedMedicationRepository->getMedicationUsageStats($startDate, $endDate);
+        $medicationStats = $this->getMedicationStats($startDate, $endDate);
         
         // Payment method breakdown
         $paymentMethodStats = $this->getPaymentMethodStats($startDate, $endDate);
@@ -109,6 +109,12 @@ class FinancialController extends AbstractController
             'limit' => $limit,
             'total_pages' => ceil($total / $limit),
         ]);
+    }
+
+    #[Route('/payments/summary', name: 'api_payments_summary', methods: ['GET'])]
+    public function paymentsSummary(): JsonResponse
+    {
+        return new JsonResponse($this->paymentRepository->getSummary());
     }
 
     private function getStartDate(string $period): \DateTime
@@ -215,5 +221,60 @@ class FinancialController extends AbstractController
             ->orderBy('payment_date', 'ASC');
 
         return $qb->getQuery()->getResult();
+    }
+
+    private function getMedicationStats(\DateTime $startDate, \DateTime $endDate): array
+    {
+        // First try to get from PrescribedMedication entities
+        $prescribedStats = $this->prescribedMedicationRepository->getMedicationUsageStats($startDate, $endDate);
+        
+        // If we have prescribed medication data, return it
+        if (!empty($prescribedStats)) {
+            return $prescribedStats;
+        }
+        
+        // Otherwise, try to extract from consultation medications JSON
+        $consultations = $this->consultationRepository->createQueryBuilder('c')
+            ->where('c.consultationDate BETWEEN :startDate AND :endDate')
+            ->andWhere('c.medications IS NOT NULL')
+            ->setParameter('startDate', $startDate)
+            ->setParameter('endDate', $endDate)
+            ->getQuery()
+            ->getResult();
+        
+        $medicationCounts = [];
+        
+        foreach ($consultations as $consultation) {
+            $medications = $consultation->getMedications();
+            if ($medications) {
+                // Try to parse as JSON
+                $decoded = json_decode($medications, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    foreach ($decoded as $med) {
+                        $name = $med['name'] ?? $med['medication'] ?? 'Unknown';
+                        $quantity = (int) ($med['quantity'] ?? 1);
+                        
+                        if (!isset($medicationCounts[$name])) {
+                            $medicationCounts[$name] = [
+                                'medicationName' => $name,
+                                'usageCount' => 0,
+                                'totalQuantity' => 0
+                            ];
+                        }
+                        
+                        $medicationCounts[$name]['usageCount']++;
+                        $medicationCounts[$name]['totalQuantity'] += $quantity;
+                    }
+                }
+            }
+        }
+        
+        // Sort by usage count and return top medications
+        $stats = array_values($medicationCounts);
+        usort($stats, function($a, $b) {
+            return $b['usageCount'] - $a['usageCount'];
+        });
+        
+        return array_slice($stats, 0, 10); // Return top 10
     }
 } 

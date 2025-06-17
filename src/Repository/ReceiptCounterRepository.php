@@ -18,13 +18,30 @@ class ReceiptCounterRepository extends ServiceEntityRepository
         $counter = $this->findOneBy(['counterName' => 'main']);
         
         if (!$counter) {
-            // Create initial counter starting from 773300
+            // Get starting number from settings
+            $settingRepo = $this->getEntityManager()->getRepository(\App\Entity\Setting::class);
+            $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.receipt_number_start']);
+            $startingNumber = $startingSetting ? (int)$startingSetting->getSettingValue() : 1;
+            
+            // Check if this starting number already exists in consultations
+            $consultationRepo = $this->getEntityManager()->getRepository(\App\Entity\Consultation::class);
+            $existingReceipt = $consultationRepo->createQueryBuilder('c')
+                ->select('MAX(CAST(c.receiptNumber AS UNSIGNED)) as maxReceipt')
+                ->where('c.receiptNumber IS NOT NULL')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            // Use the higher of: configured starting number or (max existing + 1)
+            $nextNumber = max($startingNumber, ($existingReceipt ?? 0) + 1);
+            
+            // Create initial counter
             $counter = new ReceiptCounter();
             $counter->setCounterName('main');
-            $counter->setCurrentNumber(773300);
+            $counter->setCurrentNumber($nextNumber - 1); // Set to one less since incrementAndGet will add 1
             $this->getEntityManager()->persist($counter);
             $this->getEntityManager()->flush();
-            return 773300;
+            
+            return $nextNumber;
         }
         
         $nextNumber = $counter->incrementAndGet();

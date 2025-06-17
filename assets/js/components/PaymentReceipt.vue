@@ -37,20 +37,23 @@
         </div>
       </div>
 
-      <!-- Amount Box -->
-      <div class="amount-section mb-4">
-        <div class="amount-box d-flex justify-content-between align-items-center">
-          <div class="amount-label">RM</div>
-          <div class="amount-value">{{ formatAmount(consultation.totalAmount) }}</div>
+      <!-- Amount and Signature Section -->
+      <div class="bottom-section d-flex justify-content-between align-items-start mb-4">
+        <!-- Amount Box -->
+        <div class="amount-section">
+          <div class="amount-box d-flex justify-content-between align-items-center">
+            <div class="amount-label">RM</div>
+            <div class="amount-value">{{ formatAmount(consultation.totalAmount) }}</div>
+          </div>
         </div>
-      </div>
 
-      <!-- Doctor Information -->
-      <div class="doctor-info text-end">
-        <div class="doctor-signature-area">
-          <div class="signature-space mb-2" style="height: 60px; border-bottom: 1px solid #ccc;"></div>
-          <div class="signature-label">
-            <p class="mb-0"><small>Tandatangan/Cop</small></p>
+        <!-- Doctor Information -->
+        <div class="doctor-info">
+          <div class="doctor-signature-area">
+            <div class="signature-space mb-2" style="height: 60px; border-bottom: 1px solid #ccc;"></div>
+            <div class="signature-label">
+              <p class="mb-0"><small>Tandatangan/Cop</small></p>
+            </div>
           </div>
         </div>
       </div>
@@ -84,7 +87,9 @@ export default {
     },
     formatAmount(amount) {
       if (!amount) return '0.00';
-      return parseFloat(amount).toFixed(2);
+      // Handle different amount fields that might be available
+      const finalAmount = amount || this.consultation.consultationFee || this.consultation.totalAmount || 0;
+      return parseFloat(finalAmount).toFixed(2);
     },
     printReceipt() {
       // Create a clean print window without browser UI elements
@@ -173,18 +178,24 @@ export default {
               min-height: 25px;
               font-weight: bold;
             }
-            .amount-section {
+            .bottom-section {
+              display: flex;
+              justify-content: space-between;
+              align-items: start;
               margin-bottom: 30px;
+            }
+            .amount-section {
+              flex: 0 0 auto;
             }
             .amount-box {
               border: 2px solid #000;
               padding: 15px 20px;
               text-align: left;
-              margin-bottom: 10px;
               display: flex;
               justify-content: space-between;
               align-items: center;
               min-width: 200px;
+              width: 200px;
             }
             .amount-label {
               font-weight: bold;
@@ -198,6 +209,7 @@ export default {
               color: #000;
             }
             .doctor-info {
+              flex: 0 0 auto;
               text-align: right;
             }
             .signature-space {
@@ -326,19 +338,26 @@ export default {
   font-weight: bold;
 }
 
-.amount-section {
+.bottom-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
   margin-bottom: 30px;
+}
+
+.amount-section {
+  flex: 0 0 auto;
 }
 
 .amount-box {
   border: 2px solid #000;
   padding: 15px 20px;
   text-align: left;
-  margin-bottom: 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   min-width: 200px;
+  width: 200px;
 }
 
 .amount-label {
@@ -355,6 +374,7 @@ export default {
 }
 
 .doctor-info {
+  flex: 0 0 auto;
   text-align: right;
 }
 

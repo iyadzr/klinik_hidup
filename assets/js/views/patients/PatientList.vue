@@ -299,9 +299,27 @@
                         <span v-else class="text-muted">No fee data</span>
                       </td>
                       <td>
-                        <button class="btn btn-sm btn-primary" @click="viewVisitDetails(visit)">
-                          <i class="fas fa-eye me-1"></i>Details
-                        </button>
+                        <div class="btn-group">
+                          <button class="btn btn-sm btn-primary" @click="viewVisitDetails(visit)">
+                            <i class="fas fa-eye me-1"></i>Details
+                          </button>
+                          <button 
+                            v-if="visit.receiptNumber" 
+                            class="btn btn-sm btn-success" 
+                            @click="viewReceipt(visit)"
+                            title="View Receipt"
+                          >
+                            <i class="fas fa-receipt me-1"></i>Receipt
+                          </button>
+                          <button 
+                            v-if="visit.hasMedicalCertificate && visit.mcRunningNumber" 
+                            class="btn btn-sm btn-warning" 
+                            @click="viewMedicalCertificate(visit)"
+                            title="View Medical Certificate"
+                          >
+                            <i class="fas fa-certificate me-1"></i>MC
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   </tbody>
@@ -476,6 +494,143 @@
       </div>
     </div>
     <div class="modal-backdrop fade show" v-if="showVisitDetailsModal"></div>
+
+    <!-- Receipt Modal -->
+    <div class="modal fade" :class="{ show: showReceiptModal }" tabindex="-1" v-if="showReceiptModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Receipt - {{ selectedVisitForReceipt?.receiptNumber }}</h5>
+            <button type="button" class="btn-close" @click="closeReceiptModal"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Receipt content will be dynamically injected here -->
+            <div id="receiptPrintContent" v-if="selectedVisitForReceipt">
+              <div class="receipt-container">
+                <!-- Clinic Header -->
+                <div class="clinic-header">
+                  <h2 class="clinic-name">KLINIK HIDUPsihat</h2>
+                  <div class="clinic-address">
+                    <p class="mb-1">No. 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor</p>
+                    <p class="mb-3">Tel : 03-8740 0678</p>
+                  </div>
+                </div>
+
+                <!-- Receipt Header -->
+                <div class="receipt-header">
+                  <div>
+                    <h4 class="receipt-title mb-0">RESIT RASMI</h4>
+                  </div>
+                  <div class="text-end">
+                    <div class="receipt-number text-danger fw-bold">
+                      No. {{ selectedVisitForReceipt.receiptNumber }}
+                    </div>
+                    <div class="receipt-date">
+                      Tarikh : {{ formatReceiptDate(selectedVisitForReceipt.paidAt || selectedVisitForReceipt.consultationDate) }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Patient Information -->
+                <div class="patient-info">
+                  <div class="info-row">
+                    <span class="label">Terima daripada :</span>
+                    <span class="value">{{ selectedPatientForHistory?.name }}</span>
+                  </div>
+                  <div class="info-row">
+                    <span class="label">Untuk Bayaran :</span>
+                    <span class="value">Pemeriksaan kesihatan / rawatan</span>
+                  </div>
+                </div>
+
+                <!-- Amount and Signature Section -->
+                <div class="amount-section">
+                  <div class="amount-box">
+                    <div class="amount-label">RM</div>
+                    <div class="amount-value">{{ formatAmount(selectedVisitForReceipt.totalAmount) }}</div>
+                  </div>
+                  <div class="signature-area">
+                    <div class="signature-space"></div>
+                    <div class="signature-label">
+                      <p class="mb-0"><small>Tandatangan/Cop</small></p>
+                      <p class="mb-0"><small>{{ selectedVisitForReceipt.doctor?.name || 'Doctor' }}</small></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeReceiptModal">Close</button>
+            <button type="button" class="btn btn-primary" @click="printReceipt">Print</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop fade show" v-if="showReceiptModal"></div>
+
+    <!-- Medical Certificate Modal -->
+    <div class="modal fade" :class="{ show: showMCModal }" tabindex="-1" v-if="showMCModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Medical Certificate - {{ selectedVisitForMC?.mcRunningNumber }}</h5>
+            <button type="button" class="btn-close" @click="closeMCModal"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Medical Certificate content will be dynamically injected here -->
+            <div id="mcPrintContent" v-if="selectedVisitForMC">
+              <div class="mc-container">
+                <!-- Clinic Header -->
+                <div class="clinic-header">
+                  <h3 class="clinic-name">KLINIK HIDUPsihat</h3>
+                  <p class="mb-1">No 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor.</p>
+                  <p class="mb-1">Tel: 03-8740 0678</p>
+                </div>
+                
+                <!-- MC Running Number -->
+                <div class="mc-number">
+                  <p class="mb-0">No: {{ selectedVisitForMC.mcRunningNumber }}</p>
+                </div>
+                
+                <h4 class="mc-title">SURAT AKUAN SAKIT (MC)</h4>
+                
+                <div class="mc-content">
+                  <div class="d-flex justify-content-between">
+                    <p>Saya mengesahkan telah memeriksa;</p>
+                    <p><strong>Tarikh:</strong> {{ formatDate(selectedVisitForMC.consultationDate) }}</p>
+                  </div>
+                  <p class="ms-3 mb-1">
+                    <strong>Nama dan No KP:</strong> {{ selectedPatientForHistory?.name }} ({{ selectedPatientForHistory?.nric || '******' }})
+                  </p>
+                  <p class="ms-3 mb-4">
+                    <strong>dari:</strong> {{ selectedPatientForHistory?.company || 'yang berkenaan' }}
+                  </p>
+                  
+                  <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
+                  <p class="ms-3 mb-4">
+                    <strong>{{ calculateMCDays(selectedVisitForMC.mcStartDate, selectedVisitForMC.mcEndDate) }}</strong> hari mulai 
+                    <strong>{{ formatDate(selectedVisitForMC.mcStartDate) }}</strong> sehingga 
+                    <strong>{{ formatDate(selectedVisitForMC.mcEndDate) }}</strong>
+                  </p>
+                  
+                  <div class="signature-area">
+                    <div class="signature-line"></div>
+                    <p class="mb-0">Tandatangan</p>
+                    <p class="mb-0"><small>{{ selectedVisitForMC.doctor?.name || 'Doctor' }}</small></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeMCModal">Close</button>
+            <button type="button" class="btn btn-primary" @click="printMedicalCertificate">Print</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-backdrop fade show" v-if="showMCModal"></div>
   </div>
 </template>
 
@@ -516,7 +671,12 @@ export default {
       showVisitDetailsModal: false,
       selectedVisit: null,
       // Search functionality
-      searchTimeout: null
+      searchTimeout: null,
+      // Receipt and MC viewing
+      showReceiptModal: false,
+      selectedVisitForReceipt: null,
+      showMCModal: false,
+      selectedVisitForMC: null
     };
   },
   created() {
@@ -670,7 +830,7 @@ export default {
         this.closeModal();
       } catch (error) {
         console.error('Failed to save patient:', error);
-        this.error = error.response?.data?.message || 'Failed to save patient. Please try again.';
+        this.error = error.response?.data?.message || 'Failed to save patient';
       } finally {
         this.saving = false;
       }
@@ -814,6 +974,120 @@ export default {
         'waiting': 'badge bg-secondary'
       };
       return statusClasses[status?.toLowerCase()] || 'badge bg-success';
+    },
+
+    // Receipt and MC viewing methods
+    viewReceipt(visit) {
+      // Create and show receipt modal
+      this.selectedVisitForReceipt = visit;
+      this.showReceiptModal = true;
+    },
+
+    viewMedicalCertificate(visit) {
+      // Create and show MC modal
+      this.selectedVisitForMC = visit;
+      this.showMCModal = true;
+    },
+
+    printReceipt() {
+      const receiptContent = document.getElementById('receiptPrintContent');
+      if (receiptContent) {
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Receipt - ${this.selectedVisitForReceipt?.receiptNumber}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .receipt-container { max-width: 600px; margin: 0 auto; border: 2px solid #000; padding: 30px; }
+              .clinic-header { text-align: center; margin-bottom: 30px; }
+              .clinic-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+              .receipt-header { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              .receipt-title { font-size: 20px; font-weight: bold; }
+              .receipt-number { color: #dc3545; font-weight: bold; }
+              .patient-info { margin-bottom: 30px; }
+              .info-row { margin-bottom: 10px; display: flex; }
+              .label { min-width: 140px; }
+              .value { flex: 1; padding-left: 10px; border-bottom: 1px dotted #000; font-weight: bold; }
+              .amount-section { display: flex; justify-content: space-between; align-items: start; margin-bottom: 30px; }
+              .amount-box { border: 2px solid #000; padding: 15px 20px; min-width: 200px; display: flex; justify-content: space-between; }
+              .signature-area { text-align: center; }
+              .signature-space { height: 60px; border-bottom: 1px solid #ccc; margin-bottom: 10px; }
+            </style>
+          </head>
+          <body onload="window.print(); window.close();">
+            ${receiptContent.innerHTML}
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    },
+
+    printMedicalCertificate() {
+      const mcContent = document.getElementById('mcPrintContent');
+      if (mcContent) {
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Medical Certificate - ${this.selectedVisitForMC?.mcRunningNumber}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .mc-container { background-color: #e8e5b0; padding: 20px; border: 1px solid #000; max-width: 600px; margin: 0 auto; }
+              .clinic-header { text-align: center; margin-bottom: 15px; }
+              .clinic-name { font-weight: bold; margin-bottom: 0; }
+              .mc-number { text-align: right; margin-bottom: 15px; font-size: 0.9rem; color: #a52a2a; }
+              .mc-title { text-align: center; margin-bottom: 20px; }
+              .mc-content { margin-bottom: 15px; }
+              .signature-area { text-align: right; margin-top: 40px; }
+              .signature-line { border-bottom: 1px dotted #000; width: 150px; margin-bottom: 10px; }
+            </style>
+          </head>
+          <body onload="window.print(); window.close();">
+            ${mcContent.innerHTML}
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    },
+
+    closeReceiptModal() {
+      this.showReceiptModal = false;
+      this.selectedVisitForReceipt = null;
+    },
+
+    closeMCModal() {
+      this.showMCModal = false;
+      this.selectedVisitForMC = null;
+    },
+
+    formatReceiptDate(date) {
+      if (!date) return '';
+      const dateObj = new Date(date);
+      return dateObj.toLocaleDateString('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    },
+
+    formatAmount(amount) {
+      if (!amount) return '0.00';
+      return parseFloat(amount).toFixed(2);
+    },
+
+    calculateMCDays(startDate, endDate) {
+      if (!startDate || !endDate) return '0';
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      return diffDays.toString();
     }
   }
 };
@@ -885,6 +1159,138 @@ export default {
 
 .bg-light {
   background-color: #f8f9fa !important;
+}
+
+/* Receipt and MC specific styling */
+.receipt-container {
+  border: 2px solid #000;
+  padding: 30px;
+  background: white;
+  font-family: Arial, sans-serif;
+}
+
+.mc-container {
+  background-color: #e8e5b0;
+  padding: 20px;
+  border: 1px solid #000;
+  font-family: Arial, sans-serif;
+}
+
+.clinic-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.clinic-name {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #000;
+}
+
+.receipt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.receipt-title {
+  font-size: 20px;
+  font-weight: bold;
+  color: #000;
+}
+
+.receipt-number {
+  color: #dc3545;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.patient-info {
+  margin-bottom: 30px;
+}
+
+.info-row {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.label {
+  min-width: 140px;
+  display: inline-block;
+  color: #000;
+}
+
+.value {
+  flex: 1;
+  padding-left: 10px;
+  border-bottom: 1px dotted #000;
+  min-height: 25px;
+  color: #000;
+  font-weight: bold;
+}
+
+.amount-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 30px;
+}
+
+.amount-box {
+  border: 2px solid #000;
+  padding: 15px 20px;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-width: 200px;
+  width: 200px;
+}
+
+.amount-label {
+  font-weight: bold;
+  margin-bottom: 0;
+  color: #000;
+  font-size: 18px;
+}
+
+.amount-value {
+  font-weight: bold;
+  color: #000;
+  font-size: 18px;
+}
+
+.signature-area {
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.signature-space {
+  height: 60px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 10px;
+}
+
+.mc-number {
+  text-align: right;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  color: #a52a2a;
+}
+
+.mc-title {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.signature-line {
+  border-bottom: 1px dotted #000;
+  width: 150px;
+  margin-bottom: 10px;
+  margin-left: auto;
 }
 
 /* Responsive adjustments */

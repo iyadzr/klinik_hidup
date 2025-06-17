@@ -10,13 +10,15 @@
               type="date" 
               id="queueDate"
               v-model="selectedDate" 
-              @change="loadQueueList"
               class="form-control form-control-sm"
               style="width: auto;"
             >
           </div>
           <button @click="setToday" class="btn btn-outline-primary btn-sm">
             <i class="fas fa-calendar-day"></i> Today
+          </button>
+          <button @click="manualRefresh" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-sync-alt"></i> Refresh
           </button>
         </div>
       </div>
@@ -36,8 +38,19 @@
             <tbody>
               <tr v-for="queue in queueList" :key="queue.id" :class="{'table-active': queue.status === 'in_consultation'}">
                 <td>{{ formatQueueNumber(queue.queueNumber) }}</td>
-                <td>{{ queue.patient.name }}</td>
-                <td>{{ queue.doctor.name }}</td>
+                <td>
+                  <div v-if="queue.isGroupConsultation">
+                    <strong>{{ queue.mainPatient ? queue.mainPatient.name : 'Group Consultation' }}</strong>
+                    <small class="text-muted d-block">
+                      <i class="fas fa-users me-1"></i>
+                      Group ({{ queue.totalPatients || queue.groupMembers?.length || 0 }} patients)
+                    </small>
+                  </div>
+                  <div v-else>
+                    {{ queue.patient ? queue.patient.name : 'N/A' }}
+                  </div>
+                </td>
+                <td>{{ queue.doctor ? queue.doctor.name : 'N/A' }}</td>
                 <td>
                   <span :class="getStatusBadgeClass(queue.status)">
                     {{ formatStatus(queue.status) }}
@@ -80,14 +93,19 @@ export default {
   data() {
     // Helper function to get today's date in MYT
     const getTodayInMYT = () => {
+      // Get actual current date in Malaysia timezone
       const now = new Date();
-      const options = {
-        timeZone: 'Asia/Kuala_Lumpur',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      };
-      return now.toLocaleDateString('en-CA', options); // en-CA gives YYYY-MM-DD format
+      // Convert to MYT by adding 8 hours (MYT is UTC+8)
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const mytTime = new Date(utc + (8 * 3600000)); // Add 8 hours for MYT
+      
+      const year = mytTime.getFullYear();
+      const month = String(mytTime.getMonth() + 1).padStart(2, '0');
+      const day = String(mytTime.getDate()).padStart(2, '0');
+      
+      const dateString = `${year}-${month}-${day}`;
+      console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', mytTime.toLocaleString());
+      return dateString;
     };
 
     return {
@@ -99,7 +117,10 @@ export default {
         patientId: '',
         doctorId: ''
       },
-      eventSource: null
+      eventSource: null,
+      refreshInterval: null,
+      dateFilterTimeout: null, // Add debounce timeout
+      currentQueueRequest: null // Add request controller
     };
   },
   computed: {
@@ -113,6 +134,20 @@ export default {
     this.refreshInterval = setInterval(this.loadQueueList, 30000);
     // Initialize real-time updates
     this.initializeSSE();
+  },
+  async mounted() {
+    await this.loadData();
+    this.initializeSSE();
+    
+    // Request notification permission for queue updates
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  },
+  async activated() {
+    // This will be called when returning to this component (if using keep-alive)
+    console.log('Queue management component activated - refreshing data');
+    await this.loadQueueList();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -196,37 +231,86 @@ export default {
       }
     },
     async loadQueueList() {
+      // Cancel previous request if still pending
+      if (this.currentQueueRequest) {
+        this.currentQueueRequest.abort();
+      }
+      
+      // Create new AbortController for this request
+      this.currentQueueRequest = new AbortController();
+      
       try {
-        const response = await axios.get(`/api/queue?date=${this.selectedDate}`);
+        console.log('Loading queue list for date:', this.selectedDate);
+        const response = await axios.get(`/api/queue?date=${this.selectedDate}`, {
+          signal: this.currentQueueRequest.signal
+        });
         console.log('Queue API response:', response);
         
         if (response.data && Array.isArray(response.data)) {
           this.queueList = response.data;
-          console.log('Queue list loaded:', this.queueList.length, 'items');
+          
+          // Show success notification
+          if (response.data.length > 0) {
+            console.log(`✅ Loaded ${response.data.length} queue entries for ${this.selectedDate}`);
+          } else {
+            console.log(`ℹ️ No queue entries found for ${this.selectedDate}`);
+          }
+          
+          // Log each queue item for debugging
+          this.queueList.forEach((queue, index) => {
+            console.log(`Queue ${index + 1}:`, {
+              id: queue.id,
+              queueNumber: queue.queueNumber,
+              registrationNumber: queue.registrationNumber,
+              patientName: queue.patient?.name,
+              doctorName: queue.doctor?.name,
+              status: queue.status,
+              time: queue.time || queue.queueDateTime
+            });
+          });
         } else {
           console.error('Unexpected queue data format:', response.data);
           this.queueList = [];
         }
       } catch (error) {
-        console.error('Error loading queue:', error);
+        if (error.name === 'AbortError') {
+          console.log('⏹️ Queue request was cancelled');
+          return;
+        }
+        console.error('❌ Error loading queue:', error);
         this.queueList = [];
+      } finally {
+        this.currentQueueRequest = null;
       }
     },
     
     getTodayInMYT() {
-      // Create a new date in MYT timezone and format as YYYY-MM-DD
+      // Get actual current date in Malaysia timezone
       const now = new Date();
-      const options = {
-        timeZone: 'Asia/Kuala_Lumpur',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      };
-      const mytDateString = now.toLocaleDateString('en-CA', options); // en-CA gives YYYY-MM-DD format
-      return mytDateString;
+      // Convert to MYT by adding 8 hours (MYT is UTC+8)
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const mytTime = new Date(utc + (8 * 3600000)); // Add 8 hours for MYT
+      
+      const year = mytTime.getFullYear();
+      const month = String(mytTime.getMonth() + 1).padStart(2, '0');
+      const day = String(mytTime.getDate()).padStart(2, '0');
+      
+      const dateString = `${year}-${month}-${day}`;
+      console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', mytTime.toLocaleString());
+      return dateString;
     },
     setToday() {
       this.selectedDate = this.getTodayInMYT();
+      this.loadQueueList();
+    },
+    manualRefresh() {
+      // Clear any pending debounced calls
+      if (this.dateFilterTimeout) {
+        clearTimeout(this.dateFilterTimeout);
+        this.dateFilterTimeout = null;
+      }
+      // Immediately load queue list
+      console.log('Manual queue refresh triggered');
       this.loadQueueList();
     },
     async addToQueue() {
@@ -405,7 +489,62 @@ export default {
         return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();
       }
       return 'Unknown Doctor';
+    }
+  },
+  watch: {
+    selectedDate() {
+      // Clear existing timeout
+      if (this.dateFilterTimeout) {
+        clearTimeout(this.dateFilterTimeout);
+      }
+      
+      // Set new timeout for 2 seconds
+      this.dateFilterTimeout = setTimeout(() => {
+        console.log('Queue date filter triggered after 2 second delay:', this.selectedDate);
+        this.loadQueueList();
+      }, 2000);
     },
+    '$route.query.refresh'() {
+      // Refresh queue list when refresh parameter changes
+      console.log('Refresh parameter detected - reloading queue list');
+      this.loadQueueList();
+    }
+  },
+  async created() {
+    await this.loadData();
+    this.initializeSSE();
+    
+    // Request notification permission for queue updates
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  },
+  async mounted() {
+    await this.loadData();
+    this.initializeSSE();
+    
+    // Request notification permission for queue updates
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  },
+  async activated() {
+    // This will be called when returning to this component (if using keep-alive)
+    console.log('Queue management component activated - refreshing data');
+    await this.loadQueueList();
+  },
+  beforeUnmount() {
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
+    // Cleanup debounce timeout
+    if (this.dateFilterTimeout) {
+      clearTimeout(this.dateFilterTimeout);
+      this.dateFilterTimeout = null;
+    }
   }
 };
 </script>

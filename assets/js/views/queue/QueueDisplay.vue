@@ -101,9 +101,17 @@ export default {
     this.initializeSSE();
   },
   mounted() {
-    this.enterFullscreen();
+    // Don't automatically enter fullscreen - let user choose
+    // this.enterFullscreen();
     document.body.classList.add('queue-fullscreen');
     window.addEventListener('keydown', this.handleKeydown);
+    
+    // Add fullscreen change event listeners to sync state
+    document.addEventListener('fullscreenchange', this.handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', this.handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', this.handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', this.handleFullscreenChange);
+    
     this.updateClock();
     this.clockInterval = setInterval(this.updateClock, 1000);
   },
@@ -119,6 +127,12 @@ export default {
     }
     document.body.classList.remove('queue-fullscreen');
     window.removeEventListener('keydown', this.handleKeydown);
+    
+    // Remove fullscreen event listeners
+    document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', this.handleFullscreenChange);
+    document.removeEventListener('mozfullscreenchange', this.handleFullscreenChange);
+    document.removeEventListener('MSFullscreenChange', this.handleFullscreenChange);
   },
   methods: {
     formatQueueNumber(queueNumber) {
@@ -294,24 +308,73 @@ export default {
     enterFullscreen() {
       this.isFullscreen = true;
       document.body.classList.add('queue-fullscreen');
+      
       // Try browser fullscreen API
       const el = document.documentElement;
-      if (el.requestFullscreen) el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-      else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
-      else if (el.msRequestFullscreen) el.msRequestFullscreen();
+      try {
+        if (el.requestFullscreen) {
+          el.requestFullscreen().catch(err => {
+            console.warn('Failed to enter fullscreen:', err);
+            this.isFullscreen = false;
+            document.body.classList.remove('queue-fullscreen');
+          });
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+          el.mozRequestFullScreen();
+        } else if (el.msRequestFullscreen) {
+          el.msRequestFullscreen();
+        }
+      } catch (error) {
+        console.warn('Error entering fullscreen:', error);
+        this.isFullscreen = false;
+        document.body.classList.remove('queue-fullscreen');
+      }
     },
     exitFullscreen() {
       this.isFullscreen = false;
       document.body.classList.remove('queue-fullscreen');
-      if (document.exitFullscreen) document.exitFullscreen();
-      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-      else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
-      else if (document.msExitFullscreen) document.msExitFullscreen();
+      
+      // Check if document is actually in fullscreen mode before trying to exit
+      if (document.fullscreenElement || document.webkitFullscreenElement || 
+          document.mozFullScreenElement || document.msFullscreenElement) {
+        try {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(err => {
+              console.warn('Failed to exit fullscreen:', err);
+            });
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+          } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+          }
+        } catch (error) {
+          console.warn('Error exiting fullscreen:', error);
+        }
+      }
     },
     handleKeydown(e) {
       if (e.key === 'Escape' && this.isFullscreen) {
         this.exitFullscreen();
+      }
+    },
+    handleFullscreenChange() {
+      // Sync our internal state with the actual fullscreen state
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement || 
+        document.webkitFullscreenElement || 
+        document.mozFullScreenElement || 
+        document.msFullscreenElement
+      );
+      
+      this.isFullscreen = isCurrentlyFullscreen;
+      
+      if (isCurrentlyFullscreen) {
+        document.body.classList.add('queue-fullscreen');
+      } else {
+        document.body.classList.remove('queue-fullscreen');
       }
     },
     updateClock() {

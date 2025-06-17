@@ -401,11 +401,60 @@ class SettingController extends AbstractController
                 'description' => 'Backup frequency (daily, weekly, monthly)'
             ],
             [
+                'key' => 'system.backup_time',
+                'category' => 'system',
+                'type' => 'string',
+                'defaultValue' => '18:30',
+                'description' => 'Daily backup time (24-hour format, e.g., 18:30 for 6:30 PM)'
+            ],
+            [
+                'key' => 'system.backup_retention_days',
+                'category' => 'system',
+                'type' => 'number',
+                'defaultValue' => 30,
+                'description' => 'Number of days to keep backup files'
+            ],
+            [
+                'key' => 'system.backup_retention_count',
+                'category' => 'system',
+                'type' => 'number',
+                'defaultValue' => 10,
+                'description' => 'Maximum number of backup files to keep'
+            ],
+            [
                 'key' => 'system.maintenance_mode',
                 'category' => 'system',
                 'type' => 'boolean',
                 'defaultValue' => false,
                 'description' => 'Enable maintenance mode'
+            ],
+            [
+                'key' => 'system.receipt_number_prefix',
+                'category' => 'system',
+                'type' => 'string',
+                'defaultValue' => 'RCP',
+                'description' => 'Prefix for receipt numbers (e.g., RCP001, RCP002)'
+            ],
+            [
+                'key' => 'system.receipt_number_start',
+                'category' => 'system',
+                'type' => 'number',
+                'defaultValue' => 1,
+                'description' => 'Starting number for receipt sequence'
+            ],
+            [
+                'key' => 'system.mc_number_prefix',
+                'category' => 'system',
+                'type' => 'string',
+                'defaultValue' => 'MC',
+                'description' => 'Prefix for medical certificate numbers (e.g., MC001, MC002)'
+            ],
+            [
+                'key' => 'system.mc_number_start',
+                'category' => 'system',
+                'type' => 'number',
+                'defaultValue' => 1,
+                'description' => 'Starting number for medical certificate sequence'
             ]
         ];
     }

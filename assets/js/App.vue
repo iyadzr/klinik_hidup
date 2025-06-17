@@ -15,8 +15,14 @@
       <nav v-if="isAuthenticated && !isAuthPage" :class="['sidebar', { open: isSidebarOpen }]">
         <ul class="nav flex-column sidebar-nav">
           <li v-for="item in filteredMenu" :key="item.path" class="nav-item">
-            <router-link :to="item.path" class="nav-link" active-class="active">
+            <router-link :to="item.path" class="nav-link">
               <i :class="item.icon"></i> {{ item.label }}
+            </router-link>
+          </li>
+          
+          <li class="nav-item" v-if="hasRole('ROLE_SUPER_ADMIN')">
+            <router-link to="/backup-management" class="nav-link">
+              <i class="fas fa-database me-2"></i>Backup Management
             </router-link>
           </li>
         </ul>
@@ -123,8 +129,9 @@
 }
 .sidebar .nav-link.router-link-active,
 .sidebar .nav-link:hover {
-  background: #e9ecef;
-  color: #007bff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 .sidebar .nav-link i {
   width: 20px;
@@ -271,12 +278,6 @@ export default {
       
       // Admin-only menu items
       {
-        path: '/admin/medications',
-        label: 'Medication Admin',
-        icon: 'fas fa-pills',
-        roles: ['ROLE_SUPER_ADMIN']
-      },
-      {
         path: '/admin/users',
         label: 'User Management',
         icon: 'fas fa-users',
@@ -325,6 +326,11 @@ export default {
       }
     };
 
+    const hasRole = (role) => {
+      if (!currentUser.value || !currentUser.value.roles) return false;
+      return currentUser.value.roles.includes(role);
+    };
+
     const filteredMenu = computed(() => {
       if (!currentUser.value) return [];
       
@@ -360,6 +366,7 @@ export default {
       isSuperAdmin,
       userRoles,
       isAuthPage,
+      hasRole,
       toggleSidebar,
       handleLogout,
       handleLoginSuccess,

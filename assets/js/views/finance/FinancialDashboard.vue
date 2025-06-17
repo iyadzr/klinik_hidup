@@ -204,85 +204,144 @@ export default {
 <style scoped>
 .financial-dashboard {
   padding: 2rem 0;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  min-height: 100vh;
 }
 
 .stats-card {
   padding: 2rem;
-  border-radius: 16px;
+  border-radius: 20px;
   background: white;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
   border: none;
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  transition: transform 0.2s ease;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stats-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--gradient);
 }
 
 .stats-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.12);
 }
 
 .stats-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
+  width: 70px;
+  height: 70px;
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   color: white;
+  flex-shrink: 0;
+}
+
+.revenue-card {
+  --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .revenue-card .stats-icon {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient);
+}
+
+.consultations-card {
+  --gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }
 
 .consultations-card .stats-icon {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: var(--gradient);
+}
+
+.average-card {
+  --gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
 
 .average-card .stats-icon {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  background: var(--gradient);
+}
+
+.growth-card {
+  --gradient: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
 }
 
 .growth-card .stats-icon {
-  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  background: var(--gradient);
 }
 
 .stats-content h3 {
-  font-size: 1.8rem;
+  font-size: 2rem;
   font-weight: 700;
   margin-bottom: 0.25rem;
-  color: #2d3748;
+  color: #1a202c;
+  background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .stats-content p {
   margin: 0;
   color: #718096;
   font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .card {
   border: none;
-  border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12);
 }
 
 .card-header {
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 1.5rem;
-  border-radius: 16px 16px 0 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-bottom: none;
+  padding: 1.75rem;
+  border-radius: 20px 20px 0 0;
+  color: white;
 }
 
 .card-header h5 {
-  color: #2d3748;
+  color: white;
   font-weight: 600;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.card-body {
+  padding: 1.75rem;
 }
 
 .medication-item {
-  padding: 1rem 0;
+  padding: 1.25rem 0;
   border-bottom: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.medication-item:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  margin: 0 -1.75rem;
+  padding: 1.25rem 1.75rem;
+  border-radius: 12px;
 }
 
 .medication-item:last-child {
@@ -292,15 +351,26 @@ export default {
 .medication-item h6 {
   color: #2d3748;
   font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
 }
 
 .progress {
-  height: 4px;
+  height: 6px;
   background-color: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
 }
 
 .progress-bar {
   background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.table {
+  border-radius: 0 0 20px 20px;
+  overflow: hidden;
 }
 
 .table th {
@@ -308,10 +378,143 @@ export default {
   font-weight: 600;
   color: #4a5568;
   font-size: 0.875rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  padding: 1rem 1.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table td {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.table tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.table tbody tr:hover {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 .badge {
   font-weight: 500;
-  padding: 0.375rem 0.75rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
 }
+
+.badge.bg-light {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+  color: #4a5568 !important;
+  border: 1px solid #e2e8f0;
+}
+
+.form-select {
+  border-radius: 12px;
+  border: 2px solid #e2e8f0;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.form-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.btn {
+  border-radius: 12px;
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.btn-outline-primary {
+  border: 2px solid #667eea;
+  color: #667eea;
+  background: white;
+}
+
+.btn-outline-primary:hover {
+  background: #667eea;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* Loading states */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  z-index: 10;
+}
+
+.spinner-border {
+  color: #667eea;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .financial-dashboard {
+    padding: 1rem 0;
+  }
+  
+  .stats-card {
+    padding: 1.5rem;
+    gap: 1rem;
+  }
+  
+  .stats-icon {
+    width: 60px;
+    height: 60px;
+    font-size: 1.5rem;
+  }
+  
+  .stats-content h3 {
+    font-size: 1.5rem;
+  }
+  
+  .card-header,
+  .card-body {
+    padding: 1.25rem;
+  }
+  
+  .table th,
+  .table td {
+    padding: 0.75rem;
+    font-size: 0.875rem;
+  }
+}
+
+/* Animation for stats cards */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stats-card {
+  animation: slideInUp 0.6s ease forwards;
+}
+
+.stats-card:nth-child(1) { animation-delay: 0.1s; }
+.stats-card:nth-child(2) { animation-delay: 0.2s; }
+.stats-card:nth-child(3) { animation-delay: 0.3s; }
+.stats-card:nth-child(4) { animation-delay: 0.4s; }
 </style> 

@@ -105,7 +105,7 @@
                 <td>
                   <div class="d-flex flex-wrap gap-1">
                     <span 
-                      v-for="role in user.roles" 
+                      v-for="role in getSortedRoles(user.roles)" 
                       :key="role" 
                       class="badge"
                       :class="getRoleBadgeClass(role)"
@@ -772,6 +772,15 @@ export default {
         'ROLE_USER': 'bg-secondary'
       };
       return classes[role] || 'bg-secondary';
+    },
+    
+    getSortedRoles(roles) {
+      if (!roles || !Array.isArray(roles)) return [];
+      return [...roles].sort((a, b) => {
+        const roleA = this.formatRole(a);
+        const roleB = this.formatRole(b);
+        return roleA.localeCompare(roleB);
+      });
     },
     
     formatRole(role) {

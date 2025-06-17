@@ -37,7 +37,6 @@
               <table class="table table-striped table-hover">
                 <thead>
                   <tr>
-                    <th>Reg #</th>
                     <th>Name</th>
                     <th>NRIC</th>
                     <th>Phone</th>
@@ -46,7 +45,6 @@
                 </thead>
                 <tbody>
                   <tr v-for="result in searchResults" :key="result.id">
-                    <td>{{ result.registrationNumber }}</td>
                     <td>{{ result.name }}</td>
                     <td>{{ result.nric }}</td>
                     <td>{{ result.phone }}</td>
@@ -98,13 +96,15 @@
                 <!-- Existing Patients Cards -->
                 <div v-if="patients.length > 0" class="row g-3 mb-3">
                   <div v-for="(pat, index) in patients" :key="index" class="col-md-6">
-                    <div class="card border-primary">
+                    <div class="card" :class="pat.relationship === 'self' ? 'border-success' : 'border-primary'">
                       <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
                           <div>
                             <h6 class="card-title mb-1">
                               <i class="fas fa-user me-2"></i>
                               {{ pat.name }}
+                              <span v-if="pat.relationship === 'self'" class="badge bg-success ms-2">Main Patient</span>
+                              <span v-else-if="pat.relationship" class="badge bg-info ms-2">{{ formatRelationship(pat.relationship) }}</span>
                             </h6>
                             <p class="card-text small mb-1">
                               <strong>NRIC:</strong> {{ pat.nric }}<br>
@@ -146,7 +146,7 @@
                   v-if="!showPatientForm"
                 >
                   <i class="fas fa-plus me-2"></i>
-                  Add {{ patients.length === 0 ? 'First' : 'Another' }} Patient
+                  Add {{ patients.length === 0 ? 'Main Patient' : 'Family Member/Companion' }}
                 </button>
               </div>
             </div>
@@ -199,15 +199,14 @@
                 </div>
 
                 <div class="row mb-3">
-                  <div class="col-md-6">
+                  <div :class="patients.length === 0 && editingPatientIndex === null ? 'col-md-12' : 'col-md-6'">
                     <label class="form-label">Address</label>
                     <input type="text" v-model="currentPatient.address" class="form-control" placeholder="Enter full address">
                   </div>
-                  <div class="col-md-6">
+                  <div v-if="patients.length > 0 || editingPatientIndex !== null" class="col-md-6">
                     <label class="form-label">Relationship to Main Patient</label>
-                    <select v-model="currentPatient.relationship" class="form-select">
+                    <select v-model="currentPatient.relationship" class="form-select" required>
                       <option value="">Select Relationship</option>
-                      <option value="self">Self (Main Patient)</option>
                       <option value="spouse">Spouse</option>
                       <option value="parent">Parent</option>
                       <option value="child">Child</option>
@@ -260,7 +259,7 @@
             <div class="row mb-3">
               <div class="col-md-12">
                 <label class="form-label">NRIC</label>
-                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC/Identification Number" @input="calculateDOBFromNRIC" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
+                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC/Identification Number" @input="calculateDOBFromNRIC()" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
                 <small class="text-muted">For 12-digit NRIC format (YYMMDD-XX-XXXX), DOB and gender will be auto-calculated</small>
               </div>
             </div>
@@ -295,8 +294,8 @@
         </div>
       </div>
 
-      <!-- Pre-informed Illness Section -->
-      <div class="card mt-3">
+      <!-- Pre-informed Illness Section (only show for single patient registration) -->
+      <div v-if="!multiplePatients" class="card mt-3">
         <div class="card-header">
           <h4 class="mb-0">Pre-informed Illness/Symptoms</h4>
         </div>
@@ -444,7 +443,18 @@ export default {
   methods: {
     calculateDOBFromNRIC(patient = null) {
       const targetPatient = patient || this.patient;
+      
+      // Check if targetPatient exists and has nric property
+      if (!targetPatient || !targetPatient.hasOwnProperty('nric')) {
+        return;
+      }
+      
       const nric = targetPatient.nric;
+      
+      // Check if nric exists and is a string
+      if (!nric || typeof nric !== 'string' || nric.trim() === '') {
+        return;
+      }
       
       // Check if the NRIC follows the YYMMDD-XX-XXXX pattern (with or without hyphens)
       // First, remove hyphens if they exist
@@ -463,7 +473,7 @@ export default {
           const day = parseInt(dayStr, 10);
           
           if (month < 1 || month > 12 || day < 1 || day > 31) {
-            console.warn('Invalid month or day in NRIC');
+            console.warn('Invalid month or day in NRIC:', { month, day, nric: cleanNric });
             return;
           }
           
@@ -623,13 +633,27 @@ export default {
         return;
       }
 
+      // Handle relationship logic
       if (this.editingPatientIndex !== null) {
         // Update existing patient
         this.patients[this.editingPatientIndex] = { ...this.currentPatient };
         this.editingPatientIndex = null;
       } else {
         // Add new patient
-        this.patients.push({ ...this.currentPatient });
+        const patientToAdd = { ...this.currentPatient };
+        
+        // If this is the first patient, automatically set as main patient
+        if (this.patients.length === 0) {
+          patientToAdd.relationship = 'self';
+        } else {
+          // For subsequent patients, validate that relationship is selected
+          if (!patientToAdd.relationship) {
+            alert('Please select the relationship to the main patient.');
+            return;
+          }
+        }
+        
+        this.patients.push(patientToAdd);
       }
 
       this.resetCurrentPatient();
@@ -666,6 +690,22 @@ export default {
       }
       
       return age;
+    },
+
+    formatRelationship(relationship) {
+      const relationships = {
+        'self': 'Main Patient',
+        'spouse': 'Spouse',
+        'parent': 'Parent',
+        'child': 'Child',
+        'sibling': 'Sibling',
+        'grandparent': 'Grandparent',
+        'grandchild': 'Grandchild',
+        'relative': 'Other Relative',
+        'friend': 'Friend',
+        'caregiver': 'Caregiver'
+      };
+      return relationships[relationship] || relationship;
     },
     
     async registerPatient() {
@@ -708,7 +748,8 @@ export default {
           if (queueResponse.data) {
             alert(`Successfully registered ${registeredPatients.length} patients for group consultation!`);
             this.resetForm();
-            this.$router.push('/queue');
+            // Force refresh of queue data by adding a timestamp parameter
+            this.$router.push('/queue?refresh=' + Date.now());
           }
 
         } else {
@@ -737,9 +778,11 @@ export default {
           });
 
           if (queueResponse.data) {
+            alert('Patient registered and added to queue successfully!');
             // Reset the form for next registration
             this.resetForm();
-            this.$router.push('/queue');
+            // Force refresh of queue data by adding a timestamp parameter
+            this.$router.push('/queue?refresh=' + Date.now());
           }
         }
       } catch (error) {

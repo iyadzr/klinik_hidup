@@ -55,7 +55,7 @@
             <p class="card-text">
               Manage medications, unit types, categories, and dosages in the system.
             </p>
-            <router-link to="/admin/medications" class="btn btn-warning">
+            <router-link to="/medications" class="btn btn-warning">
               <i class="fas fa-pills me-2"></i>Manage Medications
             </router-link>
           </div>

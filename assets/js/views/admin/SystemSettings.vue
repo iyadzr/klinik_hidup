@@ -290,6 +290,19 @@
                 </div>
                 <small class="text-muted">{{ setting.description }}</small>
               </div>
+              <div v-else-if="setting.key === 'system.backup_time'">
+                <div class="form-floating">
+                  <input 
+                    type="time" 
+                    class="form-control" 
+                    :id="setting.key"
+                    v-model="settingsData[setting.key]"
+                    :placeholder="setting.description"
+                  >
+                  <label :for="setting.key">{{ formatSettingLabel(setting.key) }}</label>
+                </div>
+                <small class="text-muted">{{ setting.description }}</small>
+              </div>
               <div v-else>
                 <div class="form-floating">
                   <input 

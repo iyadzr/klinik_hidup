@@ -17,63 +17,63 @@ use Symfony\Component\Security\Core\Exception\AuthenticationException;
 class SecurityController extends AbstractController
 {
     #[Route('/login', name: 'app_login', methods: ['POST'])]
-    public function login(Request $request): JsonResponse
-    {
+    public function login(
+        Request $request, 
+        EntityManagerInterface $entityManager,
+        UserPasswordHasherInterface $passwordHasher
+    ): JsonResponse {
         $data = json_decode($request->getContent(), true);
         $email = $data['email'] ?? $data['username'] ?? '';
         $password = $data['password'] ?? '';
 
-        // Handle specific test users for development
-        $user = [];
-        $roles = ['ROLE_USER']; // Default role
-        
-        // Check for specific super admin email
-        if ($email === 'dhiak@gmail.com') {
-            $user = [
-                'id' => 1,
-                'email' => 'dhiak@gmail.com',
-                'name' => 'Super Admin',
-                'username' => 'superadmin'
-            ];
-            $roles = ['ROLE_USER', 'ROLE_SUPER_ADMIN'];
-        } else if ($email === 'doctor@gmail.com') {
-            $user = [
-                'id' => 2,
-                'email' => 'doctor@gmail.com',
-                'name' => 'Dr. John Doe',
-                'username' => 'doctor'
-            ];
-            $roles = ['ROLE_USER', 'ROLE_DOCTOR'];
-        } else if ($email === 'mat.hayat@ymail.com') {
-            $user = [
-                'id' => 3,
-                'email' => 'mat.hayat@ymail.com',
-                'name' => 'Dr. Mat Hayat',
-                'username' => 'mathayat'
-            ];
-            $roles = ['ROLE_USER', 'ROLE_DOCTOR'];
-        } else if ($email === 'assistant@gmail.com') {
-            $user = [
-                'id' => 4,
-                'email' => 'assistant@gmail.com',
-                'name' => 'Clinic Assistant',
-                'username' => 'assistant'
-            ];
-            $roles = ['ROLE_USER', 'ROLE_ASSISTANT'];
-        } else {
-            // Reject unregistered users
+        if (empty($email) || empty($password)) {
+            return $this->json([
+                'error' => 'Invalid credentials',
+                'message' => 'Email and password are required.'
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+
+        // Find user by email or username
+        $user = $entityManager->getRepository(User::class)->createQueryBuilder('u')
+            ->where('u.email = :identifier OR u.username = :identifier')
+            ->setParameter('identifier', $email)
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        if (!$user) {
             return $this->json([
                 'error' => 'Invalid credentials',
                 'message' => 'User not found. Please contact administrator for account registration.'
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        $user['roles'] = $roles;
+        // Check if user is active
+        if (!$user->isActive()) {
+            return $this->json([
+                'error' => 'Account disabled',
+                'message' => 'Your account has been disabled. Please contact administrator.'
+            ], Response::HTTP_UNAUTHORIZED);
+        }
+
+        // Verify password
+        if (!$passwordHasher->isPasswordValid($user, $password)) {
+            return $this->json([
+                'error' => 'Invalid credentials',
+                'message' => 'Incorrect password. Please try again.'
+            ], Response::HTTP_UNAUTHORIZED);
+        }
 
         // Return token and user data
         return $this->json([
-            'token' => 'dev-token-' . time(),
-            'user' => $user
+            'token' => 'auth-token-' . $user->getId() . '-' . time(),
+            'user' => [
+                'id' => $user->getId(),
+                'email' => $user->getEmail(),
+                'name' => $user->getName(),
+                'username' => $user->getUsername(),
+                'roles' => $user->getRoles(),
+                'allowedPages' => $user->getAllowedPages()
+            ]
         ]);
     }
 
@@ -83,34 +83,81 @@ class SecurityController extends AbstractController
         UserPasswordHasherInterface $passwordHasher,
         EntityManagerInterface $entityManager
     ): JsonResponse {
-        // DEVELOPMENT MODE: Accept any input as a valid user. Remove all validation and existence checks.
-        $data = json_decode($request->getContent(), true);
+        try {
+            $data = json_decode($request->getContent(), true);
+            
+            if (!$data) {
+                return $this->json(['message' => 'Invalid JSON'], Response::HTTP_BAD_REQUEST);
+            }
 
-        // Provide defaults if fields are missing
-        $email = $data['email'] ?? (uniqid('user') . '@example.com');
-        $name = $data['name'] ?? 'Dev User';
-        $username = $data['username'] ?? ('user_' . uniqid());
-        $password = $data['password'] ?? 'password';
+            // Validate required fields
+            $requiredFields = ['name', 'username', 'email', 'password'];
+            $missingFields = [];
+            
+            foreach ($requiredFields as $field) {
+                if (!isset($data[$field]) || (is_string($data[$field]) && trim($data[$field]) === '')) {
+                    $missingFields[] = $field;
+                }
+            }
+            
+            if (!empty($missingFields)) {
+                return $this->json([
+                    'message' => 'Missing required fields: ' . implode(', ', $missingFields)
+                ], Response::HTTP_BAD_REQUEST);
+            }
 
-        // Optionally, persist to database, but for development you can skip this
-        // $user = new User();
-        // $user->setEmail($email);
-        // $user->setName($name);
-        // $user->setUsername($username);
-        // $user->setRoles(['ROLE_USER']);
-        // $hashedPassword = $passwordHasher->hashPassword($user, $password);
-        // $user->setPassword($hashedPassword);
-        // $entityManager->persist($user);
-        // $entityManager->flush();
+            // Validate email format
+            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                return $this->json(['message' => 'Invalid email format'], Response::HTTP_BAD_REQUEST);
+            }
 
-        return $this->json([
-            'message' => 'User registered successfully (development mode, any input accepted)',
-            'user' => [
-                'email' => $email,
-                'name' => $name,
-                'username' => $username
-            ]
-        ], Response::HTTP_CREATED);
+            // Check if username already exists
+            $existingUser = $entityManager->getRepository(User::class)->findOneBy([
+                'username' => $data['username']
+            ]);
+            if ($existingUser) {
+                return $this->json(['message' => 'Username already exists'], Response::HTTP_BAD_REQUEST);
+            }
+
+            // Check if email already exists
+            $existingUser = $entityManager->getRepository(User::class)->findOneBy([
+                'email' => $data['email']
+            ]);
+            if ($existingUser) {
+                return $this->json(['message' => 'Email already exists'], Response::HTTP_BAD_REQUEST);
+            }
+
+            // Create new user
+            $user = new User();
+            $user->setEmail($data['email']);
+            $user->setName($data['name']);
+            $user->setUsername($data['username']);
+            $user->setRoles(['ROLE_USER']);
+            $user->setIsActive(true);
+            
+            // Hash the password
+            $hashedPassword = $passwordHasher->hashPassword($user, $data['password']);
+            $user->setPassword($hashedPassword);
+            
+            // Persist to database
+            $entityManager->persist($user);
+            $entityManager->flush();
+
+            return $this->json([
+                'message' => 'User registered successfully',
+                'user' => [
+                    'id' => $user->getId(),
+                    'email' => $user->getEmail(),
+                    'name' => $user->getName(),
+                    'username' => $user->getUsername()
+                ]
+            ], Response::HTTP_CREATED);
+            
+        } catch (\Exception $e) {
+            return $this->json([
+                'message' => 'Internal server error during registration: ' . $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     #[Route('/logout', name: 'app_logout', methods: ['POST'])]

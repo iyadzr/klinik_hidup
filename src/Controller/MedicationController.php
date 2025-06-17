@@ -46,6 +46,8 @@ class MedicationController extends AbstractController
                 'unitDescription' => $medication->getUnitDescription(),
                 'description' => $medication->getDescription(),
                 'category' => $medication->getCategory(),
+                'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
+                'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
             ];
         }, $medications);
 
@@ -79,6 +81,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
+            'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ], Response::HTTP_CREATED);
     }
 
@@ -98,6 +102,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
+            'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ]);
     }
 
@@ -132,6 +138,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
+            'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ]);
     }
 

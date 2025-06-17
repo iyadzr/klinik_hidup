@@ -115,12 +115,6 @@ const routes = [
     meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
   },
   {
-    path: '/admin/medications',
-    name: 'MedicationAdmin',
-    component: MedicationAdmin,
-    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
-  },
-  {
     path: '/admin/users',
     name: 'UserAdmin',
     component: UserAdmin,
@@ -130,6 +124,13 @@ const routes = [
     path: '/admin/settings',
     name: 'SystemSettings',
     component: SystemSettings,
+    meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
+  },
+  
+  {
+    path: '/backup-management',
+    name: 'BackupManagement',
+    component: () => import('../views/admin/BackupManagement.vue'),
     meta: { requiresAuth: true, roles: ['ROLE_SUPER_ADMIN'] }
   },
   {

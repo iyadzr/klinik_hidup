@@ -8,16 +8,38 @@
         </h2>
         <small class="text-muted">Manage all medications in the system</small>
       </div>
-      <button @click="openAddModal" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Add New Medication
-      </button>
+      <div class="d-flex gap-2">
+        <button @click="loadMedications" class="btn btn-outline-info">
+          <i class="fas fa-sync me-2"></i>Refresh
+        </button>
+        <button @click="openAddModal" class="btn btn-primary">
+          <i class="fas fa-plus me-2"></i>Add New Medication
+        </button>
+      </div>
+    </div>
+
+    <!-- Debug Info -->
+    <div class="alert alert-info mb-4" v-if="error || loading">
+      <div v-if="loading">
+        <i class="fas fa-spinner fa-spin me-2"></i>Loading medications...
+      </div>
+      <div v-if="error" class="text-danger">
+        <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+      </div>
+      <div class="mt-2">
+        <small>
+          Total medications: {{ medications.length }} | 
+          Filtered: {{ filteredMedications.length }} | 
+          API Status: {{ loading ? 'Loading...' : (error ? 'Error' : 'Ready') }}
+        </small>
+      </div>
     </div>
 
     <!-- Filters and Search -->
     <div class="card mb-4">
       <div class="card-body">
         <div class="row g-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <div class="form-floating">
               <input 
                 type="text" 
@@ -30,7 +52,7 @@
               <label for="searchInput">Search Medications</label>
             </div>
           </div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <div class="form-floating">
               <select class="form-select" id="categoryFilter" v-model="selectedCategory" @change="filterMedications">
                 <option value="">All Categories</option>
@@ -41,7 +63,7 @@
               <label for="categoryFilter">Filter by Category</label>
             </div>
           </div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <div class="form-floating">
               <select class="form-select" id="unitFilter" v-model="selectedUnitType" @change="filterMedications">
                 <option value="">All Unit Types</option>
@@ -53,8 +75,21 @@
             </div>
           </div>
           <div class="col-md-2">
+            <div class="form-floating">
+              <select class="form-select" id="itemsPerPageSelect" v-model="itemsPerPage" @change="currentPage = 1">
+                <option value="10">10 per page</option>
+                <option value="15">15 per page</option>
+                <option value="20">20 per page</option>
+                <option value="25">25 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+              </select>
+              <label for="itemsPerPageSelect">Rows per page</label>
+            </div>
+          </div>
+          <div class="col-md-1">
             <button @click="clearFilters" class="btn btn-outline-secondary w-100 h-100">
-              <i class="fas fa-times me-2"></i>Clear
+              <i class="fas fa-times"></i>
             </button>
           </div>
         </div>
@@ -240,6 +275,9 @@
                       <option value="mg">Milligrams (mg)</option>
                       <option value="g">Grams (g)</option>
                       <option value="vials">Vials</option>
+                      <option value="ampoules">Ampoules</option>
+                      <option value="bags">IV Bags</option>
+                      <option value="jars">Jars</option>
                       <option value="drops">Drops</option>
                       <option value="syringes">Syringes</option>
                       <option value="patches">Patches</option>
@@ -276,6 +314,15 @@
                       <option value="topical">Topical Medication</option>
                       <option value="eye_drops">Eye Drops</option>
                       <option value="nasal_spray">Nasal Spray</option>
+                      <option value="muscle_relaxant">Muscle Relaxant</option>
+                      <option value="vaccine">Vaccine</option>
+                      <option value="antiviral">Antiviral</option>
+                      <option value="iv_fluid">IV Fluid</option>
+                      <option value="throat_medication">Throat Medication</option>
+                      <option value="pediatric">Pediatric</option>
+                      <option value="cardiovascular">Cardiovascular</option>
+                      <option value="diabetes">Diabetes</option>
+                      <option value="emergency">Emergency</option>
                       <option value="other">Other</option>
                     </select>
                     <label for="category">Category</label>
@@ -385,7 +432,7 @@ export default {
       
       // Pagination
       currentPage: 1,
-      itemsPerPage: 10,
+      itemsPerPage: 15,
       
       // Modals
       medicationModal: null,
@@ -420,11 +467,11 @@ export default {
       return units.sort();
     },
     totalPages() {
-      return Math.ceil(this.filteredMedications.length / this.itemsPerPage);
+      return Math.ceil(this.filteredMedications.length / parseInt(this.itemsPerPage));
     },
     paginatedMedications() {
-      const start = (this.currentPage - 1) * this.itemsPerPage;
-      const end = start + this.itemsPerPage;
+      const start = (this.currentPage - 1) * parseInt(this.itemsPerPage);
+      const end = start + parseInt(this.itemsPerPage);
       return this.filteredMedications.slice(start, end);
     },
     visiblePages() {
@@ -464,12 +511,17 @@ export default {
       this.loading = true;
       this.error = null;
       try {
+        console.log('🔍 Loading medications from API...');
         const response = await axios.get('/api/medications');
+        console.log('✅ API Response:', response.data);
         this.medications = response.data;
         this.filterMedications();
+        console.log('📊 Filtered medications:', this.filteredMedications.length);
       } catch (error) {
-        console.error('Error loading medications:', error);
-        this.error = 'Failed to load medications';
+        console.error('❌ Error loading medications:', error);
+        console.error('Response data:', error.response?.data);
+        console.error('Status:', error.response?.status);
+        this.error = `Failed to load medications: ${error.response?.data?.message || error.message}`;
       } finally {
         this.loading = false;
       }

@@ -1105,6 +1105,7 @@ export default {
           status: this.consultation.status || 'pending',
           consultationFee: parseFloat(this.consultation.consultationFee) || 0,
           medications: JSON.stringify(this.consultation.medications || []), // Convert array to JSON string
+          prescribedMedications: this.prescribedMedications.filter(med => med.name && med.quantity), // Send structured medications
           mcStartDate: this.consultation.mcStartDate || null,
           mcEndDate: this.consultation.mcEndDate || null,
           mcNotes: this.consultation.mcNotes || '',
