@@ -128,13 +128,32 @@ export default {
       this.showAddModal = true;
     },
     async deleteDoctor(doctor) {
-      if (confirm('Are you sure you want to delete this doctor?')) {
-        try {
-          await axios.delete(`/api/doctors/${doctor.id}`);
-          this.doctors = this.doctors.filter(d => d.id !== doctor.id);
-        } catch (error) {
-          console.error('Failed to delete doctor:', error);
-          // TODO: Add error handling
+      if (!confirm(`Are you sure you want to delete Dr. ${doctor.name}?`)) {
+        return;
+      }
+      
+      try {
+        console.log('Deleting doctor with ID:', doctor.id);
+        const response = await axios.delete(`/api/doctors/${doctor.id}`);
+        console.log('Delete response:', response.data);
+        
+        // Remove from local array
+        this.doctors = this.doctors.filter(d => d.id !== doctor.id);
+        
+        // Show success message
+        alert('Doctor deleted successfully!');
+      } catch (error) {
+        console.error('Failed to delete doctor:', error);
+        
+        if (error.response) {
+          console.error('Error response:', error.response.data);
+          alert(`Failed to delete doctor: ${error.response.data.message || error.response.data.error || 'Unknown error'}`);
+        } else if (error.request) {
+          console.error('Network error:', error.request);
+          alert('Network error: Unable to connect to server');
+        } else {
+          console.error('Error:', error.message);
+          alert(`Error: ${error.message}`);
         }
       }
     },

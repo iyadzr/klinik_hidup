@@ -3,12 +3,14 @@
 namespace App\Controller;
 
 use App\Entity\Doctor;
+use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 #[Route('/api/doctors')]
 class DoctorController extends AbstractController
@@ -18,16 +20,22 @@ class DoctorController extends AbstractController
     {
         $doctors = $entityManager->getRepository(Doctor::class)->findAll();
         $result = array_map(function($doctor) {
-    return [
-        'id' => $doctor->getId(),
-        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : (method_exists($doctor, 'getName') ? $doctor->getName() : $doctor->getName()),
-        'name' => $doctor->getName(),
-        'email' => $doctor->getEmail(),
-        'phone' => $doctor->getPhone(),
-        'specialization' => $doctor->getSpecialization(),
-        'licenseNumber' => $doctor->getLicenseNumber(),
-    ];
-}, $doctors);
+            $user = $doctor->getUser();
+            return [
+                'id' => $doctor->getId(),
+                'displayName' => $doctor->getName(),
+                'name' => $doctor->getName(),
+                'email' => $doctor->getEmail(),
+                'phone' => $doctor->getPhone(),
+                'specialization' => $doctor->getSpecialization(),
+                'licenseNumber' => $doctor->getLicenseNumber(),
+                'workingHours' => $doctor->getWorkingHours(),
+                'hasUserAccount' => $user !== null,
+                'userId' => $user ? $user->getId() : null,
+                'userRoles' => $user ? $user->getRoles() : [],
+                'isActive' => $user ? $user->isActive() : false
+            ];
+        }, $doctors);
         return $this->json($result);
     }
 
@@ -149,10 +157,50 @@ class DoctorController extends AbstractController
     #[Route('/{id}', name: 'app_doctor_delete', methods: ['DELETE'])]
     public function delete(Doctor $doctor, EntityManagerInterface $entityManager): JsonResponse
     {
-        $entityManager->remove($doctor);
-        $entityManager->flush();
+        try {
+            // Check if doctor has any consultations
+            $consultationCount = $entityManager->createQueryBuilder()
+                ->select('COUNT(c.id)')
+                ->from('App\Entity\Consultation', 'c')
+                ->where('c.doctor = :doctor')
+                ->setParameter('doctor', $doctor)
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            if ($consultationCount > 0) {
+                return $this->json([
+                    'error' => 'Cannot delete doctor',
+                    'message' => "This doctor has {$consultationCount} consultation(s) and cannot be deleted. Please reassign or remove consultations first."
+                ], Response::HTTP_CONFLICT);
+            }
+            
+            // Check if doctor has any queue entries
+            $queueCount = $entityManager->createQueryBuilder()
+                ->select('COUNT(q.id)')
+                ->from('App\Entity\Queue', 'q')
+                ->where('q.doctor = :doctor')
+                ->setParameter('doctor', $doctor)
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            if ($queueCount > 0) {
+                return $this->json([
+                    'error' => 'Cannot delete doctor',
+                    'message' => "This doctor has {$queueCount} queue entry(ies) and cannot be deleted. Please reassign or remove queue entries first."
+                ], Response::HTTP_CONFLICT);
+            }
+            
+            $entityManager->remove($doctor);
+            $entityManager->flush();
 
-        return $this->json(['message' => 'Doctor deleted successfully']);
+            return $this->json(['message' => 'Doctor deleted successfully']);
+            
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Failed to delete doctor',
+                'message' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     #[Route('/specialization/{specialization}', name: 'app_doctor_by_specialization', methods: ['GET'])]

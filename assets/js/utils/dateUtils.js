@@ -35,3 +35,26 @@ export const formatDateOnly = (date) => {
     return 'Invalid Date';
   }
 };
+
+// Get today's date in MYT timezone in YYYY-MM-DD format
+export const getTodayInMYT = () => {
+  try {
+    const now = new Date();
+    
+    // Use Intl.DateTimeFormat to get the correct date in MYT timezone
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kuala_Lumpur',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    
+    const dateString = formatter.format(now);
+    console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', now.toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }));
+    return dateString;
+  } catch (e) {
+    console.error('Error getting today in MYT:', e);
+    // Fallback to local date
+    return new Date().toISOString().split('T')[0];
+  }
+};

@@ -47,10 +47,24 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'boolean')]
     private bool $isActive = true;
 
+    #[ORM\OneToOne(mappedBy: 'user', targetEntity: Doctor::class)]
+    private ?Doctor $doctorProfile = null;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
+    }
+
+    public function getDoctorProfile(): ?Doctor
+    {
+        return $this->doctorProfile;
+    }
+
+    public function setDoctorProfile(?Doctor $doctorProfile): self
+    {
+        $this->doctorProfile = $doctorProfile;
+        return $this;
     }
 
     public function getId(): ?int

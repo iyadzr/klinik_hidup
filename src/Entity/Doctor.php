@@ -36,6 +36,20 @@ class Doctor
     #[ORM\Column(type: 'json')]
     private array $workingHours = [];
 
+    #[ORM\OneToOne(targetEntity: User::class, cascade: ['persist'])]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
+    private ?User $user = null;
+
+    public function getUser(): ?User
+    {
+        return $this->user;
+    }
+
+    public function setUser(?User $user): self
+    {
+        $this->user = $user;
+        return $this;
+    }
 
     public function getId(): ?int
     {

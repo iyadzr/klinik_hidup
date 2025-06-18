@@ -261,7 +261,7 @@
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 import ConsultationService from '../../services/ConsultationService';
 import AuthService from '../../services/AuthService';
-import { formatDate } from '../../utils/dateUtils';
+import { formatDate, getTodayInMYT } from '../../utils/dateUtils';
 import axios from 'axios';
 import * as bootstrap from 'bootstrap';
 import PaymentReceipt from '../../components/PaymentReceipt.vue';
@@ -273,22 +273,6 @@ export default {
     PaymentReceipt
   },
   setup() {
-    // Helper function to get today's date in MYT
-    const getTodayInMYT = () => {
-      // Get actual current date in Malaysia timezone
-      const now = new Date();
-      // Convert to MYT by adding 8 hours (MYT is UTC+8)
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const mytTime = new Date(utc + (8 * 3600000)); // Add 8 hours for MYT
-      
-      const year = mytTime.getFullYear();
-      const month = String(mytTime.getMonth() + 1).padStart(2, '0');
-      const day = String(mytTime.getDate()).padStart(2, '0');
-      
-      const dateString = `${year}-${month}-${day}`;
-      console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', mytTime.toLocaleString());
-      return dateString;
-    };
 
     const allConsultations = ref([]);
     const loading = ref(false);

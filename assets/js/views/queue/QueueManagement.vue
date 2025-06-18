@@ -88,25 +88,11 @@
 <script>
 import axios from 'axios';
 
+import { getTodayInMYT } from '../../utils/dateUtils';
+
 export default {
   name: 'QueueManagement',
   data() {
-    // Helper function to get today's date in MYT
-    const getTodayInMYT = () => {
-      // Get actual current date in Malaysia timezone
-      const now = new Date();
-      // Convert to MYT by adding 8 hours (MYT is UTC+8)
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const mytTime = new Date(utc + (8 * 3600000)); // Add 8 hours for MYT
-      
-      const year = mytTime.getFullYear();
-      const month = String(mytTime.getMonth() + 1).padStart(2, '0');
-      const day = String(mytTime.getDate()).padStart(2, '0');
-      
-      const dateString = `${year}-${month}-${day}`;
-      console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', mytTime.toLocaleString());
-      return dateString;
-    };
 
     return {
       patients: [],
@@ -300,7 +286,7 @@ export default {
       return dateString;
     },
     setToday() {
-      this.selectedDate = this.getTodayInMYT();
+      this.selectedDate = getTodayInMYT();
       this.loadQueueList();
     },
     manualRefresh() {

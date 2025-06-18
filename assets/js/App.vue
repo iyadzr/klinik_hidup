@@ -225,11 +225,33 @@ export default {
         icon: 'fas fa-tachometer-alt',
         roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
       },
+      
+      // Role-specific primary menu items (ordered by priority)
+      {
+        path: '/registration',
+        label: 'Patient Registration',
+        icon: 'fas fa-user-plus',
+        roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'],
+        priority: 1 // High priority for assistants
+      },
+      {
+        path: '/consultations/ongoing',
+        label: 'Patient Consultation',
+        icon: 'fas fa-stethoscope',
+        roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'],
+        priority: 1 // High priority for doctors
+      },
       {
         path: '/patients',
         label: 'Patients',
         icon: 'fas fa-user-injured',
         roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
+      },
+      {
+        path: '/queue',
+        label: 'Queue Management',
+        icon: 'fas fa-list-ol',
+        roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
       },
       {
         path: '/doctors',
@@ -244,29 +266,11 @@ export default {
         roles: ['ROLE_USER', 'ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
       },
       
-      // Additional menu items with appropriate role restrictions
-      {
-        path: '/consultations',
-        label: 'Consultations',
-        icon: 'fas fa-notes-medical',
-        roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
-      },
+      // Additional menu items
       {
         path: '/medications',
         label: 'Medications',
         icon: 'fas fa-pills',
-        roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN']
-      },
-      {
-        path: '/registration',
-        label: 'Patient Registration',
-        icon: 'fas fa-user-plus',
-        roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN']
-      },
-      {
-        path: '/queue',
-        label: 'Queue Management',
-        icon: 'fas fa-list-ol',
         roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN']
       },
       {

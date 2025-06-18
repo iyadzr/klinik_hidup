@@ -7,6 +7,7 @@ import QueueManagement from '../views/queue/QueueManagement.vue';
 import QueueDisplay from '../views/queue/QueueDisplay.vue';
 import ConsultationForm from '../views/consultations/ConsultationForm.vue';
 import ConsultationList from '../views/consultations/ConsultationList.vue';
+import OngoingConsultations from '../views/consultations/OngoingConsultations.vue';
 import PatientRegistration from '../views/registration/PatientRegistration.vue';
 import ClinicAssistantList from '../views/clinic-assistants/ClinicAssistantList.vue';
 import Login from '../views/auth/Login.vue';
@@ -22,13 +23,47 @@ import SystemSettings from '../views/admin/SystemSettings.vue';
 const routes = [
   {
     path: '/',
-    redirect: '/dashboard'
+    name: 'Home',
+    beforeEnter: (to, from, next) => {
+      // Redirect based on user role
+      if (AuthService.isAuthenticated()) {
+        const user = AuthService.getCurrentUser();
+        const roles = user?.roles || [];
+        
+        if (roles.includes('ROLE_ASSISTANT')) {
+          next('/registration');
+        } else if (roles.includes('ROLE_DOCTOR')) {
+          next('/consultations/ongoing');
+        } else {
+          next('/dashboard');
+        }
+      } else {
+        next('/login');
+      }
+    }
   },
   {
     path: '/dashboard',
     name: 'Dashboard',
     component: Dashboard,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true },
+    beforeEnter: (to, from, next) => {
+      // If user comes to dashboard directly, redirect based on role
+      if (from.path === '/' || from.path === '/login') {
+        const user = AuthService.getCurrentUser();
+        const roles = user?.roles || [];
+        
+        if (roles.includes('ROLE_ASSISTANT')) {
+          next('/registration');
+        } else if (roles.includes('ROLE_DOCTOR')) {
+          next('/consultations/ongoing');
+        } else {
+          next();
+        }
+      } else {
+        next();
+      }
+    }
   },
   {
     path: '/registration',
@@ -40,7 +75,7 @@ const routes = [
     path: '/queue',
     name: 'Queue',
     component: QueueManagement,
-    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/queue-display',
@@ -55,10 +90,22 @@ const routes = [
     meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {
+    path: '/consultations/ongoing',
+    name: 'OngoingConsultations',
+    component: OngoingConsultations,
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
+  },
+  {
     path: '/consultations/new',
     name: 'NewConsultation',
     component: ConsultationForm,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/consultations/form',
+    name: 'ConsultationForm',
+    component: ConsultationForm,
+    meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN'] }
   },
   {
     path: '/consultations/:id',
