@@ -12,7 +12,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'app:seed-medications',
-    description: 'Seed the database with common medications',
+    description: 'Seed the database with consolidated medication list',
 )]
 class SeedMedicationsCommand extends Command
 {
@@ -27,89 +27,125 @@ class SeedMedicationsCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $medications = [
+            // Pain Relief & Anti-inflammatory
             [
-                'name' => 'Panadol',
-                'unitType' => 'pieces',
+                'name' => 'Paracetamol',
+                'unitType' => 'tablets',
                 'unitDescription' => '500mg tablets',
-                'category' => 'pain reliever',
-                'description' => 'Pain relief and fever reducer'
+                'category' => 'Pain Relief',
+                'description' => 'For pain relief and fever reduction'
+            ],
+            [
+                'name' => 'Ibuprofen',
+                'unitType' => 'tablets',
+                'unitDescription' => '400mg tablets',
+                'category' => 'Pain Relief',
+                'description' => 'Non-steroidal anti-inflammatory drug (NSAID) for pain and inflammation'
+            ],
+            [
+                'name' => 'Aspirin',
+                'unitType' => 'tablets',
+                'unitDescription' => '100mg tablets',
+                'category' => 'Pain Relief',
+                'description' => 'Low-dose aspirin for cardiovascular protection and pain relief'
+            ],
+
+            // Antibiotics
+            [
+                'name' => 'Amoxicillin',
+                'unitType' => 'capsules',
+                'unitDescription' => '500mg capsules',
+                'category' => 'Antibiotics',
+                'description' => 'Penicillin antibiotic for bacterial infections'
+            ],
+            [
+                'name' => 'Azithromycin',
+                'unitType' => 'tablets',
+                'unitDescription' => '500mg tablets',
+                'category' => 'Antibiotics',
+                'description' => 'Macrolide antibiotic for respiratory and skin infections'
+            ],
+
+            // Respiratory Medications
+            [
+                'name' => 'Salbutamol Inhaler',
+                'unitType' => 'inhaler',
+                'unitDescription' => '100mcg/dose inhaler',
+                'category' => 'Respiratory',
+                'description' => 'Short-acting beta agonist for asthma and COPD'
+            ],
+
+            // Cough & Cold
+            [
+                'name' => 'Dextromethorphan Syrup',
+                'unitType' => 'bottles',
+                'unitDescription' => '100ml bottle',
+                'category' => 'Cough & Cold',
+                'description' => 'Cough suppressant syrup for dry cough'
+            ],
+            [
+                'name' => 'Loratadine',
+                'unitType' => 'tablets',
+                'unitDescription' => '10mg tablets',
+                'category' => 'Antihistamine',
+                'description' => 'Non-drowsy antihistamine for allergies'
             ],
             [
                 'name' => 'Prospan Cough Syrup',
                 'unitType' => 'bottles',
                 'unitDescription' => '100ml bottle',
-                'category' => 'cough syrup',
-                'description' => 'Natural cough relief syrup'
+                'category' => 'Cough & Cold',
+                'description' => 'Natural ivy leaf extract cough syrup'
             ],
+
+            // Gastrointestinal
             [
-                'name' => 'Amoxicillin',
-                'unitType' => 'pieces',
-                'unitDescription' => '250mg capsules',
-                'category' => 'antibiotic',
-                'description' => 'Broad-spectrum antibiotic'
-            ],
-            [
-                'name' => 'Loratadine',
-                'unitType' => 'pieces',
-                'unitDescription' => '10mg tablets',
-                'category' => 'antihistamine',
-                'description' => 'Allergy relief medication'
+                'name' => 'Omeprazole',
+                'unitType' => 'capsules',
+                'unitDescription' => '20mg capsules',
+                'category' => 'Gastrointestinal',
+                'description' => 'Proton pump inhibitor for acid-related disorders'
             ],
             [
                 'name' => 'Gaviscon',
                 'unitType' => 'sachets',
                 'unitDescription' => '10ml sachets',
-                'category' => 'antacid',
+                'category' => 'Gastrointestinal',
                 'description' => 'Relief from heartburn and indigestion'
+            ],
+
+            // Topical Medications
+            [
+                'name' => 'Hydrocortisone Cream',
+                'unitType' => 'tubes',
+                'unitDescription' => '15g tube',
+                'category' => 'Topical',
+                'description' => '1% hydrocortisone anti-inflammatory cream'
             ],
             [
                 'name' => 'Betadine Solution',
                 'unitType' => 'bottles',
                 'unitDescription' => '60ml bottle',
-                'category' => 'antiseptic',
-                'description' => 'Topical antiseptic solution'
+                'category' => 'Topical',
+                'description' => 'Povidone-iodine antiseptic solution'
             ],
-            [
-                'name' => 'Ventolin Inhaler',
-                'unitType' => 'pieces',
-                'unitDescription' => '100mcg inhaler',
-                'category' => 'bronchodilator',
-                'description' => 'Relief for asthma and breathing difficulties'
-            ],
-            [
-                'name' => 'Omeprazole',
-                'unitType' => 'pieces',
-                'unitDescription' => '20mg capsules',
-                'category' => 'proton pump inhibitor',
-                'description' => 'Reduces stomach acid production'
-            ],
-            [
-                'name' => 'Dextromethorphan Syrup',
-                'unitType' => 'bottles',
-                'unitDescription' => '60ml bottle',
-                'category' => 'cough suppressant',
-                'description' => 'Dry cough relief syrup'
-            ],
-            [
-                'name' => 'Ibuprofen',
-                'unitType' => 'pieces',
-                'unitDescription' => '400mg tablets',
-                'category' => 'anti-inflammatory',
-                'description' => 'Pain relief and anti-inflammatory'
-            ],
-            [
-                'name' => 'Hydrocortisone Cream',
-                'unitType' => 'tubes',
-                'unitDescription' => '15g tube',
-                'category' => 'topical steroid',
-                'description' => 'Anti-inflammatory skin cream'
-            ],
+
+            // Oral Care
             [
                 'name' => 'Chlorhexidine Mouthwash',
                 'unitType' => 'bottles',
                 'unitDescription' => '200ml bottle',
-                'category' => 'oral antiseptic',
+                'category' => 'Oral Care',
                 'description' => 'Antibacterial mouthwash'
+            ],
+
+            // Emergency/Common Use
+            [
+                'name' => 'Glucose Tablets',
+                'unitType' => 'tablets',
+                'unitDescription' => '4g dextrose tablets',
+                'category' => 'Diabetes',
+                'description' => 'Fast-acting glucose for hypoglycemia'
             ]
         ];
 
@@ -137,7 +173,12 @@ class SeedMedicationsCommand extends Command
         $this->entityManager->flush();
         $io->progressFinish();
 
-        $io->success('Medications seeded successfully!');
+        $io->success('Consolidated medications seeded successfully!');
+        $io->note([
+            'Total medications: ' . count($medications),
+            'Categories included: Pain Relief, Antibiotics, Respiratory, Cough & Cold, Gastrointestinal, Topical, Oral Care, Diabetes',
+            'All duplicates have been removed'
+        ]);
 
         return Command::SUCCESS;
     }

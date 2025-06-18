@@ -65,36 +65,84 @@ class DoctorController extends AbstractController
     }
 
     #[Route('', name: 'app_doctor_create', methods: ['POST'])]
-    public function create(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    public function create(Request $request, EntityManagerInterface $entityManager, UserPasswordHasherInterface $passwordHasher): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        try {
+            $data = json_decode($request->getContent(), true);
 
-        $doctor = new Doctor();
-        $doctor->setName($data['name']);
-        $doctor->setEmail($data['email'] ?? ''); // Default empty email
-        $doctor->setPhone($data['phone']);
-        $doctor->setSpecialization($data['specialization']);
-        if (isset($data['licenseNumber'])) {
-            $doctor->setLicenseNumber($data['licenseNumber']);
+            // Check if email already exists
+            $existingUser = $entityManager->getRepository(User::class)->findOneBy(['email' => $data['email']]);
+            if ($existingUser) {
+                return $this->json([
+                    'error' => 'Email already exists',
+                    'message' => 'A user with this email already exists in the system'
+                ], Response::HTTP_CONFLICT);
+            }
+
+            // Create user account first
+            $user = new User();
+            $user->setName($data['name']);
+            $user->setEmail($data['email']);
+            $user->setUsername($data['username'] ?? strtolower(str_replace(' ', '.', $data['name'])));
+            $user->setRoles(['ROLE_USER', 'ROLE_DOCTOR']);
+            $user->setIsActive(true);
+            $user->setAllowedPages(['dashboard', 'consultations', 'patients', 'queue']);
+
+            // Set default password or provided password
+            $password = $data['password'] ?? 'temp123456';
+            $hashedPassword = $passwordHasher->hashPassword($user, $password);
+            $user->setPassword($hashedPassword);
+
+            // Check if username already exists and make it unique
+            $baseUsername = $user->getUsername();
+            $counter = 1;
+            while ($entityManager->getRepository(User::class)->findOneBy(['username' => $user->getUsername()])) {
+                $user->setUsername($baseUsername . '.' . $counter);
+                $counter++;
+            }
+
+            // Create doctor profile
+            $doctor = new Doctor();
+            $doctor->setName($data['name']);
+            $doctor->setEmail($data['email']);
+            $doctor->setPhone($data['phone']);
+            $doctor->setSpecialization($data['specialization']);
+            if (isset($data['licenseNumber'])) {
+                $doctor->setLicenseNumber($data['licenseNumber']);
+            }
+            if (isset($data['workingHours'])) {
+                $doctor->setWorkingHours($data['workingHours']);
+            }
+
+            // Link them together
+            $doctor->setUser($user);
+
+            $entityManager->persist($user);
+            $entityManager->persist($doctor);
+            $entityManager->flush();
+
+            return $this->json([
+                'message' => 'Doctor and user account created successfully',
+                'doctor' => [
+                    'id' => $doctor->getId(),
+                    'name' => $doctor->getName(),
+                    'email' => $doctor->getEmail(),
+                    'phone' => $doctor->getPhone(),
+                    'specialization' => $doctor->getSpecialization(),
+                    'displayName' => $doctor->getName(),
+                    'hasUserAccount' => true,
+                    'userId' => $user->getId(),
+                    'username' => $user->getUsername(),
+                    'temporaryPassword' => $password
+                ]
+            ], Response::HTTP_CREATED);
+            
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Failed to create doctor',
+                'message' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        if (isset($data['workingHours'])) {
-            $doctor->setWorkingHours($data['workingHours']);
-        }
-
-        $entityManager->persist($doctor);
-        $entityManager->flush();
-
-        return $this->json([
-            'message' => 'Doctor created successfully',
-            'doctor' => [
-                'id' => $doctor->getId(),
-                'name' => $doctor->getName(),
-                
-                'email' => $doctor->getEmail(),
-                'specialization' => $doctor->getSpecialization(),
-                'displayName' => $doctor->getName(),
-            ]
-        ], Response::HTTP_CREATED);
     }
 
     #[Route('/{id}', name: 'app_doctor_show', methods: ['GET'])]
@@ -220,5 +268,95 @@ class DoctorController extends AbstractController
                 ];
             }, $doctors)
         ]);
+    }
+
+    #[Route('/{id}/create-user', name: 'app_doctor_create_user', methods: ['POST'])]
+    public function createUserAccount(Doctor $doctor, Request $request, EntityManagerInterface $entityManager, UserPasswordHasherInterface $passwordHasher): JsonResponse
+    {
+        try {
+            if ($doctor->getUser()) {
+                return $this->json([
+                    'error' => 'User account already exists',
+                    'message' => 'This doctor already has a user account'
+                ], Response::HTTP_CONFLICT);
+            }
+
+            $data = json_decode($request->getContent(), true);
+            
+            // Create username from doctor's name if not provided
+            $username = $data['username'] ?? strtolower(str_replace(' ', '.', $doctor->getName()));
+            $password = $data['password'] ?? 'temp123456'; // Default password
+
+            // Check if username already exists
+            $existingUser = $entityManager->getRepository(User::class)->findOneBy(['username' => $username]);
+            if ($existingUser) {
+                $username = $username . '.' . $doctor->getId(); // Make it unique
+            }
+
+            // Create user account
+            $user = new User();
+            $user->setName($doctor->getName());
+            $user->setEmail($doctor->getEmail());
+            $user->setUsername($username);
+            $user->setRoles(['ROLE_USER', 'ROLE_DOCTOR']);
+            $user->setIsActive(true);
+            $user->setAllowedPages(['dashboard', 'consultations', 'patients', 'queue']);
+
+            // Hash password
+            $hashedPassword = $passwordHasher->hashPassword($user, $password);
+            $user->setPassword($hashedPassword);
+
+            // Link doctor to user
+            $doctor->setUser($user);
+
+            $entityManager->persist($user);
+            $entityManager->flush();
+
+            return $this->json([
+                'message' => 'User account created successfully',
+                'user' => [
+                    'id' => $user->getId(),
+                    'username' => $user->getUsername(),
+                    'email' => $user->getEmail(),
+                    'roles' => $user->getRoles(),
+                    'temporaryPassword' => $password // Return for admin to share
+                ]
+            ], Response::HTTP_CREATED);
+
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Failed to create user account',
+                'message' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[Route('/{id}/unlink-user', name: 'app_doctor_unlink_user', methods: ['DELETE'])]
+    public function unlinkUserAccount(Doctor $doctor, EntityManagerInterface $entityManager): JsonResponse
+    {
+        try {
+            $user = $doctor->getUser();
+            if (!$user) {
+                return $this->json([
+                    'error' => 'No user account linked',
+                    'message' => 'This doctor does not have a user account'
+                ], Response::HTTP_NOT_FOUND);
+            }
+
+            // Unlink doctor from user
+            $doctor->setUser(null);
+            
+            // Optionally delete the user account or keep it
+            // For safety, we'll just unlink but keep the user account
+            $entityManager->flush();
+
+            return $this->json(['message' => 'User account unlinked successfully']);
+
+        } catch (\Exception $e) {
+            return $this->json([
+                'error' => 'Failed to unlink user account',
+                'message' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 }

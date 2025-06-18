@@ -13,19 +13,48 @@
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Email</th>
                 <th>Phone</th>
                 <th>Specialization</th>
+                <th>User Account</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="doctor in doctors" :key="doctor.id">
                 <td>{{ doctor.name }}</td>
+                <td>{{ doctor.email }}</td>
                 <td>{{ doctor.phone }}</td>
                 <td>{{ doctor.specialization }}</td>
                 <td>
-                  <button class="btn btn-sm btn-info me-2" @click="editDoctor(doctor)">Edit</button>
-                  <button class="btn btn-sm btn-danger" @click="deleteDoctor(doctor)">Delete</button>
+                  <div v-if="doctor.hasUserAccount" class="d-flex align-items-center">
+                    <span class="badge bg-success me-2">
+                      <i class="fas fa-check me-1"></i>Active Account
+                    </span>
+                    <small class="text-muted">
+                      <div v-if="doctor.userId">User ID: {{ doctor.userId }}</div>
+                      <div>Status: 
+                        <span v-if="doctor.isActive" class="badge badge-sm bg-success">Active</span>
+                        <span v-else class="badge badge-sm bg-danger">Inactive</span>
+                      </div>
+                    </small>
+                  </div>
+                  <div v-else>
+                    <span class="badge bg-secondary">
+                      <i class="fas fa-times me-1"></i>No Account
+                    </span>
+                    <small class="text-muted d-block mt-1">Account will be created automatically</small>
+                  </div>
+                </td>
+                <td>
+                  <div class="btn-group">
+                    <button class="btn btn-sm btn-info" @click="editDoctor(doctor)" title="Edit Doctor">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" @click="deleteDoctor(doctor)" title="Delete Doctor">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -47,6 +76,11 @@
               <div class="mb-3">
                 <label class="form-label">Name</label>
                 <input type="text" class="form-control" v-model="form.name" required>
+              </div>
+              
+              <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" v-model="form.email" required>
               </div>
               
               <div class="mb-3">
@@ -98,6 +132,7 @@ export default {
       editingDoctor: null,
       form: {
         name: '',
+        email: '',
         phone: '',
         specialization: 'General Practice (GP)',
         licenseNumber: ''
@@ -121,6 +156,7 @@ export default {
       this.editingDoctor = doctor;
       this.form = {
         name: doctor.name || '',
+        email: doctor.email || '',
         phone: doctor.phone || '',
         specialization: doctor.specialization || 'General Practice (GP)',
         licenseNumber: doctor.licenseNumber || ''
@@ -164,6 +200,7 @@ export default {
         
         const response = await axios[method](endpoint, {
           name: this.form.name,
+          email: this.form.email,
           phone: this.form.phone,
           specialization: this.form.specialization,
           licenseNumber: this.form.licenseNumber || null
@@ -173,8 +210,17 @@ export default {
         this.closeModal();
         await this.loadDoctors();
         
-        // Show success message
-        alert(this.editingDoctor ? 'Doctor updated successfully!' : 'Doctor added successfully!');
+        // Show success message with credentials if creating new doctor
+        if (this.editingDoctor) {
+          alert('Doctor updated successfully!');
+        } else {
+          const doctor = response.data.doctor;
+          if (doctor.temporaryPassword) {
+            alert(`Doctor and user account created successfully!\n\nLogin Credentials:\nUsername: ${doctor.username}\nTemporary Password: ${doctor.temporaryPassword}\n\nPlease share these credentials with the doctor.`);
+          } else {
+            alert('Doctor added successfully!');
+          }
+        }
       } catch (error) {
         console.error('Failed to save doctor:', error.response?.data || error);
         alert(error.response?.data?.message || 'Failed to save doctor. Please try again.');
@@ -185,6 +231,7 @@ export default {
       this.editingDoctor = null;
       this.form = {
         name: '',
+        email: '',
         phone: '',
         specialization: 'General Practice (GP)',
         licenseNumber: ''
@@ -197,5 +244,22 @@ export default {
 <style scoped>
 .modal {
   display: block;
+}
+
+.btn-xs {
+  padding: 0.125rem 0.25rem;
+  font-size: 0.75rem;
+}
+
+.badge-sm {
+  font-size: 0.65em;
+}
+
+.btn-group .btn {
+  margin-right: 2px;
+}
+
+.doctor-info {
+  min-width: 120px;
 }
 </style>

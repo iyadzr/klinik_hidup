@@ -32,7 +32,7 @@
                 <th>Doctor</th>
                 <th>Status</th>
                 <th>Time</th>
-                <th>Actions</th>
+                <th>Payment Status</th>
               </tr>
             </thead>
             <tbody>
@@ -58,22 +58,16 @@
                 </td>
                 <td>{{ formatDateTime(queue.queueDateTime) }}</td>
                 <td>
-                  <div class="btn-group">
-                    <button 
-                      v-if="queue.status === 'waiting'"
-                      class="btn btn-sm btn-success"
-                      @click="startConsultation(queue)"
-                    >
-                      Start Consultation
+                  <div v-if="queue.status === 'completed'">
+                    <span v-if="queue.isPaid" class="badge bg-success">
+                      <i class="fas fa-check me-1"></i>Paid
+                    </span>
+                    <button v-else class="btn btn-sm btn-warning" @click="processPayment(queue)">
+                      <i class="fas fa-dollar-sign me-1"></i>Process Payment
                     </button>
-
-                    <button 
-                      v-if="queue.status === 'waiting'"
-                      class="btn btn-sm btn-danger"
-                      @click="updateStatus(queue.id, 'cancelled')"
-                    >
-                      Cancel
-                    </button>
+                  </div>
+                  <div v-else>
+                    <span class="text-muted">-</span>
                   </div>
                 </td>
               </tr>
@@ -312,24 +306,20 @@ export default {
         alert('Error adding to queue. Please try again.');
       }
     },
-    async startConsultation(queue) {
+    async processPayment(queue) {
       try {
-        // First update the queue status to 'in_consultation'
-        await axios.put(`/api/queue/${queue.id}/status`, { status: 'in_consultation' });
-        
-        // Then redirect to consultation form with queue information
-        // We'll pass the queue number as a query parameter so the form can auto-fill patient info
+        // Navigate to payment form with queue information
         this.$router.push({
-          path: '/consultations/new',
+          path: '/payments/form',
           query: {
-            queueNumber: queue.queueNumber,
+            queueId: queue.id,
             patientId: queue.patient.id,
-            doctorId: queue.doctor.id
+            amount: queue.consultationFee || 50 // Default consultation fee
           }
         });
       } catch (error) {
-        console.error('Error starting consultation:', error);
-        alert('Error starting consultation. Please try again.');
+        console.error('Error processing payment:', error);
+        alert('Error processing payment. Please try again.');
       }
     },
     async updateStatus(queueId, newStatus) {

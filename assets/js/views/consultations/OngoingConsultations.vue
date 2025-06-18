@@ -10,9 +10,6 @@
             <button @click="refreshData" class="btn btn-outline-primary btn-sm" :disabled="loading">
               <i class="fas fa-sync-alt me-1" :class="{ 'fa-spin': loading }"></i> Refresh
             </button>
-            <button @click="goToNewConsultation" class="btn btn-primary btn-sm">
-              <i class="fas fa-plus me-1"></i> New Consultation
-            </button>
           </div>
         </div>
       </div>
@@ -34,8 +31,8 @@
                  <!-- Empty State -->
          <div v-else-if="!ongoingConsultations.length" class="empty-state">
            <i class="fas fa-clipboard-check fa-3x mb-3 text-muted"></i>
-           <h5>No Active Consultations</h5>
-           <p class="text-muted">No consultations are currently in progress.</p>
+           <h5>No Patients Waiting</h5>
+           <p class="text-muted">No patients are currently waiting for consultation.</p>
          </div>
 
         <!-- Ongoing Consultations List -->
@@ -48,8 +45,14 @@
                     <h6 class="card-title mb-0">
                       <i class="fas fa-user me-2 text-primary"></i>{{ consultation.patientName }}
                     </h6>
-                    <span class="badge bg-warning text-dark">
-                      <i class="fas fa-clock me-1"></i>In Progress
+                    <span v-if="consultation.isQueueEntry && consultation.status === 'waiting'" class="badge bg-info">
+                      <i class="fas fa-hourglass-half me-1"></i>Waiting
+                    </span>
+                    <span v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'" class="badge bg-warning text-dark">
+                      <i class="fas fa-stethoscope me-1"></i>In Consultation
+                    </span>
+                    <span v-else class="badge bg-success">
+                      <i class="fas fa-clock me-1"></i>Ongoing
                     </span>
                   </div>
                   
@@ -68,19 +71,27 @@
                     </p>
                   </div>
                   
-                  <div class="mt-3 d-flex gap-2">
+                  <div class="mt-3">
                     <button 
-                      @click="continueConsultation(consultation)"
-                      class="btn btn-primary btn-sm flex-fill"
+                      v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
+                      @click="startConsultation(consultation)"
+                      class="btn btn-success btn-sm w-100"
                     >
-                      <i class="fas fa-arrow-right me-1"></i>Continue
+                      <i class="fas fa-play me-1"></i>Start Consultation
                     </button>
                     <button 
-                      @click="viewDetails(consultation)"
-                      class="btn btn-outline-secondary btn-sm"
-                      title="View Details"
+                      v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'"
+                      @click="continueConsultation(consultation)"
+                      class="btn btn-warning btn-sm w-100"
                     >
-                      <i class="fas fa-eye"></i>
+                      <i class="fas fa-stethoscope me-1"></i>Continue Consultation
+                    </button>
+                    <button 
+                      v-else
+                      @click="continueConsultation(consultation)"
+                      class="btn btn-primary btn-sm w-100"
+                    >
+                      <i class="fas fa-arrow-right me-1"></i>Continue
                     </button>
                   </div>
                 </div>
@@ -96,18 +107,18 @@
       <div class="col-md-4">
         <div class="card bg-light">
           <div class="card-body text-center">
-            <i class="fas fa-users fa-2x text-primary mb-2"></i>
-            <h6>Active Consultations</h6>
-            <h4 class="text-primary">{{ ongoingConsultations.length }}</h4>
+            <i class="fas fa-hourglass-half fa-2x text-info mb-2"></i>
+            <h6>Patients Waiting</h6>
+            <h4 class="text-info">{{ ongoingConsultations.filter(c => c.isQueueEntry && c.status === 'waiting').length }}</h4>
           </div>
         </div>
       </div>
       <div class="col-md-4">
         <div class="card bg-light">
           <div class="card-body text-center">
-            <i class="fas fa-clock fa-2x text-warning mb-2"></i>
-            <h6>Average Time</h6>
-            <h4 class="text-warning">{{ calculateAverageTime() }}</h4>
+            <i class="fas fa-stethoscope fa-2x text-warning mb-2"></i>
+            <h6>In Progress</h6>
+            <h4 class="text-warning">{{ ongoingConsultations.filter(c => (c.isQueueEntry && c.status === 'in_consultation') || !c.isQueueEntry).length }}</h4>
           </div>
         </div>
       </div>
@@ -115,7 +126,7 @@
         <div class="card bg-light">
           <div class="card-body text-center">
             <i class="fas fa-calendar-day fa-2x text-success mb-2"></i>
-            <h6>Today's Total</h6>
+            <h6>Total Today</h6>
             <h4 class="text-success">{{ todayTotal }}</h4>
           </div>
         </div>
@@ -142,56 +153,191 @@ export default {
 
     const currentUser = computed(() => AuthService.getCurrentUser());
     const isDoctor = computed(() => AuthService.hasRole('ROLE_DOCTOR'));
+    const isSuperAdmin = computed(() => AuthService.hasRole('ROLE_SUPER_ADMIN'));
 
     const fetchOngoingConsultations = async () => {
       loading.value = true;
       error.value = null;
       
       try {
-        // Fetch today's consultations and filter for ongoing ones
         const today = getTodayInMYT();
-        const response = await axios.get(`/api/consultations?date=${today}`);
         
-        let consultations = response.data || [];
+        // Fetch both queue and consultations data
+        console.log('🔍 Fetching data for date:', today);
+        
+        let queueResponse, consultationResponse;
+        
+        try {
+          // Try with date filter first
+          [queueResponse, consultationResponse] = await Promise.all([
+            axios.get(`/api/queue?date=${today}`),
+            axios.get(`/api/consultations?date=${today}`)
+          ]);
+        } catch (err) {
+          console.error('❌ Error with date filter, trying without date:', err.response?.data || err.message);
+          
+          // Fallback: try without date filter to see if there's any data
+          try {
+            [queueResponse, consultationResponse] = await Promise.all([
+              axios.get('/api/queue'),
+              axios.get('/api/consultations')
+            ]);
+            console.log('✅ Fallback successful - fetched data without date filter');
+          } catch (fallbackErr) {
+            console.error('❌ Fallback also failed:', fallbackErr.response?.data || fallbackErr.message);
+            throw fallbackErr;
+          }
+        }
+        
+        let consultations = consultationResponse.data || [];
+        let queueList = queueResponse.data || [];
+        
+        console.log('📊 Raw API responses:', {
+          consultationsCount: consultations.length,
+          queueCount: queueList.length,
+          consultationsSample: consultations.slice(0, 2),
+          queueSample: queueList.slice(0, 2)
+        });
         
         // Filter for ongoing consultations (not paid, in progress)
         let ongoing = consultations.filter(consultation => 
           !consultation.isPaid && consultation.status !== 'completed'
         );
         
-        // If user is a doctor, filter by their consultations
-        if (isDoctor.value && currentUser.value) {
+        // Get patients from queue for this doctor (both waiting and in consultation)
+        let queuePatients = queueList.filter(queue => 
+          queue.status === 'waiting' || queue.status === 'in_consultation'
+        );
+        
+        console.log('🔍 After initial filtering:', {
+          ongoingCount: ongoing.length,
+          queuePatientsCount: queuePatients.length,
+          queueStatuses: queuePatients.map(q => ({ id: q.id, status: q.status, patient: q.patient?.name }))
+        });
+        
+        // Filter by user role: Super Admin sees all, Doctors see only their assignments
+        if (isSuperAdmin.value) {
+          // Super Admin sees all patients and consultations - no filtering needed
+          console.log('👑 Super Admin access - showing all data');
+        } else if (isDoctor.value && currentUser.value) {
+          // Doctor sees only their assigned patients and consultations
+          console.log('👨‍⚕️ Doctor access - filtering by doctor assignments');
           ongoing = ongoing.filter(consultation => 
             consultation.doctorName && (
               consultation.doctorName.toLowerCase().includes(currentUser.value.name.toLowerCase()) ||
               currentUser.value.name.toLowerCase().includes(consultation.doctorName.toLowerCase())
             )
           );
-        }
+          
+          queuePatients = queuePatients.filter(queue => 
+            queue.doctor && queue.doctor.name && (
+              queue.doctor.name.toLowerCase().includes(currentUser.value.name.toLowerCase()) ||
+              currentUser.value.name.toLowerCase().includes(queue.doctor.name.toLowerCase())
+            )
+          );
+                 } else {
+           // Other roles (like assistants) see no consultation data
+           console.log('👤 Other role access - no consultation data visible');
+           ongoing = [];
+           queuePatients = [];
+         }
         
-        ongoingConsultations.value = ongoing;
-        todayTotal.value = consultations.length;
+        // Convert queue entries to consultation-like format
+        const queueConsultations = queuePatients.map(queue => ({
+          id: `queue_${queue.id}`,
+          isQueueEntry: true,
+          queueId: queue.id,
+          patientId: queue.patient ? queue.patient.id : null,
+          doctorId: queue.doctor ? queue.doctor.id : null,
+          patientName: queue.patient ? queue.patient.name : 'Unknown Patient',
+          doctorName: queue.doctor ? queue.doctor.name : 'Unknown Doctor',
+          consultationDate: queue.queueDateTime,
+          queueNumber: queue.queueNumber,
+          status: queue.status, // Use actual queue status (waiting or in_consultation)
+          symptoms: queue.status === 'waiting' ? 'Waiting for consultation' : 'Consultation in progress',
+          isPaid: false
+        }));
         
-        console.log('✅ Loaded ongoing consultations:', ongoing.length);
+        // Combine queue patients and ongoing consultations
+        ongoingConsultations.value = [...queueConsultations, ...ongoing];
+        todayTotal.value = consultations.length + queueList.length;
+        
+        console.log('✅ Loaded patient data:', {
+          queuePatients: queueConsultations.length,
+          ongoing: ongoing.length,
+          total: ongoingConsultations.value.length,
+          userRole: {
+            name: currentUser.value?.name,
+            isDoctor: isDoctor.value,
+            isSuperAdmin: isSuperAdmin.value,
+            roles: currentUser.value?.roles
+          },
+          dataFiltering: {
+            originalQueue: queueList.length,
+            filteredQueue: queuePatients.length,
+            originalConsultations: consultations.length,
+            filteredOngoing: ongoing.length
+          },
+          finalData: ongoingConsultations.value.map(c => ({
+            id: c.id,
+            patient: c.patientName,
+            doctor: c.doctorName,
+            status: c.status,
+            isQueueEntry: c.isQueueEntry
+          }))
+        });
       } catch (err) {
-        console.error('Error fetching ongoing consultations:', err);
+        console.error('Error fetching patient consultations:', err);
         error.value = err.response?.data?.message || err.message || 'Failed to fetch patient consultations';
       } finally {
         loading.value = false;
       }
     };
 
+    const startConsultation = async (consultation) => {
+      try {
+        // Update queue status to 'in_consultation'
+        await axios.put(`/api/queue/${consultation.queueId}/status`, { status: 'in_consultation' });
+        
+        // Navigate to new consultation form with queue information
+        router.push({
+          path: '/consultations/new',
+          query: {
+            queueNumber: consultation.queueNumber,
+            patientId: consultation.patientId,
+            doctorId: consultation.doctorId,
+            queueId: consultation.queueId,
+            mode: 'start'
+          }
+        });
+      } catch (error) {
+        console.error('Error starting consultation:', error);
+        alert('Error starting consultation. Please try again.');
+      }
+    };
+
     const continueConsultation = (consultation) => {
-      router.push(`/consultations/${consultation.id}`);
+      if (consultation.isQueueEntry) {
+        // For queue entries, navigate to consultation form with queue information
+        router.push({
+          path: '/consultations/new',
+          query: {
+            queueNumber: consultation.queueNumber,
+            patientId: consultation.patientId,
+            doctorId: consultation.doctorId,
+            queueId: consultation.queueId,
+            mode: 'continue'
+          }
+        });
+      } else {
+        // For actual consultation records, navigate to the consultation details
+        router.push(`/consultations/${consultation.id}`);
+      }
     };
 
-    const viewDetails = (consultation) => {
-      router.push(`/consultations/${consultation.id}`);
-    };
 
-    const goToNewConsultation = () => {
-      router.push('/consultations/form');
-    };
+
+
 
     const refreshData = () => {
       fetchOngoingConsultations();
@@ -260,9 +406,8 @@ export default {
       loading,
       error,
       todayTotal,
+      startConsultation,
       continueConsultation,
-      viewDetails,
-      goToNewConsultation,
       refreshData,
       formatDate,
       truncateText,

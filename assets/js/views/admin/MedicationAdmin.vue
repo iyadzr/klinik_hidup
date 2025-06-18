@@ -266,11 +266,14 @@
                   <div class="form-floating">
                     <select class="form-select" id="unitType" v-model="medicationForm.unitType" required>
                       <option value="">Select unit type</option>
-                      <option value="pieces">Pieces (tablets, capsules)</option>
+                      <option value="tablets">Tablets</option>
+                      <option value="capsules">Capsules</option>
+                      <option value="pieces">Pieces</option>
                       <option value="bottles">Bottles</option>
                       <option value="tubes">Tubes</option>
                       <option value="sachets">Sachets</option>
                       <option value="boxes">Boxes</option>
+                      <option value="inhaler">Inhalers</option>
                       <option value="ml">Milliliters (ml)</option>
                       <option value="mg">Milligrams (mg)</option>
                       <option value="g">Grams (g)</option>
@@ -304,32 +307,29 @@
                   <div class="form-floating">
                     <select class="form-select" id="category" v-model="medicationForm.category">
                       <option value="">Select category</option>
-                      <option value="pain_reliever">Pain Reliever</option>
-                      <option value="antibiotic">Antibiotic</option>
-                      <option value="cough_syrup">Cough Syrup</option>
-                      <option value="vitamins">Vitamins & Supplements</option>
-                      <option value="anti_inflammatory">Anti-inflammatory</option>
-                      <option value="antacid">Antacid</option>
-                      <option value="antihistamine">Antihistamine</option>
-                      <option value="topical">Topical Medication</option>
-                      <option value="eye_drops">Eye Drops</option>
-                      <option value="nasal_spray">Nasal Spray</option>
-                      <option value="muscle_relaxant">Muscle Relaxant</option>
-                      <option value="vaccine">Vaccine</option>
-                      <option value="antiviral">Antiviral</option>
-                      <option value="iv_fluid">IV Fluid</option>
-                      <option value="throat_medication">Throat Medication</option>
-                      <option value="pediatric">Pediatric</option>
-                      <option value="cardiovascular">Cardiovascular</option>
-                      <option value="diabetes">Diabetes</option>
-                      <option value="emergency">Emergency</option>
-                      <option value="other">Other</option>
+                      <option value="Pain Relief">Pain Relief</option>
+                      <option value="Antibiotics">Antibiotics</option>
+                      <option value="Respiratory">Respiratory</option>
+                      <option value="Cough & Cold">Cough & Cold</option>
+                      <option value="Antihistamine">Antihistamine</option>
+                      <option value="Gastrointestinal">Gastrointestinal</option>
+                      <option value="Cardiovascular">Cardiovascular</option>
+                      <option value="Diabetes">Diabetes</option>
+                      <option value="Topical">Topical</option>
+                      <option value="Eye & Ear">Eye & Ear</option>
+                      <option value="Oral Care">Oral Care</option>
+                      <option value="Vitamins">Vitamins & Supplements</option>
+                      <option value="Anti-inflammatory">Anti-inflammatory</option>
+                      <option value="Anxiolytic">Anxiolytic</option>
+                      <option value="Anticoagulant">Anticoagulant</option>
+                      <option value="Emergency">Emergency</option>
+                      <option value="Other">Other</option>
                     </select>
                     <label for="category">Category</label>
                   </div>
                 </div>
 
-                <div class="col-md-6" v-if="medicationForm.category === 'other'">
+                <div class="col-md-6" v-if="medicationForm.category === 'Other'">
                   <div class="form-floating">
                     <input 
                       type="text" 
@@ -595,7 +595,7 @@ export default {
       
       this.saving = true;
       try {
-        const finalCategory = this.medicationForm.category === 'other' 
+        const finalCategory = this.medicationForm.category === 'Other' 
           ? this.medicationForm.customCategory 
           : this.medicationForm.category;
         

@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Entity\Doctor;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -30,6 +31,7 @@ class UserController extends AbstractController
             $data = [];
             
             foreach ($users as $user) {
+                $doctorProfile = $user->getDoctorProfile();
                 $data[] = [
                     'id' => $user->getId(),
                     'name' => $user->getName(),
@@ -39,7 +41,13 @@ class UserController extends AbstractController
                     'isActive' => $user->isActive(),
                     'allowedPages' => $user->getAllowedPages(),
                     'createdAt' => $user->getCreatedAt()?->format('Y-m-d\TH:i:s'),
-                    'updatedAt' => $user->getUpdatedAt()?->format('Y-m-d\TH:i:s')
+                    'updatedAt' => $user->getUpdatedAt()?->format('Y-m-d\TH:i:s'),
+                    'doctorProfile' => $doctorProfile ? [
+                        'id' => $doctorProfile->getId(),
+                        'specialization' => $doctorProfile->getSpecialization(),
+                        'licenseNumber' => $doctorProfile->getLicenseNumber(),
+                        'phone' => $doctorProfile->getPhone()
+                    ] : null
                 ];
             }
             
@@ -129,10 +137,28 @@ class UserController extends AbstractController
             }
 
             $this->entityManager->persist($user);
+
+            // If user has ROLE_DOCTOR, automatically create doctor profile
+            if (in_array('ROLE_DOCTOR', $roles)) {
+                $doctor = new Doctor();
+                $doctor->setName($user->getName());
+                $doctor->setEmail($user->getEmail());
+                $doctor->setPhone($data['phone'] ?? ''); // Use provided phone or empty
+                $doctor->setSpecialization($data['specialization'] ?? 'General Practice (GP)');
+                if (isset($data['licenseNumber'])) {
+                    $doctor->setLicenseNumber($data['licenseNumber']);
+                }
+                $doctor->setWorkingHours($data['workingHours'] ?? []);
+                
+                // Link them together
+                $doctor->setUser($user);
+                $this->entityManager->persist($doctor);
+            }
+
             $this->entityManager->flush();
 
             return new JsonResponse([
-                'message' => 'User created successfully',
+                'message' => 'User created successfully' . (in_array('ROLE_DOCTOR', $roles) ? ' with doctor profile' : ''),
                 'user' => [
                     'id' => $user->getId(),
                     'name' => $user->getName(),
@@ -140,7 +166,8 @@ class UserController extends AbstractController
                     'email' => $user->getEmail(),
                     'roles' => $user->getRoles(),
                     'isActive' => $user->isActive(),
-                    'allowedPages' => $user->getAllowedPages()
+                    'allowedPages' => $user->getAllowedPages(),
+                    'doctorProfileCreated' => in_array('ROLE_DOCTOR', $roles)
                 ]
             ], 201);
             

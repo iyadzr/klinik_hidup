@@ -88,6 +88,7 @@
                 <th>Username</th>
                 <th>Email</th>
                 <th>Roles</th>
+                <th>Doctor Profile</th>
                 <th>Status</th>
                 <th>Allowed Pages</th>
                 <th>Created</th>
@@ -112,6 +113,27 @@
                     >
                       {{ formatRole(role) }}
                     </span>
+                  </div>
+                </td>
+                <td>
+                  <div v-if="user.doctorProfile" class="doctor-info">
+                    <div class="badge bg-info mb-1">
+                      <i class="fas fa-user-md me-1"></i>Linked
+                    </div>
+                    <div class="small text-muted">
+                      <div><strong>ID:</strong> {{ user.doctorProfile.id }}</div>
+                      <div><strong>Spec:</strong> {{ user.doctorProfile.specialization }}</div>
+                      <div v-if="user.doctorProfile.licenseNumber">
+                        <strong>License:</strong> {{ user.doctorProfile.licenseNumber }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else-if="user.roles.includes('ROLE_DOCTOR')" class="text-warning">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    <small>No Doctor Profile</small>
+                  </div>
+                  <div v-else class="text-muted">
+                    <small>-</small>
                   </div>
                 </td>
                 <td>
@@ -353,6 +375,56 @@
                   </div>
                 </div>
 
+                <!-- Doctor-specific fields (show only if ROLE_DOCTOR is selected) -->
+                <div v-if="userForm.roles.includes('ROLE_DOCTOR')" class="col-md-12">
+                  <hr class="my-3">
+                  <h6 class="text-primary">
+                    <i class="fas fa-user-md me-2"></i>Doctor Profile Information
+                  </h6>
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="form-floating">
+                        <input 
+                          type="tel" 
+                          class="form-control" 
+                          id="doctorPhone"
+                          v-model="userForm.phone" 
+                          placeholder="Enter phone number"
+                        >
+                        <label for="doctorPhone">Phone Number</label>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="form-floating">
+                        <select class="form-select" id="doctorSpecialization" v-model="userForm.specialization">
+                          <option value="General Practice (GP)">General Practice (GP)</option>
+                          <option value="Internal Medicine">Internal Medicine</option>
+                          <option value="Pediatrics">Pediatrics</option>
+                          <option value="Cardiology">Cardiology</option>
+                          <option value="Dermatology">Dermatology</option>
+                          <option value="Orthopedics">Orthopedics</option>
+                          <option value="Gynecology">Gynecology</option>
+                          <option value="Psychiatry">Psychiatry</option>
+                          <option value="Other">Other</option>
+                        </select>
+                        <label for="doctorSpecialization">Specialization</label>
+                      </div>
+                    </div>
+                    <div class="col-md-12">
+                      <div class="form-floating">
+                        <input 
+                          type="text" 
+                          class="form-control" 
+                          id="doctorLicense"
+                          v-model="userForm.licenseNumber" 
+                          placeholder="Enter license number"
+                        >
+                        <label for="doctorLicense">License Number (Optional)</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="col-md-12">
                   <div class="form-check">
                     <input 
@@ -516,7 +588,11 @@ export default {
         email: '',
         password: '',
         roles: [],
-        isActive: true
+        isActive: true,
+        // Doctor-specific fields
+        phone: '',
+        specialization: 'General Practice (GP)',
+        licenseNumber: ''
       },
       saving: false,
       
@@ -638,7 +714,11 @@ export default {
         email: '',
         password: '',
         roles: [],
-        isActive: true
+        isActive: true,
+        // Doctor-specific fields
+        phone: '',
+        specialization: 'General Practice (GP)',
+        licenseNumber: ''
       };
       this.userModal.show();
     },
@@ -651,7 +731,11 @@ export default {
         email: user.email,
         password: '',
         roles: [...(user.roles || [])],
-        isActive: user.isActive
+        isActive: user.isActive,
+        // Doctor-specific fields (from doctorProfile if exists)
+        phone: user.doctorProfile?.phone || '',
+        specialization: user.doctorProfile?.specialization || 'General Practice (GP)',
+        licenseNumber: user.doctorProfile?.licenseNumber || ''
       };
       this.userModal.show();
     },
@@ -676,6 +760,13 @@ export default {
           roles: this.userForm.roles,
           isActive: this.userForm.isActive
         };
+        
+        // Include doctor-specific fields if ROLE_DOCTOR is selected
+        if (this.userForm.roles.includes('ROLE_DOCTOR')) {
+          userData.phone = this.userForm.phone;
+          userData.specialization = this.userForm.specialization;
+          userData.licenseNumber = this.userForm.licenseNumber;
+        }
         
         if (!this.editingUser) {
           userData.password = this.userForm.password;
