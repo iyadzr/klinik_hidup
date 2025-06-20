@@ -58,13 +58,18 @@
                 </td>
                 <td>{{ formatDateTime(queue.queueDateTime) }}</td>
                 <td>
-                  <div v-if="queue.status === 'completed'">
+                  <div v-if="queue.status === 'completed_consultation'">
                     <span v-if="queue.isPaid" class="badge bg-success">
                       <i class="fas fa-check me-1"></i>Paid
                     </span>
                     <button v-else class="btn btn-sm btn-warning" @click="processPayment(queue)">
                       <i class="fas fa-dollar-sign me-1"></i>Process Payment
                     </button>
+                  </div>
+                  <div v-else-if="queue.status === 'completed'">
+                    <span class="badge bg-success">
+                      <i class="fas fa-check me-1"></i>Completed
+                    </span>
                   </div>
                   <div v-else>
                     <span class="text-muted">-</span>
@@ -144,7 +149,7 @@
 
 <script>
 import axios from 'axios';
-
+import * as bootstrap from 'bootstrap';
 import { getTodayInMYT } from '../../utils/dateUtils';
 
 export default {
@@ -416,28 +421,7 @@ export default {
       return queue.consultationFee || queue.amount || 50;
     },
     
-    closePaymentModal() {
-      const modalElement = document.getElementById('paymentModal');
-      if (modalElement) {
-        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-          const modalInstance = bootstrap.Modal.getInstance(modalElement);
-          if (modalInstance) {
-            modalInstance.hide();
-          }
-        } else {
-          // Fallback: manually hide modal
-          modalElement.classList.remove('show');
-          modalElement.style.display = 'none';
-          document.body.classList.remove('modal-open');
-          
-          // Remove backdrop
-          const backdrop = document.getElementById('paymentModalBackdrop');
-          if (backdrop) {
-            backdrop.remove();
-          }
-        }
-      }
-    },
+
     
     async acceptPayment() {
       if (!this.paymentMethod || !this.selectedQueue) {
@@ -486,18 +470,26 @@ export default {
       }
     },
     formatStatus(status) {
-      return status.split('_').map(word => 
+      const statusMap = {
+        'waiting': 'Waiting',
+        'in_consultation': 'In Consultation',
+        'completed_consultation': 'Completed Consultation',
+        'completed': 'Completed',
+        'cancelled': 'Cancelled'
+      };
+      return statusMap[status] || status.split('_').map(word => 
         word.charAt(0).toUpperCase() + word.slice(1)
       ).join(' ');
     },
     getStatusBadgeClass(status) {
-      const classes = {
-        waiting: 'badge bg-warning',
-        in_consultation: 'badge bg-info',
-        completed: 'badge bg-success',
-        cancelled: 'badge bg-danger'
+      const statusClasses = {
+        'waiting': 'badge bg-info',
+        'in_consultation': 'badge bg-warning text-dark',
+        'completed_consultation': 'badge bg-primary',
+        'completed': 'badge bg-success',
+        'cancelled': 'badge bg-danger'
       };
-      return classes[status] || 'badge bg-secondary';
+      return statusClasses[status] || 'badge bg-secondary';
     },
     initializeSSE() {
       // Skip SSE if not supported or in development

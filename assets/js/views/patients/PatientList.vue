@@ -65,7 +65,12 @@
                   <button class="btn btn-sm btn-info me-1" @click="editPatient(patient)" title="Edit Patient">
                     <i class="fas fa-edit"></i>
                   </button>
-                  <button class="btn btn-sm btn-danger" @click="deletePatient(patient)" title="Delete Patient">
+                  <button 
+                    v-if="isSuperAdmin" 
+                    class="btn btn-sm btn-danger" 
+                    @click="deletePatient(patient)" 
+                    title="Delete Patient"
+                  >
                     <i class="fas fa-trash"></i>
                   </button>
                 </td>
@@ -413,6 +418,7 @@
                           <tr>
                             <th>Medication</th>
                             <th>Quantity</th>
+                            <th>Price (RM)</th>
                             <th>Instructions</th>
                           </tr>
                         </thead>
@@ -423,6 +429,7 @@
                               <small v-if="med.category" class="text-muted d-block">({{ med.category }})</small>
                             </td>
                             <td>{{ med.quantity }} {{ med.unitType || 'units' }}</td>
+                            <td>{{ med.actualPrice ? parseFloat(med.actualPrice).toFixed(2) : 'N/A' }}</td>
                             <td>{{ med.instructions || 'No instructions' }}</td>
                           </tr>
                         </tbody>
@@ -435,28 +442,22 @@
               <!-- Financial Information -->
               <div class="col-12">
                 <div class="card">
-                  <div class="card-header">
-                    <h6 class="mb-0"><i class="fas fa-money-bill me-2"></i>Financial Summary</h6>
+                  <div class="card-header bg-success text-white">
+                    <h6 class="mb-0"><i class="fas fa-dollar-sign me-2"></i>Financial Information</h6>
                   </div>
                   <div class="card-body">
                     <div class="row">
                       <div class="col-md-4">
-                        <div class="text-center">
-                          <h5 class="text-primary">RM{{ selectedVisit.consultationFee || '0.00' }}</h5>
-                          <small class="text-muted">Consultation Fee</small>
-                        </div>
+                        <strong>Consultation Fee:</strong><br>
+                        RM {{ selectedVisit.consultationFee ? parseFloat(selectedVisit.consultationFee).toFixed(2) : '0.00' }}
                       </div>
                       <div class="col-md-4">
-                        <div class="text-center">
-                          <h5 class="text-info">RM{{ selectedVisit.medicinesFee || '0.00' }}</h5>
-                          <small class="text-muted">Medicines Fee</small>
-                        </div>
+                        <strong>Medicines Fee:</strong><br>
+                        RM {{ selectedVisit.medicinesFee ? parseFloat(selectedVisit.medicinesFee).toFixed(2) : '0.00' }}
                       </div>
-                      <div class="col-md-4">
-                        <div class="text-center">
-                          <h5 class="text-success">RM{{ (parseFloat(selectedVisit.consultationFee || 0) + parseFloat(selectedVisit.medicinesFee || 0)).toFixed(2) }}</h5>
-                          <small class="text-muted">Total Amount</small>
-                        </div>
+                      <div class="col-md-4 fw-bold">
+                        <strong>Total Amount:</strong><br>
+                        RM {{ selectedVisit.totalAmount ? parseFloat(selectedVisit.totalAmount).toFixed(2) : '0.00' }}
                       </div>
                     </div>
                   </div>
@@ -636,6 +637,7 @@
 
 <script>
 import axios from 'axios';
+import AuthService from '../../services/AuthService';
 
 export default {
   name: 'PatientList',
@@ -1088,6 +1090,11 @@ export default {
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       return diffDays.toString();
+    }
+  },
+  computed: {
+    isSuperAdmin() {
+      return AuthService.isSuperAdmin();
     }
   }
 };

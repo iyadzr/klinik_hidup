@@ -281,7 +281,7 @@ export default {
         
         // Filter for ongoing consultations (not paid, in progress)
         let ongoing = consultations.filter(consultation => 
-          !consultation.isPaid && consultation.status !== 'completed'
+          !consultation.isPaid && consultation.status !== 'completed' && consultation.status !== 'completed_consultation'
         );
         
         // Get patients from queue for this doctor (both waiting and in consultation)

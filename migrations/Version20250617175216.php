@@ -14,7 +14,7 @@ final class Version20250617175216 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return '';
+        return 'Add profile image field to user table';
     }
 
     public function up(Schema $schema): void
@@ -29,6 +29,8 @@ final class Version20250617175216 extends AbstractMigration
         $this->addSql(<<<'SQL'
             CREATE UNIQUE INDEX UNIQ_1FC0F36AA76ED395 ON doctor (user_id)
         SQL);
+        // Add profile_image column to user table
+        $this->addSql('ALTER TABLE user ADD profile_image VARCHAR(500) DEFAULT NULL');
     }
 
     public function down(Schema $schema): void
@@ -43,5 +45,7 @@ final class Version20250617175216 extends AbstractMigration
         $this->addSql(<<<'SQL'
             ALTER TABLE doctor DROP user_id
         SQL);
+        // Remove profile_image column from user table
+        $this->addSql('ALTER TABLE user DROP profile_image');
     }
 }

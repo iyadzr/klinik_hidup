@@ -79,6 +79,9 @@ class Consultation
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $mcRunningNumber = null;
 
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $status = 'pending'; // pending, completed, cancelled
+
     public function __construct()
     {
         $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
@@ -331,6 +334,17 @@ class Consultation
     public function setTotalAmount(string $totalAmount): self
     {
         $this->totalAmount = $totalAmount;
+        return $this;
+    }
+
+    public function getStatus(): ?string
+    {
+        return $this->status;
+    }
+
+    public function setStatus(?string $status): self
+    {
+        $this->status = $status;
         return $this;
     }
 }

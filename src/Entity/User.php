@@ -47,6 +47,9 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'boolean')]
     private bool $isActive = true;
 
+    #[ORM\Column(length: 500, nullable: true)]
+    private ?string $profileImage = null;
+
     #[ORM\OneToOne(mappedBy: 'user', targetEntity: Doctor::class)]
     private ?Doctor $doctorProfile = null;
 
@@ -180,6 +183,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setIsActive(bool $isActive): static
     {
         $this->isActive = $isActive;
+        $this->updatedAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function getProfileImage(): ?string
+    {
+        return $this->profileImage;
+    }
+
+    public function setProfileImage(?string $profileImage): static
+    {
+        $this->profileImage = $profileImage;
         $this->updatedAt = new \DateTimeImmutable();
         return $this;
     }

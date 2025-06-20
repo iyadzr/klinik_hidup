@@ -388,70 +388,108 @@ class UserController extends AbstractController
     #[Route('/profile', name: 'app_user_profile_update', methods: ['PUT'])]
     public function updateProfile(Request $request): JsonResponse
     {
+        // Mock implementation for now
+        return new JsonResponse(['message' => 'Profile updated successfully']);
+    }
+
+    #[Route('/users/profile-image', name: 'api_users_profile_image_upload', methods: ['POST'])]
+    public function uploadProfileImage(Request $request): JsonResponse
+    {
         try {
-            $data = json_decode($request->getContent(), true);
+            // Get current user (for now, we'll use a mock user ID)
+            // In production, get from security context
+            $userId = 1; // Mock user ID
             
-            if (!$data) {
-                return new JsonResponse(['message' => 'Invalid JSON'], 400);
+            $user = $this->entityManager->getRepository(User::class)->find($userId);
+            if (!$user) {
+                return new JsonResponse(['error' => 'User not found'], 404);
             }
 
-            $this->logger->info('Profile update request received', ['data' => $data]);
-
-            // Validate required fields
-            $requiredFields = ['name', 'email', 'username'];
-            $missingFields = [];
+            $uploadedFile = $request->files->get('profileImage');
             
-            foreach ($requiredFields as $field) {
-                if (!isset($data[$field]) || (is_string($data[$field]) && trim($data[$field]) === '')) {
-                    $missingFields[] = $field;
+            if (!$uploadedFile) {
+                return new JsonResponse(['error' => 'No file uploaded'], 400);
+            }
+
+            // Validate file
+            $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            if (!in_array($uploadedFile->getMimeType(), $allowedMimes)) {
+                return new JsonResponse(['error' => 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.'], 400);
+            }
+
+            // Validate file size (5MB max)
+            if ($uploadedFile->getSize() > 5 * 1024 * 1024) {
+                return new JsonResponse(['error' => 'File too large. Maximum size is 5MB.'], 400);
+            }
+
+            // Create uploads directory if it doesn't exist
+            $uploadsDir = $this->getParameter('kernel.project_dir') . '/public/uploads/profiles';
+            if (!is_dir($uploadsDir)) {
+                mkdir($uploadsDir, 0755, true);
+            }
+
+            // Generate unique filename
+            $extension = $uploadedFile->guessExtension();
+            $filename = 'profile_' . $userId . '_' . uniqid() . '.' . $extension;
+            
+            // Remove old profile image if exists
+            if ($user->getProfileImage()) {
+                $oldImagePath = $this->getParameter('kernel.project_dir') . '/public' . $user->getProfileImage();
+                if (file_exists($oldImagePath)) {
+                    unlink($oldImagePath);
                 }
             }
-            
-            if (!empty($missingFields)) {
-                return new JsonResponse([
-                    'message' => 'Missing required fields: ' . implode(', ', $missingFields)
-                ], 400);
-            }
 
-            // Validate email format
-            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                return new JsonResponse([
-                    'message' => 'Invalid email format'
-                ], 400);
-            }
+            // Move uploaded file
+            $uploadedFile->move($uploadsDir, $filename);
 
-            // DEVELOPMENT MODE: For now, just return success without actually updating
-            // In production, you would:
-            // 1. Get the current authenticated user
-            // 2. Check if email/username already exists for other users
-            // 3. Update user fields
-            // 4. Hash and update password if provided
-            // 5. Persist changes
-
-            // Mock response for development
-            $updatedUser = [
-                'id' => 1,
-                'name' => $data['name'],
-                'email' => $data['email'],
-                'username' => $data['username']
-            ];
-
-            $this->logger->info('Profile updated successfully (development mode)', ['user' => $updatedUser]);
+            // Update user profile
+            $profileImageUrl = '/uploads/profiles/' . $filename;
+            $user->setProfileImage($profileImageUrl);
+            $this->entityManager->flush();
 
             return new JsonResponse([
-                'message' => 'Profile updated successfully',
-                'user' => $updatedUser
+                'message' => 'Profile image uploaded successfully',
+                'profileImageUrl' => $profileImageUrl
             ]);
 
         } catch (\Exception $e) {
-            $this->logger->error('Error updating profile', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+            $this->logger->error('Error uploading profile image: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to upload image'], 500);
+        }
+    }
+
+    #[Route('/users/profile-image', name: 'api_users_profile_image_delete', methods: ['DELETE'])]
+    public function removeProfileImage(): JsonResponse
+    {
+        try {
+            // Get current user (for now, we'll use a mock user ID)
+            $userId = 1; // Mock user ID
             
+            $user = $this->entityManager->getRepository(User::class)->find($userId);
+            if (!$user) {
+                return new JsonResponse(['error' => 'User not found'], 404);
+            }
+
+            // Remove old profile image file if exists
+            if ($user->getProfileImage()) {
+                $oldImagePath = $this->getParameter('kernel.project_dir') . '/public' . $user->getProfileImage();
+                if (file_exists($oldImagePath)) {
+                    unlink($oldImagePath);
+                }
+            }
+
+            // Update user profile
+            $user->setProfileImage(null);
+            $this->entityManager->flush();
+
             return new JsonResponse([
-                'message' => 'Internal server error: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Profile image removed successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error removing profile image: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to remove image'], 500);
         }
     }
 } 

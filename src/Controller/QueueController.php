@@ -473,7 +473,7 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Status is required'], 400);
             }
             
-            $allowedStatuses = ['waiting', 'in_consultation', 'completed', 'cancelled'];
+            $allowedStatuses = ['waiting', 'in_consultation', 'completed_consultation', 'completed', 'cancelled'];
             if (!in_array($data['status'], $allowedStatuses)) {
                 return new JsonResponse(['error' => 'Invalid status'], 400);
             }
@@ -508,70 +508,54 @@ class QueueController extends AbstractController
     #[Route('/{id}/payment', name: 'app_queue_payment', methods: ['POST'])]
     public function processPayment(int $id, Request $request): JsonResponse
     {
-        // Rate limiting
-        if (!$this->checkRateLimit($request)) {
-            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
-        }
-        
         try {
-            $data = json_decode($request->getContent(), true);
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
             
-            if (!$data) {
-                return new JsonResponse(['error' => 'Invalid JSON data'], 400);
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue entry not found'], 404);
             }
             
-            // Validate required fields
+            $data = json_decode($request->getContent(), true);
+            
             if (!isset($data['paymentMethod']) || !isset($data['amount'])) {
                 return new JsonResponse(['error' => 'Payment method and amount are required'], 400);
             }
             
-            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
-            if (!$queue) {
-                return new JsonResponse(['error' => 'Queue not found'], 404);
-            }
+            // Update queue payment status
+            $queue->setIsPaid(true);
+            $queue->setPaidAt(new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur')));
+            $queue->setPaymentMethod($data['paymentMethod']);
+            $queue->setAmount($data['amount']);
             
-            // Check if already paid
-            if (method_exists($queue, 'getIsPaid') && $queue->getIsPaid()) {
-                return new JsonResponse(['error' => 'Payment already processed'], 400);
-            }
-            
-            // Mark as paid (if the Queue entity has these methods)
-            if (method_exists($queue, 'setIsPaid')) {
-                $queue->setIsPaid(true);
-            }
-            if (method_exists($queue, 'setPaidAt')) {
-                $queue->setPaidAt(new \DateTimeImmutable());
-            }
-            if (method_exists($queue, 'setPaymentMethod')) {
-                $queue->setPaymentMethod($data['paymentMethod']);
-            }
-            if (method_exists($queue, 'setAmount')) {
-                $queue->setAmount((float)$data['amount']);
+            // If status is 'completed_consultation', change it to 'completed'
+            if ($queue->getStatus() === 'completed_consultation') {
+                $queue->setStatus('completed');
             }
             
             $this->entityManager->flush();
             
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
+                $this->cache->delete('queue_stats');
+            }
+            
             $this->logger->info('Queue payment processed', [
                 'queueId' => $id,
                 'paymentMethod' => $data['paymentMethod'],
-                'amount' => $data['amount'],
-                'patientId' => $queue->getPatient()->getId()
+                'amount' => $data['amount']
             ]);
             
             return new JsonResponse([
                 'message' => 'Payment processed successfully',
-                'queueId' => $id,
-                'amount' => $data['amount'],
-                'paymentMethod' => $data['paymentMethod']
+                'isPaid' => $queue->getIsPaid(),
+                'paidAt' => $queue->getPaidAt()->format('Y-m-d H:i:s'),
+                'status' => $queue->getStatus()
             ]);
             
         } catch (\Exception $e) {
-            $this->logger->error('Error processing queue payment', [
-                'queueId' => $id,
-                'error' => $e->getMessage()
-            ]);
-            
-            return new JsonResponse(['error' => 'Internal server error'], 500);
+            $this->logger->error('Error processing queue payment: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to process payment'], 500);
         }
     }
 
@@ -626,6 +610,14 @@ class QueueController extends AbstractController
             ->getQuery()
             ->getSingleScalarResult();
             
+        $completedConsultation = $repo->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('q.status = :status AND DATE(q.queueDateTime) = :today')
+            ->setParameter('status', 'completed_consultation')
+            ->setParameter('today', $todayStr)
+            ->getQuery()
+            ->getSingleScalarResult();
+            
         $completed = $repo->createQueryBuilder('q')
             ->select('COUNT(q.id)')
             ->where('q.status = :status AND DATE(q.queueDateTime) = :today')
@@ -638,8 +630,9 @@ class QueueController extends AbstractController
             'today' => [
                 'waiting' => $waiting,
                 'in_consultation' => $inConsultation,
+                'completed_consultation' => $completedConsultation,
                 'completed' => $completed,
-                'total' => $waiting + $inConsultation + $completed
+                'total' => $waiting + $inConsultation + $completedConsultation + $completed
             ],
             'timestamp' => $today->format('Y-m-d H:i:s')
         ];

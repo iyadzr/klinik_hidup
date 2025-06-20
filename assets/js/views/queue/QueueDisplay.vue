@@ -413,6 +413,16 @@ export default {
         timeZone: 'Asia/Kuala_Lumpur'
       };
       this.currentDate = now.toLocaleDateString('en-MY', dateOptions);
+    },
+    getStatusClass(status) {
+      const statusClasses = {
+        'waiting': 'status-waiting',
+        'in_consultation': 'status-consultation',
+        'completed_consultation': 'status-completed-consultation',
+        'completed': 'status-completed',
+        'cancelled': 'status-cancelled'
+      };
+      return statusClasses[status] || 'status-unknown';
     }
   }
 };
@@ -588,5 +598,18 @@ body.queue-fullscreen {
 }
 .queue-display.fullscreen .clock-display {
   position: fixed;
+}
+
+.status-completed-consultation {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: bold;
+  animation: pulse 2s infinite;
+}
+
+.status-completed {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+  font-weight: bold;
 }
 </style> 

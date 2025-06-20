@@ -347,6 +347,12 @@
                         {{ medItem.showInstructions ? 'Hide' : 'Add' }} Instructions
                       </button>
                     </div>
+
+                    <div class="col-md-1">
+                      <button class="btn btn-success me-2" @click="printMedicationLabel(medItem)" title="Print Medication Label">
+                        <i class="fas fa-print"></i> Print Label
+                      </button>
+                    </div>
                   </div>
                 </div>
                 
@@ -839,6 +845,8 @@ import axios from 'axios';
 import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
 import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
 import * as bootstrap from 'bootstrap';
+import AuthService from '../../services/AuthService';
+import { getTodayInMYT } from '../../utils/dateUtils';
 
 export default {
   name: 'ConsultationForm',
@@ -1140,8 +1148,15 @@ export default {
         // Show success message
         alert('Consultation saved successfully');
         
-        // Redirect to consultations list
-        this.$router.push('/consultations');
+        // Redirect based on user role
+        const currentUser = AuthService.getCurrentUser();
+        if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
+          // Doctors should go back to ongoing consultations
+          this.$router.push('/consultations/ongoing');
+        } else {
+          // Others go to consultations list
+          this.$router.push('/consultations');
+        }
       } catch (error) {
         console.error('Error saving consultation:', error);
         alert(error.response?.data?.message || error.message || 'Error saving consultation');
@@ -1403,7 +1418,134 @@ export default {
         console.error('Error loading group patients:', error);
         this.groupPatients = [];
       }
-    }
+    },
+    printMedicationLabel(medItem) {
+      // Create medication label content
+      const labelContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Medication Label - ${medItem.name}</title>
+          <style>
+            @media print {
+              @page {
+                size: 75mm 50mm; /* Standard label size */
+                margin: 0;
+              }
+              body {
+                margin: 0;
+                padding: 4mm;
+                font-family: Arial, sans-serif;
+                font-size: 10pt;
+                line-height: 1.2;
+                color: #000;
+              }
+              .label-container {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+              }
+              .header {
+                text-align: center;
+                border-bottom: 1px solid #000;
+                padding-bottom: 2mm;
+                margin-bottom: 2mm;
+              }
+              .clinic-name {
+                font-size: 11pt;
+                font-weight: bold;
+                text-transform: uppercase;
+              }
+              .clinic-details {
+                font-size: 8pt;
+              }
+              .patient-info {
+                display: flex;
+                justify-content: space-between;
+                font-size: 9pt;
+                margin-bottom: 2mm;
+              }
+              .medication-details {
+                margin-bottom: 2mm;
+              }
+              .medication-name {
+                font-size: 14pt;
+                font-weight: bold;
+                text-transform: uppercase;
+              }
+              .dosage {
+                font-size: 10pt;
+              }
+              .instructions {
+                font-size: 11pt;
+                font-weight: bold;
+                text-align: center;
+                border: 1px solid #000;
+                padding: 2mm;
+                margin-bottom: 2mm;
+                text-transform: uppercase;
+              }
+              .footer {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                font-size: 8pt;
+              }
+              .dispensed-by {
+                font-style: italic;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="label-container">
+            <div class="header">
+              <div class="clinic-name">Klinik Hidup Sihat</div>
+              <div class="clinic-details">
+                No. 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor. Tel: 03-8740 0678
+              </div>
+            </div>
+
+            <div class="patient-info">
+              <span class="patient-name"><strong>NAMA:</strong> ${this.patient?.name || 'N/A'}</span>
+              <span class="date"><strong>TARIKH:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
+            </div>
+
+            <div class="medication-details">
+              <div class="medication-name">${medItem.name}</div>
+              <div class="dosage">${medItem.unitDescription || ''}</div>
+            </div>
+
+            <div class="instructions">
+              ${medItem.instructions || 'MAKAN SEBIJI BILA PERLU'}
+            </div>
+
+            <div class="footer">
+              <div class="quantity">
+                <strong>KUANTITI:</strong> ${medItem.quantity} ${medItem.unitType || 'Biji'}
+              </div>
+              <div class="dispensed-by">
+                Dr. ${this.consultation?.doctorName || 'Adhar'}
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Create a new window for printing
+      const printWindow = window.open('', '_blank', 'width=400,height=300');
+      printWindow.document.write(labelContent);
+      printWindow.document.close();
+      
+      // Wait for content to load then print
+      printWindow.onload = function() {
+        printWindow.print();
+        printWindow.close();
+      };
+    },
   },
   watch: {
     // Whenever groupPatients changes, default all selected for MC

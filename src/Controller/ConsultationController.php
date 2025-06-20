@@ -224,7 +224,7 @@ class ConsultationController extends AbstractController
                 $this->entityManager->flush();
             }
             
-            // Update queue status to 'completed' for this patient/doctor combination
+            // Update queue status to 'completed_consultation' for this patient/doctor combination
             $queueRepository = $this->entityManager->getRepository(\App\Entity\Queue::class);
             $queue = $queueRepository->findOneBy([
                 'patient' => $patient,
@@ -233,7 +233,11 @@ class ConsultationController extends AbstractController
             ]);
             
             if ($queue) {
-                $queue->setStatus('completed');
+                $queue->setStatus('completed_consultation');
+                
+                // Also update the consultation status
+                $consultation->setStatus('completed_consultation');
+                
                 $this->entityManager->flush();
                 
                 // Trigger real-time update
@@ -408,50 +412,67 @@ class ConsultationController extends AbstractController
         $data = [];
 
         foreach ($consultations as $consultation) {
-            $patient = $consultation->getPatient();
-            $doctor = $consultation->getDoctor();
-            
-            if (!$patient || !$doctor) {
-                continue; // Skip incomplete records
-            }
-            
-            // Get prescribed medications efficiently
-            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
-                ->findBy(['consultation' => $consultation]);
-            
-            $medicationsArray = [];
-            foreach ($prescribedMeds as $med) {
-                $medicationsArray[] = [
-                    'name' => $med->getName(),
-                    'quantity' => $med->getQuantity(),
-                    'instructions' => $med->getInstructions(),
-                    'actualPrice' => $med->getActualPrice()
+            try {
+                $patient = $consultation->getPatient();
+                $doctor = $consultation->getDoctor();
+                
+                if (!$patient || !$doctor) {
+                    continue; // Skip incomplete records
+                }
+                
+                // Get prescribed medications efficiently
+                $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                    ->findBy(['consultation' => $consultation]);
+                
+                $medicationsArray = [];
+                foreach ($prescribedMeds as $med) {
+                    $medicationsArray[] = [
+                        'name' => $med->getName(),
+                        'quantity' => $med->getQuantity(),
+                        'instructions' => $med->getInstructions(),
+                        'actualPrice' => $med->getActualPrice()
+                    ];
+                }
+                
+                // Determine status with a fallback for older records
+                $status = $consultation->getStatus();
+                if ($status === null) {
+                    $status = $consultation->getIsPaid() ? 'completed' : 'pending';
+                }
+
+                $data[] = [
+                    'id' => $consultation->getId(),
+                    'patientId' => $patient->getId(),
+                    'patientName' => $patient->getName(),
+                    'doctorId' => $doctor->getId(),
+                    'doctorName' => $doctor->getName(),
+                    'createdAt' => $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'consultationDate' => $consultation->getConsultationDate() ? $consultation->getConsultationDate()->format('Y-m-d H:i:s') : $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
+                    'symptoms' => $consultation->getSymptoms(),
+                    'diagnosis' => $consultation->getDiagnosis(),
+                    'treatment' => $consultation->getTreatment(),
+                    'notes' => $consultation->getNotes(),
+                    'remarks' => $consultation->getNotes(),
+                    'medications' => $consultation->getMedications(),
+                    'prescribedMedications' => $medicationsArray,
+                    'consultationFee' => $consultation->getConsultationFee(),
+                    'medicinesFee' => $consultation->getMedicinesFee(),
+                    'totalAmount' => $consultation->getTotalAmount(),
+                    'isPaid' => $consultation->getIsPaid(),
+                    'status' => $status,
+                    'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+                    'receiptNumber' => $consultation->getReceiptNumber()
                 ];
+            } catch (\Throwable $e) {
+                $this->logger->error(
+                    'Failed to build data for consultation ID: ' . ($consultation ? $consultation->getId() : 'unknown'),
+                    [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]
+                );
+                continue;
             }
-            
-            $data[] = [
-                'id' => $consultation->getId(),
-                'patientId' => $patient->getId(),
-                'patientName' => $patient->getName(),
-                'doctorId' => $doctor->getId(),
-                'doctorName' => $doctor->getName(),
-                'createdAt' => $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
-                'consultationDate' => $consultation->getConsultationDate() ? $consultation->getConsultationDate()->format('Y-m-d H:i:s') : $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
-                'symptoms' => $consultation->getSymptoms(),
-                'diagnosis' => $consultation->getDiagnosis(),
-                'treatment' => $consultation->getTreatment(),
-                'notes' => $consultation->getNotes(), // Remarks field
-                'remarks' => $consultation->getNotes(), // Alternative field name
-                'medications' => $consultation->getMedications(), // Legacy text field
-                'prescribedMedications' => $medicationsArray, // Structured medications
-                'consultationFee' => $consultation->getConsultationFee(),
-                'medicinesFee' => $consultation->getMedicinesFee(),
-                'totalAmount' => $consultation->getTotalAmount(),
-                'isPaid' => $consultation->getIsPaid(),
-                'status' => $consultation->getIsPaid() ? 'Paid' : 'Unpaid',
-                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
-                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
-            ];
         }
 
         return $data;
@@ -531,6 +552,11 @@ class ConsultationController extends AbstractController
                 if (method_exists($consultation, 'setPaymentMethod')) {
                     $consultation->setPaymentMethod($data['paymentMethod']);
                 }
+            }
+            
+            // Also update the consultation status
+            if ($consultation->getStatus() === 'completed_consultation') {
+                $consultation->setStatus('completed');
             }
             
             $this->entityManager->flush();

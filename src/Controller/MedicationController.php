@@ -13,6 +13,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Psr\Log\LoggerInterface;
 
 #[Route('/api/medications')]
 class MedicationController extends AbstractController
@@ -21,37 +22,49 @@ class MedicationController extends AbstractController
         private EntityManagerInterface $entityManager,
         private MedicationRepository $medicationRepository,
         private PrescribedMedicationRepository $prescribedMedicationRepository,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private LoggerInterface $logger
     ) {}
 
     #[Route('', name: 'api_medication_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
-        $search = $request->query->get('search');
-        $category = $request->query->get('category');
+        try {
+            $search = $request->query->get('search');
+            $category = $request->query->get('category');
 
-        if ($search) {
-            $medications = $this->medicationRepository->findByNameLike($search);
-        } elseif ($category) {
-            $medications = $this->medicationRepository->findByCategory($category);
-        } else {
-            $medications = $this->medicationRepository->findBy([], ['name' => 'ASC']);
+            if ($search) {
+                $medications = $this->medicationRepository->findByNameLike($search);
+            } elseif ($category) {
+                $medications = $this->medicationRepository->findByCategory($category);
+            } else {
+                $medications = $this->medicationRepository->findBy([], ['name' => 'ASC']);
+            }
+
+            $data = array_map(function (Medication $medication) {
+                return [
+                    'id' => $medication->getId(),
+                    'name' => $medication->getName(),
+                    'unitType' => $medication->getUnitType(),
+                    'unitDescription' => $medication->getUnitDescription(),
+                    'description' => $medication->getDescription(),
+                    'category' => $medication->getCategory(),
+                    'costPrice' => $medication->getCostPrice(),
+                    'sellingPrice' => $medication->getSellingPrice(),
+                    'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
+                    'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
+                ];
+            }, $medications);
+
+            return new JsonResponse($data);
+
+        } catch (\Throwable $e) {
+            $this->logger->error('Error in medication search: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'search_term' => $request->query->get('search'),
+            ]);
+            return new JsonResponse(['error' => 'An unexpected error occurred during medication search.'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-
-        $data = array_map(function (Medication $medication) {
-            return [
-                'id' => $medication->getId(),
-                'name' => $medication->getName(),
-                'unitType' => $medication->getUnitType(),
-                'unitDescription' => $medication->getUnitDescription(),
-                'description' => $medication->getDescription(),
-                'category' => $medication->getCategory(),
-                'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
-                'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
-            ];
-        }, $medications);
-
-        return new JsonResponse($data);
     }
 
     #[Route('', name: 'api_medication_create', methods: ['POST'])]
@@ -65,6 +78,8 @@ class MedicationController extends AbstractController
         $medication->setUnitDescription($data['unitDescription'] ?? null);
         $medication->setDescription($data['description'] ?? null);
         $medication->setCategory($data['category'] ?? null);
+        $medication->setCostPrice($data['costPrice'] ?? null);
+        $medication->setSellingPrice($data['sellingPrice'] ?? null);
 
         $errors = $this->validator->validate($medication);
         if (count($errors) > 0) {
@@ -81,6 +96,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'costPrice' => $medication->getCostPrice(),
+            'sellingPrice' => $medication->getSellingPrice(),
             'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
             'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ], Response::HTTP_CREATED);
@@ -102,6 +119,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'costPrice' => $medication->getCostPrice(),
+            'sellingPrice' => $medication->getSellingPrice(),
             'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
             'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ]);
@@ -123,6 +142,8 @@ class MedicationController extends AbstractController
         if (isset($data['unitDescription'])) $medication->setUnitDescription($data['unitDescription']);
         if (isset($data['description'])) $medication->setDescription($data['description']);
         if (isset($data['category'])) $medication->setCategory($data['category']);
+        if (isset($data['costPrice'])) $medication->setCostPrice($data['costPrice']);
+        if (isset($data['sellingPrice'])) $medication->setSellingPrice($data['sellingPrice']);
 
         $errors = $this->validator->validate($medication);
         if (count($errors) > 0) {
@@ -138,6 +159,8 @@ class MedicationController extends AbstractController
             'unitDescription' => $medication->getUnitDescription(),
             'description' => $medication->getDescription(),
             'category' => $medication->getCategory(),
+            'costPrice' => $medication->getCostPrice(),
+            'sellingPrice' => $medication->getSellingPrice(),
             'createdAt' => $medication->getCreatedAt()?->format('Y-m-d H:i:s'),
             'updatedAt' => $medication->getUpdatedAt()?->format('Y-m-d H:i:s'),
         ]);
