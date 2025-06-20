@@ -6,89 +6,162 @@ use App\Entity\Queue;
 use App\Entity\Patient;
 use App\Entity\Doctor;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 #[Route('/api/queue')]
 class QueueController extends AbstractController
 {
-    private $entityManager;
+    private EntityManagerInterface $entityManager;
+    private LoggerInterface $logger;
+    private ?CacheInterface $cache;
+    
+    // Rate limiting storage
+    private static array $requestCounts = [];
+    private static int $maxRequestsPerMinute = 60; // Higher limit for queue operations
 
-    public function __construct(EntityManagerInterface $entityManager)
-    {
+    public function __construct(
+        EntityManagerInterface $entityManager,
+        LoggerInterface $logger,
+        ?CacheInterface $cache = null
+    ) {
         $this->entityManager = $entityManager;
+        $this->logger = $logger;
+        $this->cache = $cache;
+    }
+    
+    private function checkRateLimit(Request $request): bool
+    {
+        $clientIp = $request->getClientIp() ?? 'unknown';
+        $currentMinute = (int)(time() / 60);
+        
+        // Clean old entries
+        self::$requestCounts = array_filter(
+            self::$requestCounts, 
+            fn($data) => $data['minute'] >= $currentMinute - 1
+        );
+        
+        // Count requests for this IP in current minute
+        $key = $clientIp . '_' . $currentMinute;
+        if (!isset(self::$requestCounts[$key])) {
+            self::$requestCounts[$key] = ['minute' => $currentMinute, 'count' => 0];
+        }
+        
+        self::$requestCounts[$key]['count']++;
+        
+        return self::$requestCounts[$key]['count'] <= self::$maxRequestsPerMinute;
     }
 
     #[Route('', name: 'app_queue_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
         try {
             $date = $request->query->get('date');
-            if (!$date) {
-                // Default to today in Asia/Kuala_Lumpur
-                $dt = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
-                $date = $dt->format('Y-m-d');
+            $status = $request->query->get('status');
+            $page = max(1, (int) $request->query->get('page', 1));
+            $limit = min(100, max(10, (int) $request->query->get('limit', 50))); // Max 100, min 10
+            
+            $cacheKey = 'queue_list_' . ($date ?: 'all') . '_' . ($status ?: 'all') . '_page_' . $page . '_limit_' . $limit;
+            
+            if ($this->cache) {
+                $queueData = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $status, $page, $limit) {
+                    $item->expiresAfter(60); // 1 minute cache for queue data
+                    return $this->buildQueueList($date, $status, $page, $limit);
+                });
+            } else {
+                $queueData = $this->buildQueueList($date, $status, $page, $limit);
             }
             
-            // Create date range for the specified date
+            return new JsonResponse($queueData);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue list: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch queue data'], 500);
+        }
+    }
+    
+    private function buildQueueList(?string $date, ?string $status, int $page, int $limit): array
+    {
+        $qb = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q', 'p', 'd') // Select related entities to avoid N+1 queries
+            ->leftJoin('q.patient', 'p')
+            ->leftJoin('q.doctor', 'd')
+            ->orderBy('q.queueDateTime', 'DESC');
+        
+        // Apply date filter
+        if ($date) {
             $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
             $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
             
-            // Query with better date handling and ordering
-            $queues = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q')
-                ->leftJoin('q.patient', 'p')
-                ->leftJoin('q.doctor', 'd')
-                ->where('q.queueDateTime BETWEEN :start AND :end')
-                ->setParameter('start', $start)
-                ->setParameter('end', $end)
-                ->orderBy('q.registrationNumber', 'ASC') // Order by registration number for better queue order
-                ->addOrderBy('q.queueDateTime', 'ASC')
-                ->getQuery()->getResult();
+            $qb->where('q.queueDateTime BETWEEN :start AND :end')
+               ->setParameter('start', $start)
+               ->setParameter('end', $end);
+        } else {
+            // Default to last 7 days for performance
+            $sevenDaysAgo = new \DateTime('-7 days', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $qb->where('q.queueDateTime >= :sevenDaysAgo')
+               ->setParameter('sevenDaysAgo', $sevenDaysAgo);
+        }
+        
+        // Apply status filter
+        if ($status) {
+            $qb->andWhere('q.status = :status')
+               ->setParameter('status', $status);
+        }
+        
+        // Apply pagination
+        $qb->setFirstResult(($page - 1) * $limit)
+           ->setMaxResults($limit);
+        
+        $queues = $qb->getQuery()->getResult();
         
         $queueData = [];
-        $groupedQueues = []; // To track processed groups
+        $groupedQueues = [];
         
         foreach ($queues as $queue) {
             $patient = $queue->getPatient();
             $doctor = $queue->getDoctor();
             
             if (!$patient || !$doctor) {
-                continue; // Skip queues with missing patient or doctor
+                continue; // Skip incomplete records
             }
             
-            // Handle group consultations
-            if ($queue->isGroupConsultation()) {
-                $groupId = $queue->getGroupId();
-                
+            $groupId = $queue->getGroupId();
+            
+            if ($groupId && $queue->isGroupConsultation()) {
+                // Group consultation handling
                 if (!isset($groupedQueues[$groupId])) {
-                    // First patient in the group - create group entry
-                    $metadata = $queue->getMetadataArray();
-                    $groupMembers = $metadata['groupMembers'] ?? [];
-                    
                     $groupedQueues[$groupId] = [
                         'id' => $queue->getId(),
                         'queueNumber' => $queue->getQueueNumber(),
                         'registrationNumber' => $queue->getRegistrationNumber(),
                         'isGroupConsultation' => true,
                         'groupId' => $groupId,
-                        'mainPatient' => [
-                            'id' => $patient->getId(),
-                            'name' => $patient->getName(),
-                            'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName()
-                        ],
-                        'groupMembers' => $groupMembers,
-                        'totalPatients' => count($groupMembers),
+                        'patients' => [],
                         'doctor' => [
                             'id' => $doctor->getId(),
                             'name' => $doctor->getName(),
                             'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
                         ],
-                        'status' => $queue->getStatus(),
-                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a')
-                    ];
+                                            'status' => $queue->getStatus(),
+                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
+                    'isPaid' => $queue->getIsPaid(),
+                    'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
+                    'paymentMethod' => $queue->getPaymentMethod(),
+                    'amount' => $queue->getAmount()
+                ];
                     
                     $queueData[] = $groupedQueues[$groupId];
                 }
@@ -111,325 +184,500 @@ class QueueController extends AbstractController
                     ],
                     'status' => $queue->getStatus(),
                     'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a')
+                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
+                    'isPaid' => $queue->getIsPaid(),
+                    'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
+                    'paymentMethod' => $queue->getPaymentMethod(),
+                    'amount' => $queue->getAmount()
                 ];
             }
         }
 
-        return new JsonResponse($queueData);
-        
-        } catch (\Exception $e) {
-            return new JsonResponse([
-                'error' => 'Failed to load queue data',
-                'message' => $e->getMessage()
-            ], 500);
-        }
+        return $queueData;
     }
 
     #[Route('', name: 'app_queue_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-
-        $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
-        $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
-
-        if (!$patient || !$doctor) {
-            return new JsonResponse(['error' => 'Patient or Doctor not found'], 404);
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-
-        $queue = new Queue();
-        $queue->setPatient($patient);
-        $queue->setDoctor($doctor);
-        $queue->setQueueDateTime(new \DateTimeImmutable());
-        $queue->setStatus('waiting');
         
-        // Assign queue number based on registration time and running number for the hour
-        $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $queue->setQueueDateTime($queueDateTime);
-        $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
-        
-        // Find the latest registration number for today
-        $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q.registrationNumber')
-            ->where('q.queueDateTime >= :startOfDay')
-            ->andWhere('q.queueDateTime < :endOfDay')
-            ->setParameter('startOfDay', $queueDateTime->format('Y-m-d 00:00:00'))
-            ->setParameter('endOfDay', $queueDateTime->format('Y-m-d 23:59:59'))
-            ->orderBy('q.registrationNumber', 'DESC')
-            ->setMaxResults(1);
-        $lastQueue = $qb->getQuery()->getOneOrNullResult();
-        
-        // Generate registration number starting with current hour
-        $baseNumber = $hour * 100 + 1; // e.g., 1501 for 3pm
-        $registrationNumber = $baseNumber;
-        
-        if ($lastQueue && isset($lastQueue['registrationNumber'])) {
-            $lastRegNumber = (int)$lastQueue['registrationNumber'];
+        try {
+            $data = json_decode($request->getContent(), true);
             
-            // If we already have registrations today
-            if ($lastRegNumber >= $baseNumber) {
-                // Continue from the last number + 1
-                $registrationNumber = $lastRegNumber + 1;
-            } else {
-                // Start fresh with the hour-based number
-                $registrationNumber = $baseNumber;
+            if (!$data) {
+                return new JsonResponse(['error' => 'Invalid JSON data'], 400);
             }
+            
+            // Validate required fields
+            if (!isset($data['patientId']) || !isset($data['doctorId'])) {
+                return new JsonResponse(['error' => 'Patient ID and Doctor ID are required'], 400);
+            }
+            
+            $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
+            $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
+            
+            if (!$patient) {
+                return new JsonResponse(['error' => 'Patient not found'], 404);
+            }
+            
+            if (!$doctor) {
+                return new JsonResponse(['error' => 'Doctor not found'], 404);
+            }
+            
+            $queue = new Queue();
+            $queue->setPatient($patient);
+            $queue->setDoctor($doctor);
+            $queue->setStatus('waiting');
+            
+            // Assign queue number based on registration time and running number for the hour
+            $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $queue->setQueueDateTime($queueDateTime);
+            $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
+            
+            // Find the latest queue number for this hour block today
+            $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
+            $qb->select('q.queueNumber')
+                ->where('q.queueDateTime >= :start')
+                ->andWhere('q.queueDateTime < :end')
+                ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
+                ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
+                ->orderBy('q.queueNumber', 'DESC')
+                ->setMaxResults(1);
+            $lastQueue = $qb->getQuery()->getOneOrNullResult();
+            
+            $runningNumber = 1;
+            if ($lastQueue && isset($lastQueue['queueNumber'])) {
+                $lastNum = (int)substr($lastQueue['queueNumber'], -2);
+                $runningNumber = $lastNum + 1;
+            }
+            $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
+            $queue->setQueueNumber($queueNumber);
+            $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
+            
+            // Handle group consultation
+            if (isset($data['isGroupConsultation']) && $data['isGroupConsultation']) {
+                $metadata = [
+                    'isGroupConsultation' => true,
+                    'groupId' => $data['groupId'] ?? uniqid()
+                ];
+                $queue->setMetadata(json_encode($metadata));
+            }
+            
+            // Override registration number if provided
+            if (isset($data['registrationNumber'])) {
+                $queue->setRegistrationNumber($data['registrationNumber']);
+            }
+            
+            $this->entityManager->persist($queue);
+            $this->entityManager->flush();
+            
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
+                $this->cache->delete('queue_stats');
+            }
+            
+            $this->logger->info('Queue entry created', [
+                'queueId' => $queue->getId(),
+                'queueNumber' => $queueNumber,
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'patientId' => $patient->getId(),
+                'doctorId' => $doctor->getId()
+            ]);
+            
+            return new JsonResponse([
+                'id' => $queue->getId(),
+                'queueNumber' => $queueNumber,
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'message' => 'Queue entry created successfully'
+            ], 201);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error creating queue entry', [
+                'error' => $e->getMessage(),
+                'data' => $data ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return new JsonResponse([
+                'error' => 'Failed to create queue entry',
+                'details' => $e->getMessage()
+            ], 500);
         }
-        
-        // Generate queue number (for display purposes, can be different from registration)
-        $queueNumber = sprintf('%04d', $registrationNumber);
-        $queue->setQueueNumber($queueNumber);
-        $queue->setRegistrationNumber($registrationNumber);
-
-        $this->entityManager->persist($queue);
-        $this->entityManager->flush();
-
-        return new JsonResponse([
-            'id' => $queue->getId(),
-            'queueNumber' => $queue->getQueueNumber(),
-            'registrationNumber' => $queue->getRegistrationNumber(),
-            'message' => 'Queue created successfully'
-        ], 201);
     }
 
     #[Route('/group', name: 'app_queue_create_group', methods: ['POST'])]
     public function createGroup(Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-
-        if (!isset($data['patients']) || !is_array($data['patients']) || empty($data['patients'])) {
-            return new JsonResponse(['error' => 'Patients array is required'], 400);
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-
-        $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
-        if (!$doctor) {
-            return new JsonResponse(['error' => 'Doctor not found'], 404);
-        }
-
-        // Generate shared registration number for the group
-        $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $hour = (int)$queueDateTime->format('G');
         
-        // Find the latest registration number for today
-        $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q.registrationNumber')
-            ->where('q.queueDateTime >= :startOfDay')
-            ->andWhere('q.queueDateTime < :endOfDay')
-            ->setParameter('startOfDay', $queueDateTime->format('Y-m-d 00:00:00'))
-            ->setParameter('endOfDay', $queueDateTime->format('Y-m-d 23:59:59'))
-            ->orderBy('q.registrationNumber', 'DESC')
-            ->setMaxResults(1);
-        $lastQueue = $qb->getQuery()->getOneOrNullResult();
-        
-        // Generate registration number starting with current hour
-        $baseNumber = $hour * 100 + 1; // e.g., 1501 for 3pm
-        $registrationNumber = $baseNumber;
-        
-        if ($lastQueue && isset($lastQueue['registrationNumber'])) {
-            $lastRegNumber = (int)$lastQueue['registrationNumber'];
+        try {
+            $data = json_decode($request->getContent(), true);
             
-            // If we already have registrations today
-            if ($lastRegNumber >= $baseNumber) {
-                // Continue from the last number + 1
-                $registrationNumber = $lastRegNumber + 1;
-            } else {
-                // Start fresh with the hour-based number
-                $registrationNumber = $baseNumber;
+            if (!$data) {
+                return new JsonResponse(['error' => 'Invalid JSON data'], 400);
             }
-        }
-        
-        $sharedQueueNumber = sprintf('%04d', $registrationNumber);
-
-        $createdQueues = [];
-        $groupId = uniqid('grp_'); // Generate unique group ID
-
-        foreach ($data['patients'] as $patientData) {
-            $patient = $this->entityManager->getRepository(Patient::class)->find($patientData['id']);
-            if (!$patient) {
-                continue; // Skip if patient not found
+            
+            // Validate required fields
+            if (!isset($data['patients']) || !isset($data['doctorId'])) {
+                return new JsonResponse(['error' => 'Patients array and Doctor ID are required'], 400);
             }
-
-            $queue = new Queue();
-            $queue->setPatient($patient);
-            $queue->setDoctor($doctor);
-            $queue->setQueueDateTime($queueDateTime);
-            $queue->setStatus('waiting');
-            $queue->setQueueNumber($sharedQueueNumber); // Same queue number for all
-            $queue->setRegistrationNumber($registrationNumber);
             
-            // Add group consultation metadata
-            $metadata = [
-                'isGroupConsultation' => true,
-                'groupId' => $groupId,
-                'relationship' => $patientData['relationship'] ?? '',
-                'groupMembers' => array_map(function($p) { 
-                    return ['id' => $p['id'], 'name' => $p['name'], 'relationship' => $p['relationship'] ?? '']; 
-                }, $data['patients'])
-            ];
+            if (!is_array($data['patients']) || empty($data['patients'])) {
+                return new JsonResponse(['error' => 'Patients array cannot be empty'], 400);
+            }
             
-            if (method_exists($queue, 'setMetadata')) {
+            $doctor = $this->entityManager->getRepository(Doctor::class)->find($data['doctorId']);
+            
+            if (!$doctor) {
+                return new JsonResponse(['error' => 'Doctor not found'], 404);
+            }
+            
+            $groupId = uniqid('group_');
+            $createdQueues = [];
+            
+            // Set queue date/time
+            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
+            $queueDateTime = isset($data['queueDateTime']) 
+                ? new \DateTimeImmutable($data['queueDateTime'], $myt)
+                : new \DateTimeImmutable('now', $myt);
+            
+            foreach ($data['patients'] as $patientData) {
+                if (!isset($patientData['id'])) {
+                    return new JsonResponse(['error' => 'Each patient must have an ID'], 400);
+                }
+                
+                $patient = $this->entityManager->getRepository(Patient::class)->find($patientData['id']);
+                
+                if (!$patient) {
+                    return new JsonResponse(['error' => "Patient with ID {$patientData['id']} not found"], 404);
+                }
+                
+                $queue = new Queue();
+                $queue->setPatient($patient);
+                $queue->setDoctor($doctor);
+                $queue->setStatus('waiting');
+                $queue->setQueueDateTime($queueDateTime);
+                
+                // Generate registration number based on hour
+                $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
+                
+                // Find the latest queue number for this hour block today
+                $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
+                $qb->select('q.queueNumber')
+                    ->where('q.queueDateTime >= :start')
+                    ->andWhere('q.queueDateTime < :end')
+                    ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
+                    ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
+                    ->orderBy('q.queueNumber', 'DESC')
+                    ->setMaxResults(1);
+                $lastQueue = $qb->getQuery()->getOneOrNullResult();
+                
+                $runningNumber = 1;
+                if ($lastQueue && isset($lastQueue['queueNumber'])) {
+                    $lastNum = (int)substr($lastQueue['queueNumber'], -2);
+                    $runningNumber = $lastNum + 1;
+                }
+                $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
+                $queue->setQueueNumber($queueNumber);
+                $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
+                
+                // Set group consultation metadata
+                $metadata = [
+                    'isGroupConsultation' => true,
+                    'groupId' => $groupId,
+                    'relationship' => $patientData['relationship'] ?? null
+                ];
                 $queue->setMetadata(json_encode($metadata));
+                
+                $this->entityManager->persist($queue);
+                
+                $createdQueues[] = [
+                    'queueId' => null, // Will be set after flush
+                    'queueNumber' => $queueNumber,
+                    'registrationNumber' => $queue->getRegistrationNumber(),
+                    'patientId' => $patient->getId(),
+                    'patientName' => $patient->getName(),
+                    'relationship' => $patientData['relationship'] ?? null
+                ];
             }
-
-            $this->entityManager->persist($queue);
             
-            $createdQueues[] = [
-                'patientId' => $patient->getId(),
-                'patientName' => $patient->getName(),
-                'relationship' => $patientData['relationship'] ?? ''
-            ];
+            $this->entityManager->flush();
+            
+            // Update queue IDs after flush
+            $queues = $this->entityManager->getRepository(Queue::class)
+                ->findBy(['doctor' => $doctor], ['id' => 'DESC'], count($createdQueues));
+            
+            for ($i = 0; $i < count($createdQueues); $i++) {
+                if (isset($queues[$i])) {
+                    $createdQueues[$i]['queueId'] = $queues[$i]->getId();
+                }
+            }
+            
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
+                $this->cache->delete('queue_stats');
+            }
+            
+            $this->logger->info('Group queue entries created', [
+                'groupId' => $groupId,
+                'patientCount' => count($createdQueues),
+                'doctorId' => $doctor->getId()
+            ]);
+            
+            return new JsonResponse([
+                'groupId' => $groupId,
+                'patients' => $createdQueues,
+                'message' => 'Group queue entries created successfully'
+            ], 201);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error creating group queue entries', [
+                'error' => $e->getMessage(),
+                'data' => $data ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return new JsonResponse([
+                'error' => 'Failed to create group queue entries',
+                'details' => $e->getMessage()
+            ], 500);
         }
-
-        $this->entityManager->flush();
-
-        return new JsonResponse([
-            'queueNumber' => $sharedQueueNumber,
-            'groupId' => $groupId,
-            'patients' => $createdQueues,
-            'message' => 'Group consultation queue created successfully'
-        ], 201);
-    }
-
-    #[Route('/group/{groupId}', name: 'app_queue_get_group', methods: ['GET'])]
-    public function getGroup(string $groupId): JsonResponse
-    {
-        $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q')
-            ->where('q.metadata LIKE :groupId')
-            ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
-            ->orderBy('q.queueDateTime', 'ASC')
-            ->setMaxResults(1);
-        
-        $queue = $qb->getQuery()->getOneOrNullResult();
-        
-        if (!$queue) {
-            return new JsonResponse(['error' => 'Group not found'], 404);
-        }
-
-        $metadata = $queue->getMetadataArray();
-        
-        return new JsonResponse([
-            'id' => $queue->getId(),
-            'queueNumber' => $queue->getQueueNumber(),
-            'groupId' => $groupId,
-            'metadata' => $metadata,
-            'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-            'status' => $queue->getStatus()
-        ]);
     }
 
     #[Route('/{id}/status', name: 'app_queue_update_status', methods: ['PUT'])]
     public function updateStatus(int $id, Request $request): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
-        $queue = $this->entityManager->getRepository(Queue::class)->find($id);
-
-        if (!$queue) {
-            return new JsonResponse(['error' => 'Queue not found'], 404);
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-
-        $queue->setStatus($data['status']);
-        $this->entityManager->flush();
-
-        // Broadcast queue update for SSE
-        $this->broadcastQueueUpdate($queue);
-
-        return new JsonResponse(['message' => 'Queue status updated successfully']);
+        
+        try {
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue entry not found'], 404);
+            }
+            
+            $data = json_decode($request->getContent(), true);
+            
+            if (!isset($data['status'])) {
+                return new JsonResponse(['error' => 'Status is required'], 400);
+            }
+            
+            $allowedStatuses = ['waiting', 'in_consultation', 'completed', 'cancelled'];
+            if (!in_array($data['status'], $allowedStatuses)) {
+                return new JsonResponse(['error' => 'Invalid status'], 400);
+            }
+            
+            $oldStatus = $queue->getStatus();
+            $queue->setStatus($data['status']);
+            $this->entityManager->flush();
+            
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
+                $this->cache->delete('queue_stats');
+            }
+            
+            $this->logger->info('Queue status updated', [
+                'queueId' => $id,
+                'oldStatus' => $oldStatus,
+                'newStatus' => $data['status']
+            ]);
+            
+            return new JsonResponse([
+                'message' => 'Queue status updated successfully',
+                'status' => $queue->getStatus()
+            ]);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error updating queue status: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to update queue status'], 500);
+        }
     }
 
-    private function broadcastQueueUpdate($queue): void
+    #[Route('/{id}/payment', name: 'app_queue_payment', methods: ['POST'])]
+    public function processPayment(int $id, Request $request): JsonResponse
     {
-        $updateData = [
-            'type' => 'queue_status_update',
-            'timestamp' => time(),
-            'data' => [
-                'id' => $queue->getId(),
-                'queueNumber' => $queue->getQueueNumber(),
-                'registrationNumber' => $queue->getRegistrationNumber(),
-                'status' => $queue->getStatus(),
-                'patient' => [
-                    'id' => $queue->getPatient()->getId(),
-                    'name' => $queue->getPatient()->getName(),
-                ],
-                'doctor' => [
-                    'id' => $queue->getDoctor()->getId(),
-                    'name' => $queue->getDoctor()->getName(),
-                ],
-                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
-            ]
-        ];
-        $tempDir = sys_get_temp_dir();
-        $updateFile = $tempDir . '/queue_updates.json';
-        $updates = [];
-        if (file_exists($updateFile)) {
-            $content = file_get_contents($updateFile);
-            $updates = json_decode($content, true) ?: [];
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-        $updates[] = $updateData;
-        file_put_contents($updateFile, json_encode($updates));
+        
+        try {
+            $data = json_decode($request->getContent(), true);
+            
+            if (!$data) {
+                return new JsonResponse(['error' => 'Invalid JSON data'], 400);
+            }
+            
+            // Validate required fields
+            if (!isset($data['paymentMethod']) || !isset($data['amount'])) {
+                return new JsonResponse(['error' => 'Payment method and amount are required'], 400);
+            }
+            
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue not found'], 404);
+            }
+            
+            // Check if already paid
+            if (method_exists($queue, 'getIsPaid') && $queue->getIsPaid()) {
+                return new JsonResponse(['error' => 'Payment already processed'], 400);
+            }
+            
+            // Mark as paid (if the Queue entity has these methods)
+            if (method_exists($queue, 'setIsPaid')) {
+                $queue->setIsPaid(true);
+            }
+            if (method_exists($queue, 'setPaidAt')) {
+                $queue->setPaidAt(new \DateTimeImmutable());
+            }
+            if (method_exists($queue, 'setPaymentMethod')) {
+                $queue->setPaymentMethod($data['paymentMethod']);
+            }
+            if (method_exists($queue, 'setAmount')) {
+                $queue->setAmount((float)$data['amount']);
+            }
+            
+            $this->entityManager->flush();
+            
+            $this->logger->info('Queue payment processed', [
+                'queueId' => $id,
+                'paymentMethod' => $data['paymentMethod'],
+                'amount' => $data['amount'],
+                'patientId' => $queue->getPatient()->getId()
+            ]);
+            
+            return new JsonResponse([
+                'message' => 'Payment processed successfully',
+                'queueId' => $id,
+                'amount' => $data['amount'],
+                'paymentMethod' => $data['paymentMethod']
+            ]);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing queue payment', [
+                'queueId' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return new JsonResponse(['error' => 'Internal server error'], 500);
+        }
     }
 
-    #[Route('/debug', name: 'app_queue_debug', methods: ['GET'])]
-    public function debug(): JsonResponse
+    #[Route('/stats', name: 'app_queue_stats', methods: ['GET'])]
+    public function stats(Request $request): JsonResponse
     {
-        // Get today's date in MYT
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $cacheKey = 'queue_stats';
+            
+            if ($this->cache) {
+                $stats = $this->cache->get($cacheKey, function (ItemInterface $item) {
+                    $item->expiresAfter(300); // 5 minutes cache
+                    return $this->buildQueueStats();
+                });
+            } else {
+                $stats = $this->buildQueueStats();
+            }
+            
+            return new JsonResponse($stats);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue stats: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch queue stats'], 500);
+        }
+    }
+    
+    private function buildQueueStats(): array
+    {
         $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
         $todayStr = $today->format('Y-m-d');
         
-        // Count total queues
-        $totalQueues = $this->entityManager->getRepository(Queue::class)->count([]);
+        $repo = $this->entityManager->getRepository(Queue::class);
         
-        // Count today's queues
-        $start = new \DateTime($todayStr . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $end = new \DateTime($todayStr . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        
-        $todayQueues = $this->entityManager->getRepository(Queue::class)
-            ->createQueryBuilder('q')
+        // Count by status
+        $waiting = $repo->createQueryBuilder('q')
             ->select('COUNT(q.id)')
-            ->where('q.queueDateTime BETWEEN :start AND :end')
-            ->setParameter('start', $start)
-            ->setParameter('end', $end)
+            ->where('q.status = :status AND DATE(q.queueDateTime) = :today')
+            ->setParameter('status', 'waiting')
+            ->setParameter('today', $todayStr)
             ->getQuery()
             ->getSingleScalarResult();
             
-        // Get all today's queues with details
-        $todayQueueDetails = $this->entityManager->getRepository(Queue::class)
-            ->createQueryBuilder('q')
-            ->select('q.id, q.queueDateTime, q.status, q.queueNumber, q.registrationNumber, p.name as patientName, d.name as doctorName')
-            ->join('q.patient', 'p')
-            ->join('q.doctor', 'd')
-            ->where('q.queueDateTime BETWEEN :start AND :end')
-            ->setParameter('start', $start)
-            ->setParameter('end', $end)
-            ->orderBy('q.registrationNumber', 'ASC')
+        $inConsultation = $repo->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('q.status = :status AND DATE(q.queueDateTime) = :today')
+            ->setParameter('status', 'in_consultation')
+            ->setParameter('today', $todayStr)
             ->getQuery()
-            ->getResult();
+            ->getSingleScalarResult();
             
-        // Count by status
-        $statusCounts = $this->entityManager->getRepository(Queue::class)
-            ->createQueryBuilder('q')
-            ->select('q.status, COUNT(q.id) as count')
-            ->where('q.queueDateTime BETWEEN :start AND :end')
-            ->setParameter('start', $start)
-            ->setParameter('end', $end)
-            ->groupBy('q.status')
+        $completed = $repo->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('q.status = :status AND DATE(q.queueDateTime) = :today')
+            ->setParameter('status', 'completed')
+            ->setParameter('today', $todayStr)
             ->getQuery()
-            ->getResult();
+            ->getSingleScalarResult();
         
-        return new JsonResponse([
-            'currentTime' => $today->format('Y-m-d H:i:s T'),
-            'todayDate' => $todayStr,
-            'dateRange' => [
-                'start' => $start->format('Y-m-d H:i:s T'),
-                'end' => $end->format('Y-m-d H:i:s T')
+        return [
+            'today' => [
+                'waiting' => $waiting,
+                'in_consultation' => $inConsultation,
+                'completed' => $completed,
+                'total' => $waiting + $inConsultation + $completed
             ],
-            'queues' => [
-                'total' => $totalQueues,
-                'today' => $todayQueues,
-                'todayDetails' => $todayQueueDetails,
-                'statusCounts' => $statusCounts
-            ]
-        ]);
+            'timestamp' => $today->format('Y-m-d H:i:s')
+        ];
     }
+
+    #[Route('/{id}', name: 'app_queue_delete', methods: ['DELETE'])]
+    public function delete(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue entry not found'], 404);
+            }
+            
+            $this->entityManager->remove($queue);
+            $this->entityManager->flush();
+            
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
+                $this->cache->delete('queue_stats');
+            }
+            
+            $this->logger->info('Queue entry deleted', ['queueId' => $id]);
+            
+            return new JsonResponse(['message' => 'Queue entry deleted successfully']);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error deleting queue entry: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to delete queue entry'], 500);
+        }
+    }
+
+
 }

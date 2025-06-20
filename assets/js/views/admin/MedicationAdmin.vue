@@ -305,6 +305,38 @@
 
                 <div class="col-md-6">
                   <div class="form-floating">
+                    <input 
+                      type="number" 
+                      class="form-control" 
+                      id="costPrice"
+                      v-model.number="medicationForm.costPrice" 
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                    >
+                    <label for="costPrice">Cost Price (RM)</label>
+                  </div>
+                  <small class="text-muted">Purchase/inventory cost</small>
+                </div>
+
+                <div class="col-md-6">
+                  <div class="form-floating">
+                    <input 
+                      type="number" 
+                      class="form-control" 
+                      id="sellingPrice"
+                      v-model.number="medicationForm.sellingPrice" 
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                    >
+                    <label for="sellingPrice">Selling Price (RM)</label>
+                  </div>
+                  <small class="text-muted">Default selling price</small>
+                </div>
+
+                <div class="col-md-6">
+                  <div class="form-floating">
                     <select class="form-select" id="category" v-model="medicationForm.category">
                       <option value="">Select category</option>
                       <option value="Pain Relief">Pain Relief</option>
@@ -567,6 +599,8 @@ export default {
         name: '',
         unitType: '',
         unitDescription: '',
+        costPrice: 0.00,
+        sellingPrice: 0.00,
         category: '',
         customCategory: '',
         description: ''
@@ -580,6 +614,8 @@ export default {
         name: medication.name,
         unitType: medication.unitType,
         unitDescription: medication.unitDescription || '',
+        costPrice: medication.costPrice || 0.00,
+        sellingPrice: medication.sellingPrice || 0.00,
         category: medication.category || '',
         customCategory: '',
         description: medication.description || ''
@@ -603,6 +639,8 @@ export default {
           name: this.medicationForm.name,
           unitType: this.medicationForm.unitType,
           unitDescription: this.medicationForm.unitDescription || null,
+          costPrice: this.medicationForm.costPrice || null,
+          sellingPrice: this.medicationForm.sellingPrice || null,
           category: finalCategory || null,
           description: this.medicationForm.description || null
         };

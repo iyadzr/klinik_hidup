@@ -236,7 +236,7 @@
                 <!-- Medication List -->
                 <div v-for="(medItem, index) in prescribedMedications" :key="index" class="medication-row mb-3 p-3 border rounded">
                   <div class="row g-3">
-                    <div class="col-md-6">
+                    <div class="col-md-5">
                       <div class="form-floating">
                         <input
                           type="text"
@@ -257,19 +257,21 @@
                           <div class="suggestions-header">
                             <small class="text-muted"><i class="fas fa-search me-1"></i>Select from existing medications:</small>
                           </div>
-                          <div 
-                            v-for="(suggestion, suggestionIndex) in medItem.suggestions" 
-                            :key="suggestion.id"
-                            class="suggestion-item"
-                            :class="{ 'suggestion-highlighted': suggestionIndex === medItem.selectedSuggestionIndex }"
-                            @click="selectMedication(medItem, suggestion)"
-                            @mouseenter="medItem.selectedSuggestionIndex = suggestionIndex"
-                          >
+                          <div class="suggestion-item" v-for="(suggestion, sIndex) in medItem.suggestions" :key="sIndex"
+                               @click="selectMedication(medItem, suggestion)"
+                               :class="{ active: sIndex === medItem.selectedSuggestionIndex }">
                             <div class="suggestion-main">
                               <strong>{{ suggestion.name }}</strong>
-                              <span v-if="suggestion.category" class="badge bg-primary ms-2">{{ suggestion.category }}</span>
+                              <span class="badge bg-secondary ms-2">{{ suggestion.category || 'General' }}</span>
                             </div>
-                            <small class="text-muted">{{ suggestion.unitDescription || suggestion.unitType }}</small>
+                            <div class="suggestion-details">
+                              <small class="text-muted">
+                                {{ suggestion.unitDescription || suggestion.unitType || 'Unit not specified' }}
+                                <span v-if="suggestion.sellingPrice" class="text-success ms-2">
+                                  <i class="fas fa-tag"></i> RM {{ parseFloat(suggestion.sellingPrice).toFixed(2) }}
+                                </span>
+                              </small>
+                            </div>
                           </div>
                           
                           <!-- Create new medication option - Always show if there's a name and no exact match -->
@@ -286,7 +288,7 @@
                       </div>
                     </div>
                     
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                       <div class="form-floating">
                         <input
                           type="number"
@@ -296,12 +298,28 @@
                           min="1"
                           required
                         >
-                        <label :for="`quantity-${index}`">Quantity</label>
+                        <label :for="`quantity-${index}`">Qty</label>
                       </div>
                       <small class="text-muted">{{ medItem.unitDescription || medItem.unitType || 'pieces' }}</small>
                     </div>
                     
                     <div class="col-md-2">
+                      <div class="form-floating">
+                        <input
+                          type="number"
+                          class="form-control"
+                          :id="`price-${index}`"
+                          v-model.number="medItem.actualPrice"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                        >
+                        <label :for="`price-${index}`">Price (RM)</label>
+                      </div>
+                      <small class="text-muted">Final price</small>
+                    </div>
+                    
+                    <div class="col-md-1">
                       <button type="button" class="btn btn-outline-danger btn-sm h-100" @click="removeMedicationRow(index)">
                         <i class="fas fa-trash"></i>
                       </button>
@@ -1136,6 +1154,7 @@ export default {
         name: '',
         medicationId: null,
         quantity: 1,
+        actualPrice: 0.00,
         unitType: 'pieces',
         unitDescription: '',
         category: '',
@@ -1187,6 +1206,7 @@ export default {
       medItem.unitType = medication.unitType;
       medItem.unitDescription = medication.unitDescription;
       medItem.category = medication.category;
+      medItem.actualPrice = medication.sellingPrice ? parseFloat(medication.sellingPrice) : 0.00;
       medItem.suggestions = [];
       medItem.selectedSuggestionIndex = -1;
     },

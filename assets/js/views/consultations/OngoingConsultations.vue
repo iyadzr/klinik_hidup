@@ -7,14 +7,22 @@
             <i class="fas fa-stethoscope me-2"></i>Patient Consultation
           </h4>
           <div class="d-flex gap-2">
-            <button @click="refreshData" class="btn btn-outline-primary btn-sm" :disabled="loading">
+            <button @click="refreshData" class="btn btn-outline-primary btn-sm" :disabled="loading || isRateLimited">
               <i class="fas fa-sync-alt me-1" :class="{ 'fa-spin': loading }"></i> Refresh
             </button>
+            <span v-if="lastUpdated" class="badge bg-secondary">
+              Last updated: {{ formatTime(lastUpdated) }}
+            </span>
           </div>
         </div>
       </div>
       
       <div class="card-body">
+        <!-- Rate Limit Warning -->
+        <div v-if="isRateLimited" class="alert alert-warning">
+          <i class="fas fa-clock me-2"></i>Too many requests. Please wait {{ rateLimitCooldown }}s before refreshing.
+        </div>
+
         <!-- Loading State -->
         <div v-if="loading" class="text-center py-4">
           <div class="spinner-border text-primary" role="status">
@@ -26,14 +34,17 @@
         <!-- Error State -->
         <div v-else-if="error" class="alert alert-danger">
           <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+          <button @click="retryWithBackoff" class="btn btn-sm btn-outline-danger ms-2">
+            Retry ({{ retryCount }}/3)
+          </button>
         </div>
 
-                 <!-- Empty State -->
-         <div v-else-if="!ongoingConsultations.length" class="empty-state">
-           <i class="fas fa-clipboard-check fa-3x mb-3 text-muted"></i>
-           <h5>No Patients Waiting</h5>
-           <p class="text-muted">No patients are currently waiting for consultation.</p>
-         </div>
+        <!-- Empty State -->
+        <div v-else-if="!ongoingConsultations.length" class="empty-state">
+          <i class="fas fa-clipboard-check fa-3x mb-3 text-muted"></i>
+          <h5>No Patients Waiting</h5>
+          <p class="text-muted">No patients are currently waiting for consultation.</p>
+        </div>
 
         <!-- Ongoing Consultations List -->
         <div v-else>
@@ -136,11 +147,11 @@
 </template>
 
 <script>
-import { ref, onMounted, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
-import AuthService from '../../services/AuthService';
 import { getTodayInMYT } from '../../utils/dateUtils';
+import AuthService from '../../services/AuthService';
 
 export default {
   name: 'PatientConsultation',
@@ -150,53 +161,122 @@ export default {
     const loading = ref(false);
     const error = ref(null);
     const todayTotal = ref(0);
+    const lastUpdated = ref(null);
+    const retryCount = ref(0);
+    const isRateLimited = ref(false);
+    const rateLimitCooldown = ref(0);
+    
+    // Request cancellation
+    let currentRequest = null;
+    let refreshInterval = null;
+    let retryTimeout = null;
+    let rateLimitTimeout = null;
+    
+    // Client-side cache
+    const cache = ref({
+      data: null,
+      timestamp: null,
+      ttl: 30000 // 30 seconds cache
+    });
 
     const currentUser = computed(() => AuthService.getCurrentUser());
     const isDoctor = computed(() => AuthService.hasRole('ROLE_DOCTOR'));
     const isSuperAdmin = computed(() => AuthService.hasRole('ROLE_SUPER_ADMIN'));
+    
+    // Rate limiting helpers
+    const requestLog = ref([]);
+    const maxRequestsPerMinute = 10;
 
-    const fetchOngoingConsultations = async () => {
+    const checkRateLimit = () => {
+      const now = Date.now();
+      const oneMinuteAgo = now - 60000;
+      
+      // Clean old requests
+      requestLog.value = requestLog.value.filter(time => time > oneMinuteAgo);
+      
+      if (requestLog.value.length >= maxRequestsPerMinute) {
+        isRateLimited.value = true;
+        rateLimitCooldown.value = 60;
+        
+        if (rateLimitTimeout) clearInterval(rateLimitTimeout);
+        rateLimitTimeout = setInterval(() => {
+          rateLimitCooldown.value--;
+          if (rateLimitCooldown.value <= 0) {
+            isRateLimited.value = false;
+            clearInterval(rateLimitTimeout);
+            rateLimitTimeout = null;
+          }
+        }, 1000);
+        
+        return false;
+      }
+      
+      requestLog.value.push(now);
+      return true;
+    };
+
+    const isDataFresh = () => {
+      if (!cache.value.data || !cache.value.timestamp) return false;
+      return (Date.now() - cache.value.timestamp) < cache.value.ttl;
+    };
+
+    const fetchOngoingConsultations = async (useCache = true) => {
+      // Check rate limiting
+      if (!checkRateLimit()) {
+        console.warn('Rate limited - skipping request');
+        return;
+      }
+      
+      // Use cache if available and fresh
+      if (useCache && isDataFresh()) {
+        console.log('Using cached data');
+        ongoingConsultations.value = cache.value.data;
+        return;
+      }
+      
+      // Cancel previous request
+      if (currentRequest) {
+        currentRequest.abort();
+        currentRequest = null;
+      }
+      
+      // Prevent multiple simultaneous requests
+      if (loading.value) return;
+      
       loading.value = true;
       error.value = null;
       
+      // Create abort controller
+      currentRequest = new AbortController();
+      
       try {
         const today = getTodayInMYT();
-        
-        // Fetch both queue and consultations data
         console.log('🔍 Fetching data for date:', today);
         
-        let queueResponse, consultationResponse;
+        // Use Promise.all but with timeout
+        const timeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout')), 10000); // 10 second timeout
+        });
         
-        try {
-          // Try with date filter first
-          [queueResponse, consultationResponse] = await Promise.all([
-            axios.get(`/api/queue?date=${today}`),
-            axios.get(`/api/consultations?date=${today}`)
-          ]);
-        } catch (err) {
-          console.error('❌ Error with date filter, trying without date:', err.response?.data || err.message);
-          
-          // Fallback: try without date filter to see if there's any data
-          try {
-            [queueResponse, consultationResponse] = await Promise.all([
-              axios.get('/api/queue'),
-              axios.get('/api/consultations')
-            ]);
-            console.log('✅ Fallback successful - fetched data without date filter');
-          } catch (fallbackErr) {
-            console.error('❌ Fallback also failed:', fallbackErr.response?.data || fallbackErr.message);
-            throw fallbackErr;
-          }
-        }
+        const apiCall = Promise.all([
+          axios.get(`/api/queue?date=${today}&limit=20`, { 
+            signal: currentRequest.signal,
+            timeout: 8000 
+          }),
+          axios.get(`/api/consultations?date=${today}&limit=20`, { 
+            signal: currentRequest.signal,
+            timeout: 8000 
+          })
+        ]);
+        
+        const [queueResponse, consultationResponse] = await Promise.race([apiCall, timeout]);
         
         let consultations = consultationResponse.data || [];
         let queueList = queueResponse.data || [];
         
-        console.log('📊 Raw API responses:', {
+        console.log('📊 API responses:', {
           consultationsCount: consultations.length,
-          queueCount: queueList.length,
-          consultationsSample: consultations.slice(0, 2),
-          queueSample: queueList.slice(0, 2)
+          queueCount: queueList.length
         });
         
         // Filter for ongoing consultations (not paid, in progress)
@@ -209,18 +289,10 @@ export default {
           queue.status === 'waiting' || queue.status === 'in_consultation'
         );
         
-        console.log('🔍 After initial filtering:', {
-          ongoingCount: ongoing.length,
-          queuePatientsCount: queuePatients.length,
-          queueStatuses: queuePatients.map(q => ({ id: q.id, status: q.status, patient: q.patient?.name }))
-        });
-        
-        // Filter by user role: Super Admin sees all, Doctors see only their assignments
+        // Filter by user role
         if (isSuperAdmin.value) {
-          // Super Admin sees all patients and consultations - no filtering needed
           console.log('👑 Super Admin access - showing all data');
-        } else if (isDoctor.value && currentUser.value) {
-          // Doctor sees only their assigned patients and consultations
+        } else if (isDoctor.value) {
           console.log('👨‍⚕️ Doctor access - filtering by doctor assignments');
           ongoing = ongoing.filter(consultation => 
             consultation.doctorName && (
@@ -235,12 +307,11 @@ export default {
               currentUser.value.name.toLowerCase().includes(queue.doctor.name.toLowerCase())
             )
           );
-                 } else {
-           // Other roles (like assistants) see no consultation data
-           console.log('👤 Other role access - no consultation data visible');
-           ongoing = [];
-           queuePatients = [];
-         }
+        } else {
+          console.log('👤 Other role access - no consultation data visible');
+          ongoing = [];
+          queuePatients = [];
+        }
         
         // Convert queue entries to consultation-like format
         const queueConsultations = queuePatients.map(queue => ({
@@ -253,53 +324,75 @@ export default {
           doctorName: queue.doctor ? queue.doctor.name : 'Unknown Doctor',
           consultationDate: queue.queueDateTime,
           queueNumber: queue.queueNumber,
-          status: queue.status, // Use actual queue status (waiting or in_consultation)
+          status: queue.status,
           symptoms: queue.status === 'waiting' ? 'Waiting for consultation' : 'Consultation in progress',
           isPaid: false
         }));
         
         // Combine queue patients and ongoing consultations
-        ongoingConsultations.value = [...queueConsultations, ...ongoing];
-        todayTotal.value = consultations.length + queueList.length;
+        const finalData = [...queueConsultations, ...ongoing];
         
-        console.log('✅ Loaded patient data:', {
+        // Update cache
+        cache.value = {
+          data: finalData,
+          timestamp: Date.now(),
+          ttl: 30000
+        };
+        
+        ongoingConsultations.value = finalData;
+        todayTotal.value = consultations.length + queueList.length;
+        lastUpdated.value = new Date();
+        retryCount.value = 0; // Reset retry count on success
+        
+        console.log('✅ Data loaded successfully:', {
+          total: finalData.length,
           queuePatients: queueConsultations.length,
-          ongoing: ongoing.length,
-          total: ongoingConsultations.value.length,
-          userRole: {
-            name: currentUser.value?.name,
-            isDoctor: isDoctor.value,
-            isSuperAdmin: isSuperAdmin.value,
-            roles: currentUser.value?.roles
-          },
-          dataFiltering: {
-            originalQueue: queueList.length,
-            filteredQueue: queuePatients.length,
-            originalConsultations: consultations.length,
-            filteredOngoing: ongoing.length
-          },
-          finalData: ongoingConsultations.value.map(c => ({
-            id: c.id,
-            patient: c.patientName,
-            doctor: c.doctorName,
-            status: c.status,
-            isQueueEntry: c.isQueueEntry
-          }))
+          ongoing: ongoing.length
         });
+        
       } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log('⏹️ Request was cancelled');
+          return;
+        }
+        
         console.error('Error fetching patient consultations:', err);
-        error.value = err.response?.data?.message || err.message || 'Failed to fetch patient consultations';
+        
+        // Use cached data as fallback if available
+        if (cache.value.data) {
+          console.log('Using stale cache as fallback');
+          ongoingConsultations.value = cache.value.data;
+          error.value = 'Using cached data - ' + (err.response?.data?.message || err.message);
+        } else {
+          error.value = err.response?.data?.message || err.message || 'Failed to fetch patient consultations';
+        }
+        
+        retryCount.value++;
       } finally {
         loading.value = false;
+        currentRequest = null;
       }
+    };
+    
+    const retryWithBackoff = async () => {
+      if (retryCount.value >= 3) {
+        error.value = 'Maximum retry attempts reached. Please refresh the page.';
+        return;
+      }
+      
+      const backoffDelay = Math.min(1000 * Math.pow(2, retryCount.value), 10000); // Max 10 seconds
+      console.log(`Retrying in ${backoffDelay}ms (attempt ${retryCount.value + 1}/3)`);
+      
+      if (retryTimeout) clearTimeout(retryTimeout);
+      retryTimeout = setTimeout(() => {
+        fetchOngoingConsultations(false); // Don't use cache on retry
+      }, backoffDelay);
     };
 
     const startConsultation = async (consultation) => {
       try {
-        // Update queue status to 'in_consultation'
         await axios.put(`/api/queue/${consultation.queueId}/status`, { status: 'in_consultation' });
         
-        // Navigate to new consultation form with queue information
         router.push({
           path: '/consultations/new',
           query: {
@@ -318,7 +411,6 @@ export default {
 
     const continueConsultation = (consultation) => {
       if (consultation.isQueueEntry) {
-        // For queue entries, navigate to consultation form with queue information
         router.push({
           path: '/consultations/new',
           query: {
@@ -330,24 +422,20 @@ export default {
           }
         });
       } else {
-        // For actual consultation records, navigate to the consultation details
         router.push(`/consultations/${consultation.id}`);
       }
     };
 
-
-
-
-
     const refreshData = () => {
-      fetchOngoingConsultations();
+      if (isRateLimited.value) return;
+      fetchOngoingConsultations(false); // Force refresh without cache
     };
 
-    const formatDate = (date) => {
-      if (!date) return 'N/A';
+    const formatDate = (dateString) => {
+      if (!dateString) return 'N/A';
       try {
-        const dateObj = new Date(date);
-        return dateObj.toLocaleDateString('en-MY', {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-MY', {
           timeZone: 'Asia/Kuala_Lumpur',
           month: 'short',
           day: '2-digit',
@@ -356,49 +444,63 @@ export default {
           hour12: true
         });
       } catch (error) {
-        console.error('Error formatting date:', error);
         return 'Invalid Date';
       }
     };
-
-    const truncateText = (text, maxLength) => {
-      if (!text) return 'N/A';
-      if (text.length <= maxLength) return text;
-      return text.substring(0, maxLength) + '...';
-    };
-
-    const calculateAverageTime = () => {
-      if (!ongoingConsultations.value.length) return '0 min';
-      
-      const now = new Date();
-      let totalMinutes = 0;
-      
-      ongoingConsultations.value.forEach(consultation => {
-        const startTime = new Date(consultation.consultationDate || consultation.createdAt);
-        const diffMs = now - startTime;
-        const diffMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
-        totalMinutes += diffMinutes;
-      });
-      
-      const averageMinutes = Math.floor(totalMinutes / ongoingConsultations.value.length);
-      
-      if (averageMinutes < 60) {
-        return `${averageMinutes} min`;
-      } else {
-        const hours = Math.floor(averageMinutes / 60);
-        const minutes = averageMinutes % 60;
-        return `${hours}h ${minutes}m`;
+    
+    const formatTime = (date) => {
+      try {
+        return date.toLocaleTimeString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      } catch (error) {
+        return 'Invalid Time';
       }
     };
 
+    const truncateText = (text, length) => {
+      if (!text || text.length <= length) return text;
+      return text.substr(0, length) + '...';
+    };
+
+    // Setup auto-refresh with intelligent intervals
+    const setupAutoRefresh = () => {
+      // Clear existing interval
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      
+      // Auto-refresh every 45 seconds (less frequent to reduce load)
+      refreshInterval = setInterval(() => {
+        if (!loading.value && !isRateLimited.value && !error.value) {
+          fetchOngoingConsultations(true); // Allow cache usage
+        }
+      }, 45000);
+    };
+
     onMounted(() => {
+      console.log('OngoingConsultations component mounted');
       fetchOngoingConsultations();
-      
-      // Auto-refresh every 30 seconds
-      const interval = setInterval(fetchOngoingConsultations, 30000);
-      
-      // Cleanup interval on unmount
-      return () => clearInterval(interval);
+      setupAutoRefresh();
+    });
+
+    onUnmounted(() => {
+      // Cleanup
+      if (currentRequest) {
+        currentRequest.abort();
+      }
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      if (rateLimitTimeout) {
+        clearInterval(rateLimitTimeout);
+      }
     });
 
     return {
@@ -406,12 +508,20 @@ export default {
       loading,
       error,
       todayTotal,
+      lastUpdated,
+      retryCount,
+      isRateLimited,
+      rateLimitCooldown,
+      currentUser,
+      isDoctor,
+      isSuperAdmin,
       startConsultation,
       continueConsultation,
       refreshData,
+      retryWithBackoff,
       formatDate,
-      truncateText,
-      calculateAverageTime
+      formatTime,
+      truncateText
     };
   }
 };

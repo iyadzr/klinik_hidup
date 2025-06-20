@@ -92,46 +92,65 @@ class PatientController extends AbstractController
                 return $this->json([]);
             }
             
+            // Rate limiting check - minimum 2 characters to prevent too many queries
+            if (strlen($query) < 2) {
+                return $this->json(['error' => 'Query too short. Minimum 2 characters required.'], 400);
+            }
+            
             $searchPattern = '%' . $query . '%';
             
-            // Optimized database query with proper indexing
+            // Optimized database query with better performance
             $qb = $entityManager->createQueryBuilder();
-            $qb->select('p')
+            $qb->select('p.id, p.name, p.nric, p.email, p.phone, p.dateOfBirth, p.gender, p.address, p.company, p.preInformedIllness, p.medicalHistory')
                ->from(Patient::class, 'p')
                ->where('p.name LIKE :query')
                ->orWhere('p.phone LIKE :query')
                ->orWhere('p.nric LIKE :query')
                ->setParameter('query', $searchPattern)
-               ->setMaxResults(50); // Limit results for performance
+               ->setMaxResults(20) // Reduced limit for better performance
+               ->orderBy('p.name', 'ASC'); // Consistent ordering
             
-            $patients = $qb->getQuery()->getResult();
+            // Use array hydration for better performance (no object instantiation)
+            $results = $qb->getQuery()->getArrayResult();
             
-            // Format results
-            $result = array_map(function($patient) {
+            // Format results with proper null handling
+            $formattedResults = array_map(function($patient) {
                 return [
-                    'id' => $patient->getId(),
-                    'name' => $patient->getName(),
-                    'nric' => $patient->getNric(),
-                    'email' => $patient->getEmail(),
-                    'phone' => $patient->getPhone(),
-                    'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
-                    'gender' => $patient->getGender(),
-                    'address' => $patient->getAddress(),
-                    'company' => $patient->getCompany(),
-                    'preInformedIllness' => $patient->getPreInformedIllness(),
-                    'medicalHistory' => $patient->getMedicalHistory(),
+                    'id' => $patient['id'],
+                    'name' => $patient['name'] ?? '',
+                    'nric' => $patient['nric'] ?? '',
+                    'email' => $patient['email'] ?? '',
+                    'phone' => $patient['phone'] ?? '',
+                    'dateOfBirth' => $patient['dateOfBirth'] ? $patient['dateOfBirth']->format('Y-m-d') : null,
+                    'gender' => $patient['gender'] ?? '',
+                    'address' => $patient['address'] ?? '',
+                    'company' => $patient['company'] ?? '',
+                    'preInformedIllness' => $patient['preInformedIllness'] ?? '',
+                    'medicalHistory' => $patient['medicalHistory'] ?? '',
                     'registrationNumber' => null
                 ];
-            }, $patients);
+            }, $results);
             
-            return $this->json($result);
+            // Set cache headers for client-side performance
+            $response = $this->json($formattedResults);
+            $response->headers->set('Cache-Control', 'private, max-age=300'); // 5 minutes
+            $response->headers->set('X-Search-Results-Count', count($formattedResults));
+            
+            return $response;
             
         } catch (\Exception $e) {
+            // Enhanced error logging for production debugging
+            $this->logger->error('Patient search error', [
+                'query' => $request->query->get('query', ''),
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return $this->json([
                 'error' => 'Search failed',
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
+                'message' => 'Please try again later'
             ], 500);
         }
     }
@@ -139,57 +158,96 @@ class PatientController extends AbstractController
     #[Route('', name: 'app_patient_create', methods: ['POST'])]
     public function create(Request $request, EntityManagerInterface $entityManager): JsonResponse
     {
-        $data = json_decode($request->getContent(), true);
+        try {
+            $data = json_decode($request->getContent(), true);
+            
+            if (!$data) {
+                return $this->json(['error' => 'Invalid JSON data'], 400);
+            }
 
-        $patient = new Patient();
-        $patient->setName($data['name']);
-        $patient->setNric($data['nric']);
-        $patient->setEmail($data['email'] ?? '');
-        $patient->setPhone($data['phone']);
-        if (isset($data['dateOfBirth'])) {
-            $patient->setDateOfBirth(new \DateTime($data['dateOfBirth']));
-        }
-        if (isset($data['medicalHistory'])) {
-            $patient->setMedicalHistory($data['medicalHistory']);
-        }
-        if (isset($data['gender'])) {
-            $patient->setGender($data['gender']);
-        }
-        if (isset($data['address'])) {
-            $patient->setAddress($data['address']);
-        }
-        if (isset($data['company'])) {
-            $patient->setCompany($data['company']);
-        }
-        if (isset($data['preInformedIllness'])) {
-            $patient->setPreInformedIllness($data['preInformedIllness']);
-        }
+            // Validate required fields
+            $requiredFields = ['name', 'nric', 'phone', 'dateOfBirth'];
+            foreach ($requiredFields as $field) {
+                if (empty($data[$field])) {
+                    return $this->json(['error' => "Field '$field' is required"], 400);
+                }
+            }
 
-        $entityManager->persist($patient);
-        $entityManager->flush();
+            // Check for duplicate NRIC
+            $existingPatient = $entityManager->getRepository(Patient::class)
+                ->findOneBy(['nric' => $data['nric']]);
+            
+            if ($existingPatient) {
+                return $this->json(['error' => 'A patient with this NRIC already exists'], 409);
+            }
 
-        $this->logger->info('Patient created', [
-            'id' => $patient->getId(),
-            'email' => $patient->getEmail(),
-        ]);
+            $patient = new Patient();
+            $patient->setName($data['name']);
+            $patient->setNric($data['nric']);
+            $patient->setEmail($data['email'] ?? '');
+            $patient->setPhone($data['phone']);
+            
+            try {
+                if (isset($data['dateOfBirth'])) {
+                    $patient->setDateOfBirth(new \DateTime($data['dateOfBirth']));
+                }
+            } catch (\Exception $e) {
+                return $this->json(['error' => 'Invalid date format'], 400);
+            }
+            
+            if (isset($data['medicalHistory'])) {
+                $patient->setMedicalHistory($data['medicalHistory']);
+            }
+            if (isset($data['gender'])) {
+                $patient->setGender($data['gender']);
+            }
+            if (isset($data['address'])) {
+                $patient->setAddress($data['address']);
+            }
+            if (isset($data['company'])) {
+                $patient->setCompany($data['company']);
+            }
+            if (isset($data['preInformedIllness'])) {
+                $patient->setPreInformedIllness($data['preInformedIllness']);
+            }
 
-        return $this->json([
-            'message' => 'Patient created successfully',
-            'id' => $patient->getId(),
-            'registrationNumber' => null, // This will be set when added to queue
-            'patient' => [
+            $entityManager->persist($patient);
+            $entityManager->flush();
+
+            $this->logger->info('Patient created', [
                 'id' => $patient->getId(),
-                'name' => $patient->getName(),
-                'nric' => $patient->getNric(),
                 'email' => $patient->getEmail(),
-                'phone' => $patient->getPhone(),
-                'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
-                'gender' => $patient->getGender(),
-                'address' => $patient->getAddress(),
-                'company' => $patient->getCompany(),
-                'preInformedIllness' => $patient->getPreInformedIllness(),
-            ]
-        ], Response::HTTP_CREATED);
+            ]);
+
+            return $this->json([
+                'message' => 'Patient created successfully',
+                'id' => $patient->getId(),
+                'registrationNumber' => null, // This will be set when added to queue
+                'patient' => [
+                    'id' => $patient->getId(),
+                    'name' => $patient->getName(),
+                    'nric' => $patient->getNric(),
+                    'email' => $patient->getEmail(),
+                    'phone' => $patient->getPhone(),
+                    'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                    'gender' => $patient->getGender(),
+                    'address' => $patient->getAddress(),
+                    'company' => $patient->getCompany(),
+                    'preInformedIllness' => $patient->getPreInformedIllness(),
+                ]
+            ], Response::HTTP_CREATED);
+        } catch (\Exception $e) {
+            $this->logger->error('Error creating patient', [
+                'error' => $e->getMessage(),
+                'data' => $data ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return $this->json([
+                'error' => 'Failed to register patient. Please try again.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
     #[Route('/{id}', name: 'app_patient_show', methods: ['GET'])]

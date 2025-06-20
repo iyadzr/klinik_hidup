@@ -31,6 +31,12 @@ class Medication
     #[ORM\Column(length: 100, nullable: true)]
     private ?string $category = null; // 'pain reliever', 'cough syrup', 'antibiotic', etc.
 
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    private ?string $costPrice = null; // Cost price for inventory
+
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    private ?string $sellingPrice = null; // Default selling price
+
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
@@ -104,6 +110,30 @@ class Medication
     public function setCategory(?string $category): static
     {
         $this->category = $category;
+        $this->updatedAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function getCostPrice(): ?string
+    {
+        return $this->costPrice;
+    }
+
+    public function setCostPrice(?string $costPrice): static
+    {
+        $this->costPrice = $costPrice;
+        $this->updatedAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function getSellingPrice(): ?string
+    {
+        return $this->sellingPrice;
+    }
+
+    public function setSellingPrice(?string $sellingPrice): static
+    {
+        $this->sellingPrice = $sellingPrice;
         $this->updatedAt = new \DateTimeImmutable();
         return $this;
     }

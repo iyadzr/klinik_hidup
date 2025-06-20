@@ -36,6 +36,18 @@ class Queue
     #[ORM\Column(type: "text", nullable: true)]
     private ?string $metadata = null;
 
+    #[ORM\Column(type: "boolean", options: ["default" => false])]
+    private bool $isPaid = false;
+
+    #[ORM\Column(type: "datetime_immutable", nullable: true)]
+    private ?\DateTimeImmutable $paidAt = null;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $paymentMethod = null;
+
+    #[ORM\Column(type: "decimal", precision: 10, scale: 2, nullable: true)]
+    private ?float $amount = null;
+
     public function getRegistrationNumber(): ?int
     {
         return $this->registrationNumber;
@@ -136,5 +148,49 @@ class Queue
     {
         $metadata = $this->getMetadataArray();
         return $metadata['groupId'] ?? null;
+    }
+
+    public function getIsPaid(): bool
+    {
+        return $this->isPaid;
+    }
+
+    public function setIsPaid(bool $isPaid): self
+    {
+        $this->isPaid = $isPaid;
+        return $this;
+    }
+
+    public function getPaidAt(): ?\DateTimeImmutable
+    {
+        return $this->paidAt;
+    }
+
+    public function setPaidAt(?\DateTimeImmutable $paidAt): self
+    {
+        $this->paidAt = $paidAt;
+        return $this;
+    }
+
+    public function getPaymentMethod(): ?string
+    {
+        return $this->paymentMethod;
+    }
+
+    public function setPaymentMethod(?string $paymentMethod): self
+    {
+        $this->paymentMethod = $paymentMethod;
+        return $this;
+    }
+
+    public function getAmount(): ?float
+    {
+        return $this->amount;
+    }
+
+    public function setAmount(?float $amount): self
+    {
+        $this->amount = $amount;
+        return $this;
     }
 }

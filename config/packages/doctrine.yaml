@@ -5,9 +5,21 @@ doctrine:
         # IMPORTANT: You MUST configure your server version,
         # either here or in the DATABASE_URL env var (see .env file)
         #server_version: '16'
-
+        
+        # Connection settings for production performance
+        options:
+            # MySQL specific performance optimizations
+            1002: 'SET sql_mode=(SELECT REPLACE(@@sql_mode,"ONLY_FULL_GROUP_BY",""));'  # PDO::MYSQL_ATTR_INIT_COMMAND
+        
+        # Database connection settings
+        server_version: '8.0'
+        
         profiling_collect_backtrace: '%kernel.debug%'
         use_savepoints: true
+        
+        # Query logging for production debugging (disable in high-traffic production)
+        logging: '%kernel.debug%'
+        profiling: '%kernel.debug%'
     orm:
         auto_generate_proxy_classes: true
         enable_lazy_ghost_objects: true
@@ -15,6 +27,10 @@ doctrine:
         validate_xml_mapping: true
         naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
         auto_mapping: true
+        
+        # Performance optimizations
+        default_repository_class: App\Repository\BaseRepository
+                
         mappings:
             App:
                 type: attribute
@@ -43,8 +59,13 @@ when@prod:
 
     framework:
         cache:
+            # Enhanced caching configuration for production performance
+            app: cache.adapter.filesystem
+            system: cache.adapter.filesystem
             pools:
                 doctrine.result_cache_pool:
-                    adapter: cache.app
+                    adapter: cache.adapter.filesystem
+                    default_lifetime: 3600 # 1 hour
                 doctrine.system_cache_pool:
-                    adapter: cache.system
+                    adapter: cache.adapter.filesystem
+                    default_lifetime: 86400 # 24 hours

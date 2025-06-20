@@ -97,7 +97,7 @@ export default {
   },
   created() {
     this.loadData();
-    this.refreshInterval = setInterval(this.loadData, 10000);
+    this.refreshInterval = setInterval(this.loadData, 2000);
     this.initializeSSE();
   },
   mounted() {
@@ -244,8 +244,19 @@ export default {
       return `Room ${((doctor.id - 1) % 10) + 1}`;
     },
     initializeSSE() {
+      // Skip SSE if not supported or in development
+      if (!window.EventSource) {
+        console.warn('EventSource not supported, skipping SSE initialization');
+        return;
+      }
+      
       // Initialize Server-Sent Events for real-time queue updates
       try {
+        // Close existing connection if any
+        if (this.eventSource) {
+          this.eventSource.close();
+        }
+        
         this.eventSource = new EventSource('/api/sse/queue-updates');
         
         this.eventSource.onmessage = (event) => {
@@ -266,22 +277,27 @@ export default {
         });
         
         this.eventSource.onerror = (error) => {
-          console.error('Queue Display SSE connection error:', error);
+          console.warn('Queue Display SSE connection error, attempting reconnection in 3 seconds:', error);
           
-          // Attempt to reconnect after 5 seconds
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+          }
+          
+          // Attempt to reconnect after 3 seconds
           setTimeout(() => {
-            if (this.eventSource.readyState === EventSource.CLOSED) {
-              console.log('Attempting to reconnect Queue Display SSE...');
+            if (!this.eventSource) { // Only reconnect if not already connected
+              console.log('Attempting SSE reconnection...');
               this.initializeSSE();
             }
-          }, 5000);
+          }, 3000);
         };
         
         this.eventSource.onopen = () => {
           console.log('Queue Display SSE connection established');
         };
       } catch (error) {
-        console.error('Failed to initialize Queue Display SSE:', error);
+        console.warn('SSE initialization failed (using fallback polling):', error);
       }
     },
     handleQueueUpdate(queueData) {

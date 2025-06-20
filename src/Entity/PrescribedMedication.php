@@ -29,6 +29,9 @@ class PrescribedMedication
     #[ORM\Column(length: 500, nullable: true)]
     private ?string $instructions = null;
 
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    private ?string $actualPrice = null;
+
     #[ORM\Column]
     private ?\DateTimeImmutable $prescribedAt = null;
 
@@ -84,6 +87,25 @@ class PrescribedMedication
     {
         $this->instructions = $instructions;
         return $this;
+    }
+
+    public function getActualPrice(): ?string
+    {
+        return $this->actualPrice;
+    }
+
+    public function setActualPrice(?string $actualPrice): static
+    {
+        $this->actualPrice = $actualPrice;
+        return $this;
+    }
+
+    /**
+     * Helper method to get medication name through the relationship
+     */
+    public function getName(): ?string
+    {
+        return $this->medication ? $this->medication->getName() : null;
     }
 
     public function getPrescribedAt(): ?\DateTimeImmutable

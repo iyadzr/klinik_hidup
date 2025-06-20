@@ -11,15 +11,51 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 #[Route('/api/consultations')]
 class ConsultationController extends AbstractController
 {
-    private $entityManager;
+    private EntityManagerInterface $entityManager;
+    private LoggerInterface $logger;
+    private ?CacheInterface $cache;
+    
+    // Rate limiting storage
+    private static array $requestCounts = [];
+    private static int $maxRequestsPerMinute = 30;
 
-    public function __construct(EntityManagerInterface $entityManager)
-    {
+    public function __construct(
+        EntityManagerInterface $entityManager, 
+        LoggerInterface $logger,
+        ?CacheInterface $cache = null
+    ) {
         $this->entityManager = $entityManager;
+        $this->logger = $logger;
+        $this->cache = $cache;
+    }
+    
+    private function checkRateLimit(Request $request): bool
+    {
+        $clientIp = $request->getClientIp() ?? 'unknown';
+        $currentMinute = (int)(time() / 60);
+        
+        // Clean old entries
+        self::$requestCounts = array_filter(
+            self::$requestCounts, 
+            fn($data) => $data['minute'] >= $currentMinute - 1
+        );
+        
+        // Count requests for this IP in current minute
+        $key = $clientIp . '_' . $currentMinute;
+        if (!isset(self::$requestCounts[$key])) {
+            self::$requestCounts[$key] = ['minute' => $currentMinute, 'count' => 0];
+        }
+        
+        self::$requestCounts[$key]['count']++;
+        
+        return self::$requestCounts[$key]['count'] <= self::$maxRequestsPerMinute;
     }
     
     private function broadcastQueueUpdate($queue): void
@@ -67,11 +103,16 @@ class ConsultationController extends AbstractController
     }
 
     #[Route('', name: 'app_consultation_create', methods: ['POST'])]
-    public function create(Request $request, LoggerInterface $logger): JsonResponse
+    public function create(Request $request): JsonResponse
     {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
         try {
             $data = json_decode($request->getContent(), true);
-            $logger->info('Received consultation data', ['data' => $data]);
+            $this->logger->info('Received consultation data', ['data' => $data]);
             
             // Get Patient
             $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
@@ -159,10 +200,25 @@ class ConsultationController extends AbstractController
                         $prescribedMed = new \App\Entity\PrescribedMedication();
                         $prescribedMed->setConsultation($consultation);
                         $prescribedMed->setMedication($medication);
-                        $prescribedMed->setQuantity((int)$medData['quantity']);
-                        $prescribedMed->setInstructions($medData['instructions'] ?? null);
                         
-                        $this->entityManager->persist($prescribedMed);
+                        if (isset($medData['medicationId'])) {
+                            $medication = $this->entityManager->getRepository(\App\Entity\Medication::class)->find($medData['medicationId']);
+                            if ($medication) {
+                                $prescribedMed->setMedication($medication);
+                            }
+                        }
+                        
+                        if (isset($medData['quantity'])) {
+                            $prescribedMed->setQuantity((int)$medData['quantity']);
+                            $prescribedMed->setInstructions($medData['instructions'] ?? null);
+                            
+                            // Handle actual price set by doctor
+                            if (isset($medData['actualPrice']) && $medData['actualPrice'] > 0) {
+                                $prescribedMed->setActualPrice((string)$medData['actualPrice']);
+                            }
+                            
+                            $this->entityManager->persist($prescribedMed);
+                        }
                     }
                 }
                 $this->entityManager->flush();
@@ -184,13 +240,19 @@ class ConsultationController extends AbstractController
                 $this->broadcastQueueUpdate($queue);
             }
             
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('consultations_list_' . date('Y-m-d'));
+                $this->cache->delete('consultations_ongoing');
+            }
+            
             return new JsonResponse([
                 'id' => $consultation->getId(),
                 'message' => 'Consultation created successfully',
                 'queueUpdated' => $queue ? true : false
             ], 201);
         } catch (\Exception $e) {
-            $logger->error('Error creating consultation: ' . $e->getMessage(), [
+            $this->logger->error('Error creating consultation: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
             return new JsonResponse(['error' => 'Error creating consultation: ' . $e->getMessage()], 500);
@@ -198,10 +260,42 @@ class ConsultationController extends AbstractController
     }
 
     #[Route('/patient/{id}', name: 'app_consultation_history', methods: ['GET'])]
-    public function getPatientHistory(int $id): JsonResponse
+    public function getPatientHistory(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $cacheKey = "patient_history_$id";
+            
+            if ($this->cache) {
+                $history = $this->cache->get($cacheKey, function (ItemInterface $item) use ($id) {
+                    $item->expiresAfter(300); // 5 minutes cache
+                    return $this->buildPatientHistory($id);
+                });
+            } else {
+                $history = $this->buildPatientHistory($id);
+            }
+            
+            return new JsonResponse($history);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching patient history: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch patient history'], 500);
+        }
+    }
+    
+    private function buildPatientHistory(int $patientId): array
     {
         $consultations = $this->entityManager->getRepository(Consultation::class)
-            ->findBy(['patient' => $id], ['consultationDate' => 'DESC']);
+            ->createQueryBuilder('c')
+            ->where('c.patient = :patientId')
+            ->setParameter('patientId', $patientId)
+            ->orderBy('c.consultationDate', 'DESC')
+            ->setMaxResults(50) // Limit to last 50 consultations
+            ->getQuery()
+            ->getResult();
 
         $history = [];
         foreach ($consultations as $consultation) {
@@ -247,60 +341,94 @@ class ConsultationController extends AbstractController
                 'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
             ];
         }
-
-        return new JsonResponse($history);
+        
+        return $history;
     }
 
     #[Route('', name: 'app_consultations_list', methods: ['GET'])]
-    public function list(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    public function list(Request $request): JsonResponse
     {
-        $date = $request->query->get('date');
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $date = $request->query->get('date');
+            $page = max(1, (int) $request->query->get('page', 1));
+            $limit = min(50, max(10, (int) $request->query->get('limit', 20))); // Max 50, min 10
+            
+            $cacheKey = 'consultations_list_' . ($date ?: 'all') . '_page_' . $page . '_limit_' . $limit;
+            
+            if ($this->cache) {
+                $data = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $page, $limit) {
+                    $item->expiresAfter(120); // 2 minutes cache
+                    return $this->buildConsultationsList($date, $page, $limit);
+                });
+            } else {
+                $data = $this->buildConsultationsList($date, $page, $limit);
+            }
+            
+            return new JsonResponse($data);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching consultations list: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch consultations'], 500);
+        }
+    }
+    
+    private function buildConsultationsList(?string $date, int $page, int $limit): array
+    {
+        $qb = $this->entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('c', 'p', 'd') // Select related entities to avoid N+1 queries
+            ->leftJoin('c.patient', 'p')
+            ->leftJoin('c.doctor', 'd')
+            ->orderBy('c.createdAt', 'DESC');
         
         if ($date) {
             // Filter by specific date - use both createdAt and consultationDate for broader matching
             $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
             $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
             
-            $consultations = $entityManager->getRepository(Consultation::class)
-                ->createQueryBuilder('c')
-                ->where('(c.createdAt BETWEEN :start AND :end) OR (c.consultationDate BETWEEN :start AND :end)')
-                ->setParameter('start', $start)
-                ->setParameter('end', $end)
-                ->orderBy('c.createdAt', 'DESC')
-                ->getQuery()
-                ->getResult();
+            $qb->where('(c.createdAt BETWEEN :start AND :end) OR (c.consultationDate BETWEEN :start AND :end)')
+               ->setParameter('start', $start)
+               ->setParameter('end', $end);
         } else {
             // Return consultations from the last 30 days if no date filter (performance optimization)
             $thirtyDaysAgo = new \DateTime('-30 days', new \DateTimeZone('Asia/Kuala_Lumpur'));
-            $consultations = $entityManager->getRepository(Consultation::class)
-                ->createQueryBuilder('c')
-                ->where('c.createdAt >= :thirtyDaysAgo')
-                ->setParameter('thirtyDaysAgo', $thirtyDaysAgo)
-                ->orderBy('c.createdAt', 'DESC')
-                ->getQuery()
-                ->getResult();
+            $qb->where('c.createdAt >= :thirtyDaysAgo')
+               ->setParameter('thirtyDaysAgo', $thirtyDaysAgo);
         }
         
+        // Apply pagination
+        $qb->setFirstResult(($page - 1) * $limit)
+           ->setMaxResults($limit);
+        
+        $consultations = $qb->getQuery()->getResult();
         $data = [];
 
         foreach ($consultations as $consultation) {
             $patient = $consultation->getPatient();
             $doctor = $consultation->getDoctor();
-
-            // Get prescribed medications
-            $prescribedMedications = $entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+            
+            if (!$patient || !$doctor) {
+                continue; // Skip incomplete records
+            }
+            
+            // Get prescribed medications efficiently
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
                 ->findBy(['consultation' => $consultation]);
-
+            
             $medicationsArray = [];
-            foreach ($prescribedMedications as $prescribedMed) {
+            foreach ($prescribedMeds as $med) {
                 $medicationsArray[] = [
-                    'name' => $prescribedMed->getMedication()->getName(),
-                    'quantity' => $prescribedMed->getQuantity(),
-                    'unitType' => $prescribedMed->getMedication()->getUnitType(),
-                    'instructions' => $prescribedMed->getInstructions()
+                    'name' => $med->getName(),
+                    'quantity' => $med->getQuantity(),
+                    'instructions' => $med->getInstructions(),
+                    'actualPrice' => $med->getActualPrice()
                 ];
             }
-
+            
             $data[] = [
                 'id' => $consultation->getId(),
                 'patientId' => $patient->getId(),
@@ -326,128 +454,176 @@ class ConsultationController extends AbstractController
             ];
         }
 
-        return new JsonResponse($data);
+        return $data;
     }
 
     #[Route('/{id}', name: 'app_consultations_get', methods: ['GET'])]
-    public function get(int $id, EntityManagerInterface $entityManager): JsonResponse
+    public function get(int $id, Request $request): JsonResponse
     {
-        $consultation = $entityManager->getRepository(Consultation::class)->find($id);
-        
-        if (!$consultation) {
-            return new JsonResponse(['message' => 'Consultation not found'], 404);
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
-
-        $patient = $consultation->getPatient();
-        $doctor = $consultation->getDoctor();
         
-        return new JsonResponse([
-            'id' => $consultation->getId(),
-            'patientId' => $patient->getId(),
-            'patientName' => $patient->getName(),
-            'doctorId' => $doctor->getId(),
-            'doctorName' => $doctor->getName(),
-            'createdAt' => $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
-            'symptoms' => $consultation->getSymptoms(),
-            'diagnosis' => $consultation->getDiagnosis(),
-            'treatment' => $consultation->getTreatment(),
-            'consultationFee' => $consultation->getConsultationFee(),
-            'medicinesFee' => $consultation->getMedicinesFee(),
-            'totalAmount' => $consultation->getTotalAmount(),
-            'isPaid' => $consultation->getIsPaid(),
-            'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
-            'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
-        ]);
+        try {
+            $consultation = $this->entityManager->getRepository(Consultation::class)->find($id);
+            
+            if (!$consultation) {
+                return new JsonResponse(['message' => 'Consultation not found'], 404);
+            }
+
+            $patient = $consultation->getPatient();
+            $doctor = $consultation->getDoctor();
+            
+            return new JsonResponse([
+                'id' => $consultation->getId(),
+                'patientId' => $patient->getId(),
+                'patientName' => $patient->getName(),
+                'doctorId' => $doctor->getId(),
+                'doctorName' => $doctor->getName(),
+                'createdAt' => $consultation->getCreatedAt()->format('Y-m-d H:i:s'),
+                'symptoms' => $consultation->getSymptoms(),
+                'diagnosis' => $consultation->getDiagnosis(),
+                'treatment' => $consultation->getTreatment(),
+                'consultationFee' => $consultation->getConsultationFee(),
+                'medicinesFee' => $consultation->getMedicinesFee(),
+                'totalAmount' => $consultation->getTotalAmount(),
+                'isPaid' => $consultation->getIsPaid(),
+                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching consultation: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch consultation'], 500);
+        }
     }
 
     #[Route('/{id}/payment', name: 'app_consultation_payment', methods: ['POST'])]
     public function updatePaymentStatus(
         int $id,
-        Request $request,
-        EntityManagerInterface $entityManager,
-        LoggerInterface $logger
+        Request $request
     ): JsonResponse {
         try {
-            $consultation = $entityManager->getRepository(Consultation::class)->find($id);
+            $consultation = $this->entityManager->getRepository(Consultation::class)->find($id);
             
             if (!$consultation) {
-                return new JsonResponse(['error' => 'Consultation not found'], 404);
+                return new JsonResponse(['message' => 'Consultation not found'], 404);
             }
             
             $data = json_decode($request->getContent(), true);
-            $paymentMethod = $data['paymentMethod'] ?? 'Cash';
             
-            // Generate running receipt number
-            $receiptRepository = $entityManager->getRepository(\App\Entity\ReceiptCounter::class);
-            $receiptNumber = $receiptRepository->getNextReceiptNumber();
+            if (!isset($data['isPaid'])) {
+                return new JsonResponse(['error' => 'isPaid field is required'], 400);
+            }
             
-            $consultation->setIsPaid(true);
-            $consultation->setPaidAt(new \DateTime());
-            $consultation->setReceiptNumber((string)$receiptNumber);
+            $consultation->setIsPaid($data['isPaid']);
             
-            $entityManager->flush();
+            // Set payment timestamp if marking as paid
+            if ($data['isPaid']) {
+                $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
+                $consultation->setPaidAt(new \DateTime('now', $myt));
+            } else {
+                $consultation->setPaidAt(null);
+            }
             
-            $logger->info('Payment processed', [
-                'consultationId' => $consultation->getId(),
-                'receiptNumber' => $receiptNumber,
-                'paymentMethod' => $paymentMethod,
-                'amount' => $consultation->getTotalAmount()
-            ]);
+            // Update payment method if provided
+            if (isset($data['paymentMethod'])) {
+                if (method_exists($consultation, 'setPaymentMethod')) {
+                    $consultation->setPaymentMethod($data['paymentMethod']);
+                }
+            }
+            
+            $this->entityManager->flush();
+            
+            // Clear relevant caches
+            if ($this->cache) {
+                $this->cache->delete('consultations_list_' . date('Y-m-d'));
+                $this->cache->delete('patient_history_' . $consultation->getPatient()->getId());
+            }
             
             return new JsonResponse([
                 'message' => 'Payment status updated successfully',
-                'receiptNumber' => (string)$receiptNumber,
-                'paidAt' => $consultation->getPaidAt()->format('Y-m-d H:i:s')
+                'isPaid' => $consultation->getIsPaid(),
+                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null
             ]);
-            
         } catch (\Exception $e) {
-            $logger->error('Payment processing error: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to process payment'], 500);
+            $this->logger->error('Error updating payment status: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Error updating payment status'], 500);
         }
     }
 
-    #[Route('/debug', name: 'app_consultations_debug', methods: ['GET'])]
-    public function debug(EntityManagerInterface $entityManager): JsonResponse
+    #[Route('/ongoing', name: 'app_consultations_ongoing', methods: ['GET'])]
+    public function ongoing(Request $request): JsonResponse
     {
-        // Get today's date in MYT
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $cacheKey = 'consultations_ongoing';
+            
+            if ($this->cache) {
+                $data = $this->cache->get($cacheKey, function (ItemInterface $item) {
+                    $item->expiresAfter(30); // 30 seconds cache for real-time data
+                    return $this->buildOngoingData();
+                });
+            } else {
+                $data = $this->buildOngoingData();
+            }
+            
+            return new JsonResponse($data);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching ongoing consultations: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch ongoing consultations'], 500);
+        }
+    }
+    
+    private function buildOngoingData(): array
+    {
         $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
         $todayStr = $today->format('Y-m-d');
         
-        // Count consultations
-        $totalConsultations = $entityManager->getRepository(Consultation::class)->count([]);
+        // Use optimized queries with limits
+        $totalConsultations = $this->entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
         
-        $todayConsultations = $entityManager->getRepository(Consultation::class)
+        $todayConsultations = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
             ->select('COUNT(c.id)')
             ->where('DATE(c.createdAt) = :today')
             ->setParameter('today', $todayStr)
             ->getQuery()
             ->getSingleScalarResult();
-            
-        // Count queues
-        $totalQueues = $entityManager->getRepository(\App\Entity\Queue::class)->count([]);
         
-        $todayQueues = $entityManager->getRepository(\App\Entity\Queue::class)
-            ->createQueryBuilder('q')
-            ->select('COUNT(q.id)')
-            ->where('DATE(q.queueDateTime) = :today')
-            ->setParameter('today', $todayStr)
-            ->getQuery()
-            ->getSingleScalarResult();
-            
-        // Get recent consultations
-        $recentConsultations = $entityManager->getRepository(Consultation::class)
+        $recentConsultations = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
-            ->select('c.id, c.createdAt, c.consultationDate, p.name as patientName, d.name as doctorName')
+            ->select('c.id, c.createdAt, p.name as patientName, d.name as doctorName')
             ->join('c.patient', 'p')
             ->join('c.doctor', 'd')
             ->orderBy('c.createdAt', 'DESC')
             ->setMaxResults(5)
             ->getQuery()
             ->getResult();
-            
-        // Get recent queues
-        $recentQueues = $entityManager->getRepository(\App\Entity\Queue::class)
+        
+        $totalQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
+            ->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+        
+        $todayQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
+            ->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('DATE(q.queueDateTime) = :today')
+            ->setParameter('today', $todayStr)
+            ->getQuery()
+            ->getSingleScalarResult();
+        
+        $recentQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
             ->createQueryBuilder('q')
             ->select('q.id, q.queueDateTime, q.status, q.queueNumber, p.name as patientName, d.name as doctorName')
             ->join('q.patient', 'p')
@@ -457,7 +633,7 @@ class ConsultationController extends AbstractController
             ->getQuery()
             ->getResult();
         
-        return new JsonResponse([
+        return [
             'currentTime' => $today->format('Y-m-d H:i:s T'),
             'todayDate' => $todayStr,
             'consultations' => [
@@ -470,6 +646,6 @@ class ConsultationController extends AbstractController
                 'today' => $todayQueues,
                 'recent' => $recentQueues
             ]
-        ]);
+        ];
     }
 }

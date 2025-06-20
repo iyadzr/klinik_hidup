@@ -77,6 +77,69 @@
       </div>
     </div>
   </div>
+
+  <!-- Payment Modal -->
+  <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true" style="padding-top: 100px !important;">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Process Payment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div v-if="selectedQueue">
+            <h6>Patient: {{ selectedQueue.patient?.name }}</h6>
+            <h6>Queue Number: {{ formatQueueNumber(selectedQueue.queueNumber) }}</h6>
+            <h6>Total Amount: RM {{ calculateAmount(selectedQueue) }}</h6>
+            
+            <div class="mt-3">
+              <label class="form-label">Payment Method:</label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input 
+                    class="form-check-input" 
+                    type="radio" 
+                    name="paymentMethod" 
+                    id="cash" 
+                    value="Cash"
+                    v-model="paymentMethod"
+                  >
+                  <label class="form-check-label" for="cash">
+                    <i class="fas fa-money-bill-wave me-2"></i>Cash
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input 
+                    class="form-check-input" 
+                    type="radio" 
+                    name="paymentMethod" 
+                    id="card" 
+                    value="Card"
+                    v-model="paymentMethod"
+                  >
+                  <label class="form-check-label" for="card">
+                    <i class="fas fa-credit-card me-2"></i>Card
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button 
+            type="button" 
+            class="btn btn-success" 
+            @click="acceptPayment"
+            :disabled="!paymentMethod || processing"
+          >
+            <span v-if="processing" class="spinner-border spinner-border-sm me-2"></span>
+            {{ processing ? 'Processing...' : 'Accept Payment' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -100,7 +163,13 @@ export default {
       eventSource: null,
       refreshInterval: null,
       dateFilterTimeout: null, // Add debounce timeout
-      currentQueueRequest: null // Add request controller
+      currentQueueRequest: null, // Add request controller
+      lastRefreshTime: 0, // Track last refresh to avoid rapid calls
+      // Payment modal data
+      selectedQueue: null,
+      paymentMethod: '',
+      processing: false,
+      paymentModal: null
     };
   },
   computed: {
@@ -211,6 +280,14 @@ export default {
       }
     },
     async loadQueueList() {
+      // Throttle rapid successive calls (minimum 500ms between calls)
+      const now = Date.now();
+      if (now - this.lastRefreshTime < 500) {
+        console.log('⏩ Queue refresh throttled - too soon since last call');
+        return;
+      }
+      this.lastRefreshTime = now;
+      
       // Cancel previous request if still pending
       if (this.currentQueueRequest) {
         this.currentQueueRequest.abort();
@@ -253,11 +330,26 @@ export default {
           this.queueList = [];
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
+        if (error.name === 'AbortError' || error.name === 'CanceledError') {
           console.log('⏹️ Queue request was cancelled');
           return;
         }
+        if (error.code === 'ERR_CANCELED') {
+          console.log('⏹️ Queue request was cancelled (axios)');
+          return;
+        }
         console.error('❌ Error loading queue:', error);
+        // Only clear the queue list if it's a real error, not a cancellation
+        if (error.response) {
+          // Server responded with error status
+          console.error('Server error:', error.response.status, error.response.data);
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error('Network error - no response received');
+        } else {
+          // Something else happened
+          console.error('Request error:', error.message);
+        }
         this.queueList = [];
       } finally {
         this.currentQueueRequest = null;
@@ -306,20 +398,82 @@ export default {
         alert('Error adding to queue. Please try again.');
       }
     },
-    async processPayment(queue) {
-      try {
-        // Navigate to payment form with queue information
-        this.$router.push({
-          path: '/payments/form',
-          query: {
-            queueId: queue.id,
-            patientId: queue.patient.id,
-            amount: queue.consultationFee || 50 // Default consultation fee
+    processPayment(queue) {
+      console.log('processPayment called with queue:', queue);
+      this.selectedQueue = queue;
+      this.paymentMethod = '';
+      this.processing = false;
+      
+      // Initialize Bootstrap modal if not already done
+      if (!this.paymentModal) {
+        this.paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+      }
+      this.paymentModal.show();
+    },
+    
+    calculateAmount(queue) {
+      // Default consultation fee if not specified
+      return queue.consultationFee || queue.amount || 50;
+    },
+    
+    closePaymentModal() {
+      const modalElement = document.getElementById('paymentModal');
+      if (modalElement) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+          const modalInstance = bootstrap.Modal.getInstance(modalElement);
+          if (modalInstance) {
+            modalInstance.hide();
           }
+        } else {
+          // Fallback: manually hide modal
+          modalElement.classList.remove('show');
+          modalElement.style.display = 'none';
+          document.body.classList.remove('modal-open');
+          
+          // Remove backdrop
+          const backdrop = document.getElementById('paymentModalBackdrop');
+          if (backdrop) {
+            backdrop.remove();
+          }
+        }
+      }
+    },
+    
+    async acceptPayment() {
+      if (!this.paymentMethod || !this.selectedQueue) {
+        alert('Please select a payment method');
+        return;
+      }
+
+      this.processing = true;
+      try {
+        // Create payment record through the queue endpoint
+        const response = await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
+          paymentMethod: this.paymentMethod,
+          amount: this.calculateAmount(this.selectedQueue)
         });
+
+        // Update the queue item in the list
+        const queueIndex = this.queueList.findIndex(q => q.id === this.selectedQueue.id);
+        if (queueIndex !== -1) {
+          this.queueList[queueIndex].isPaid = true;
+          this.queueList[queueIndex].paidAt = new Date().toISOString();
+        }
+
+        // Close payment modal
+        this.paymentModal.hide();
+
+        // Show success message
+        alert(`Payment of RM ${this.calculateAmount(this.selectedQueue)} received via ${this.paymentMethod} for ${this.selectedQueue.patient?.name}`);
+
+        // Refresh the queue list
+        this.loadQueueList();
+
       } catch (error) {
         console.error('Error processing payment:', error);
         alert('Error processing payment. Please try again.');
+      } finally {
+        this.processing = false;
       }
     },
     async updateStatus(queueId, newStatus) {
@@ -346,8 +500,19 @@ export default {
       return classes[status] || 'badge bg-secondary';
     },
     initializeSSE() {
+      // Skip SSE if not supported or in development
+      if (!window.EventSource) {
+        console.warn('EventSource not supported, skipping SSE initialization');
+        return;
+      }
+      
       // Initialize Server-Sent Events for real-time queue updates
       try {
+        // Close existing connection if any
+        if (this.eventSource) {
+          this.eventSource.close();
+        }
+        
         this.eventSource = new EventSource('/api/sse/queue-updates');
         
         this.eventSource.onmessage = (event) => {
@@ -368,22 +533,21 @@ export default {
         });
         
         this.eventSource.onerror = (error) => {
-          console.error('SSE connection error:', error);
+          console.warn('SSE connection error (this is expected in development):', error);
           
-          // Attempt to reconnect after 5 seconds
-          setTimeout(() => {
-            if (this.eventSource.readyState === EventSource.CLOSED) {
-              console.log('Attempting to reconnect SSE...');
-              this.initializeSSE();
-            }
-          }, 5000);
+          // Don't attempt automatic reconnection to reduce console noise
+          // The regular refresh interval will handle updates
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+          }
         };
         
         this.eventSource.onopen = () => {
           console.log('SSE connection established for queue updates');
         };
       } catch (error) {
-        console.error('Failed to initialize SSE:', error);
+        console.warn('SSE initialization failed (using fallback polling):', error);
       }
     },
     handleQueueUpdate(queueData) {
@@ -403,8 +567,13 @@ export default {
         // Show notification
         this.showUpdateNotification(queueData);
       } else {
-        // If queue item not found, refresh the entire list
-        this.loadQueueList();
+        // If queue item not found, only refresh if there's no pending request
+        if (!this.currentQueueRequest) {
+          console.log('Queue item not found, refreshing list...');
+          this.loadQueueList();
+        } else {
+          console.log('Queue refresh skipped - request already in progress');
+        }
       }
     },
     showUpdateNotification(queueData) {
@@ -510,12 +679,24 @@ export default {
     await this.loadQueueList();
   },
   beforeUnmount() {
+    // Cleanup intervals
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
     }
+    
+    // Cleanup SSE connection
     if (this.eventSource) {
       this.eventSource.close();
+      this.eventSource = null;
     }
+    
+    // Cleanup pending requests
+    if (this.currentQueueRequest) {
+      this.currentQueueRequest.abort();
+      this.currentQueueRequest = null;
+    }
+    
     // Cleanup debounce timeout
     if (this.dateFilterTimeout) {
       clearTimeout(this.dateFilterTimeout);
@@ -543,5 +724,257 @@ export default {
 
 .table-active {
   background-color: rgba(0, 123, 255, 0.1) !important;
+}
+
+/* Modal fallback styles */
+.modal {
+  z-index: 1050;
+}
+
+.modal.show {
+  display: block !important;
+}
+
+.modal-backdrop {
+  z-index: 1040;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-dialog {
+  position: relative;
+  width: auto;
+  margin: 1.75rem auto;
+  max-width: 500px;
+}
+
+.modal-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.125);
+  border-radius: 0.375rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.modal-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem;
+  border-bottom: 1px solid #dee2e6;
+  border-top-left-radius: calc(0.375rem - 1px);
+  border-top-right-radius: calc(0.375rem - 1px);
+}
+
+.modal-title {
+  margin-bottom: 0;
+  line-height: 1.5;
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.btn-close {
+  box-sizing: content-box;
+  width: 1em;
+  height: 1em;
+  padding: 0.25em 0.25em;
+  color: #000;
+  background: transparent url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000'%3e%3cpath d='m.235.757 14.008 14.008c.395.395 1.036.395 1.431 0 .396-.395.396-1.036 0-1.431L1.666.326C1.271-.07.63-.07.235.326c-.395.395-.395 1.036 0 1.431z'/%3e%3cpath d='m14.243.757-14.008 14.008c-.395.395-.395 1.036 0 1.431.396.396 1.037.396 1.432 0L15.674 2.188c.395-.395.395-1.036 0-1.431-.396-.396-1.037-.396-1.431 0z'/%3e%3c/svg%3e") center/1em auto no-repeat;
+  border: 0;
+  border-radius: 0.375rem;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.btn-close:hover {
+  opacity: 0.75;
+}
+
+.modal-body {
+  position: relative;
+  flex: 1 1 auto;
+  padding: 1rem;
+}
+
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.75rem;
+  border-top: 1px solid #dee2e6;
+  border-bottom-right-radius: calc(0.375rem - 1px);
+  border-bottom-left-radius: calc(0.375rem - 1px);
+}
+
+.modal-footer > * {
+  margin: 0.25rem;
+}
+
+/* Button styles */
+.btn {
+  display: inline-block;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #212529;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  background-color: transparent;
+  border: 1px solid transparent;
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  border-radius: 0.375rem;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.btn:hover {
+  color: #212529;
+}
+
+.btn:focus {
+  outline: 0;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.btn:disabled {
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  color: #fff;
+  background-color: #5c636a;
+  border-color: #565e64;
+}
+
+.btn-secondary:focus {
+  color: #fff;
+  background-color: #5c636a;
+  border-color: #565e64;
+  box-shadow: 0 0 0 0.25rem rgba(130, 138, 145, 0.5);
+}
+
+.btn-success {
+  color: #fff;
+  background-color: #198754;
+  border-color: #198754;
+}
+
+.btn-success:hover {
+  color: #fff;
+  background-color: #157347;
+  border-color: #146c43;
+}
+
+.btn-success:focus {
+  color: #fff;
+  background-color: #157347;
+  border-color: #146c43;
+  box-shadow: 0 0 0 0.25rem rgba(60, 153, 110, 0.5);
+}
+
+/* Form styles */
+.form-label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-check {
+  display: block;
+  min-height: 1.5rem;
+  padding-left: 1.5em;
+  margin-bottom: 0.125rem;
+}
+
+.form-check-input {
+  width: 1em;
+  height: 1em;
+  margin-top: 0.25em;
+  margin-left: -1.5em;
+  vertical-align: top;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  appearance: none;
+  color-adjust: exact;
+}
+
+.form-check-input[type="radio"] {
+  border-radius: 50%;
+}
+
+.form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.form-check-input:checked[type="radio"] {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23fff'/%3e%3c/svg%3e");
+}
+
+.form-check-label {
+  color: #212529;
+  cursor: pointer;
+}
+
+/* Spinner */
+.spinner-border {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  vertical-align: -0.125em;
+  border: 0.125em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-border 0.75s linear infinite;
+}
+
+.spinner-border-sm {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-width: 0.125em;
+}
+
+@keyframes spinner-border {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Utility classes */
+.d-flex {
+  display: flex !important;
+}
+
+.gap-3 {
+  gap: 1rem !important;
+}
+
+.mt-3 {
+  margin-top: 1rem !important;
+}
+
+.me-2 {
+  margin-right: 0.5rem !important;
 }
 </style>

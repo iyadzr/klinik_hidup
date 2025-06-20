@@ -733,7 +733,18 @@ export default {
               });
             } catch (error) {
               console.error(`Error registering patient ${patient.name}:`, error);
-              alert(`Failed to register patient: ${patient.name}. Please try again.`);
+              
+              let errorMessage = `Failed to register patient: ${patient.name}. Please try again.`;
+              
+              if (error.response && error.response.data) {
+                if (error.response.data.error) {
+                  errorMessage = `${patient.name}: ${error.response.data.error}`;
+                } else if (error.response.data.message) {
+                  errorMessage = `${patient.name}: ${error.response.data.message}`;
+                }
+              }
+              
+              alert(errorMessage);
               return;
             }
           }
@@ -787,7 +798,18 @@ export default {
         }
       } catch (error) {
         console.error('Error registering patient:', error);
-        alert('Failed to register patient. Please try again.');
+        
+        let errorMessage = 'Failed to register patient. Please try again.';
+        
+        if (error.response && error.response.data) {
+          if (error.response.data.error) {
+            errorMessage = error.response.data.error;
+          } else if (error.response.data.message) {
+            errorMessage = error.response.data.message;
+          }
+        }
+        
+        alert(errorMessage);
       } finally {
         this.isLoading = false;
       }
