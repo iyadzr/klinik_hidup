@@ -83,9 +83,11 @@ export default {
       return this.queueList.find(q => q.status === 'in_consultation');
     },
     waitingQueue() {
+      // Only count each queue entry once, regardless of group size
       return this.queueList.filter(q => q.status === 'waiting');
     },
     waitingCount() {
+      // Count each group or single queue as 1
       return this.waitingQueue.length;
     },
     totalToday() {
@@ -301,11 +303,13 @@ export default {
       }
     },
     handleQueueUpdate(queueData) {
-      // Find and update the specific queue item in the list
+      // If this is a group consultation or patientCount is present, always refresh the list
+      if (queueData.isGroupConsultation || typeof queueData.patientCount !== 'undefined') {
+        this.loadData();
+        return;
+      }
       const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
-      
       if (queueIndex !== -1) {
-        // Update existing queue item
         this.queueList[queueIndex] = {
           ...this.queueList[queueIndex],
           status: queueData.status,
@@ -313,11 +317,8 @@ export default {
           doctor: queueData.doctor,
           queueDateTime: queueData.queueDateTime
         };
-        
-        // Update last updated time
         this.lastUpdated = new Date().toLocaleTimeString();
       } else {
-        // If queue item not found, refresh the entire list
         this.loadData();
       }
     },

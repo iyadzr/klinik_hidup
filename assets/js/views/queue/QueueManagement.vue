@@ -43,7 +43,7 @@
                     <strong>{{ queue.mainPatient ? queue.mainPatient.name : 'Group Consultation' }}</strong>
                     <small class="text-muted d-block">
                       <i class="fas fa-users me-1"></i>
-                      Group ({{ queue.totalPatients || queue.groupMembers?.length || 0 }} patients)
+                      Group ({{ queue.patientCount ?? (queue.patients?.length || 0) }} patients)
                     </small>
                   </div>
                   <div v-else>

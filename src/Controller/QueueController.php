@@ -142,27 +142,45 @@ class QueueController extends AbstractController
             if ($groupId && $queue->isGroupConsultation()) {
                 // Group consultation handling
                 if (!isset($groupedQueues[$groupId])) {
+                    // Fetch all patients in this group
+                    $groupMembers = $this->entityManager->getRepository(\App\Entity\Queue::class)
+                        ->createQueryBuilder('q')
+                        ->leftJoin('q.patient', 'p')
+                        ->where('q.metadata LIKE :groupId')
+                        ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
+                        ->getQuery()
+                        ->getResult();
+                    $patients = array_map(function($q) {
+                        $p = $q->getPatient();
+                        return $p ? [
+                            'id' => $p->getId(),
+                            'name' => $p->getName(),
+                            'displayName' => method_exists($p, 'getDisplayName') ? $p->getDisplayName() : $p->getName()
+                        ] : null;
+                    }, $groupMembers);
+                    $patients = array_filter($patients); // Remove nulls
+
                     $groupedQueues[$groupId] = [
                         'id' => $queue->getId(),
                         'queueNumber' => $queue->getQueueNumber(),
                         'registrationNumber' => $queue->getRegistrationNumber(),
                         'isGroupConsultation' => true,
                         'groupId' => $groupId,
-                        'patients' => [],
+                        'patients' => array_values($patients),
+                        'patientCount' => count($patients),
                         'doctor' => [
                             'id' => $doctor->getId(),
                             'name' => $doctor->getName(),
                             'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
                         ],
-                                            'status' => $queue->getStatus(),
-                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
-                    'isPaid' => $queue->getIsPaid(),
-                    'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
-                    'paymentMethod' => $queue->getPaymentMethod(),
-                    'amount' => $queue->getAmount()
-                ];
-                    
+                        'status' => $queue->getStatus(),
+                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
+                        'isPaid' => $queue->getIsPaid(),
+                        'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
+                        'paymentMethod' => $queue->getPaymentMethod(),
+                        'amount' => $queue->getAmount()
+                    ];
                     $queueData[] = $groupedQueues[$groupId];
                 }
             } else {
