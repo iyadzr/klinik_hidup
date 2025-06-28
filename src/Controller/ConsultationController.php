@@ -560,7 +560,7 @@ class ConsultationController extends AbstractController
         // Get queue entries that are waiting for consultation
         $queueQb = $this->entityManager->getRepository(Queue::class)
             ->createQueryBuilder('q')
-            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId', 'p.preInformedIllness as symptoms')
+            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId', 'p.preInformedIllness as symptoms', 'q.metadata')
             ->join('q.patient', 'p')
             ->join('q.doctor', 'd')
             ->where('q.status IN (:statuses)')
@@ -580,22 +580,62 @@ class ConsultationController extends AbstractController
             ->getResult();
 
         // Add queue entries to the data
+        $groupedQueues = [];
         foreach ($queueEntries as $queue) {
-            $ongoingData[] = [
-                'id' => null, // No consultation ID yet
-                'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface 
-                    ? $queue['queueDateTime']->format('Y-m-d H:i:s') 
-                    : $queue['queueDateTime'],
-                'patientName' => $queue['patientName'],
-                'patientId' => $queue['patientId'],
-                'doctorName' => $queue['doctorName'],
-                'doctorId' => $queue['doctorId'],
-                'status' => $queue['status'],
-                'symptoms' => $queue['symptoms'],
-                'isQueueEntry' => true,
-                'queueId' => $queue['queueId'],
-                'queueNumber' => $queue['queueNumber']
-            ];
+            // Check if this is a group consultation
+            $groupId = null;
+            if (isset($queue['metadata']) && $queue['metadata']) {
+                $meta = json_decode($queue['metadata'], true);
+                if (isset($meta['groupId'])) {
+                    $groupId = $meta['groupId'];
+                }
+            }
+            if ($groupId) {
+                // Group consultation: group by groupId
+                if (!isset($groupedQueues[$groupId])) {
+                    $groupedQueues[$groupId] = [
+                        'id' => null,
+                        'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface
+                            ? $queue['queueDateTime']->format('Y-m-d H:i:s')
+                            : $queue['queueDateTime'],
+                        'doctorName' => $queue['doctorName'],
+                        'doctorId' => $queue['doctorId'],
+                        'status' => $queue['status'],
+                        'isQueueEntry' => true,
+                        'queueId' => $queue['queueId'],
+                        'queueNumber' => $queue['queueNumber'],
+                        'isGroupConsultation' => true,
+                        'patients' => []
+                    ];
+                }
+                $groupedQueues[$groupId]['patients'][] = [
+                    'patientName' => $queue['patientName'],
+                    'patientId' => $queue['patientId'],
+                    'symptoms' => $queue['symptoms']
+                ];
+            } else {
+                // Single patient queue
+                $ongoingData[] = [
+                    'id' => null,
+                    'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface
+                        ? $queue['queueDateTime']->format('Y-m-d H:i:s')
+                        : $queue['queueDateTime'],
+                    'patientName' => $queue['patientName'],
+                    'patientId' => $queue['patientId'],
+                    'doctorName' => $queue['doctorName'],
+                    'doctorId' => $queue['doctorId'],
+                    'status' => $queue['status'],
+                    'symptoms' => $queue['symptoms'],
+                    'isQueueEntry' => true,
+                    'queueId' => $queue['queueId'],
+                    'queueNumber' => $queue['queueNumber'],
+                    'isGroupConsultation' => false
+                ];
+            }
+        }
+        // Add grouped group consultations to ongoingData
+        foreach ($groupedQueues as $group) {
+            $ongoingData[] = $group;
         }
 
         // Sort by queue number and consultation date

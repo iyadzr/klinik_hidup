@@ -49,12 +49,18 @@
         <!-- Ongoing Consultations List -->
         <div v-else>
           <div class="row g-3">
-            <div v-for="consultation in ongoingConsultations" :key="consultation.id" class="col-md-6 col-lg-4">
+            <div v-for="consultation in ongoingConsultations" :key="consultation.queueId || consultation.id" class="col-md-6 col-lg-4">
               <div class="consultation-card card h-100 border-start border-warning border-4">
                 <div class="card-body">
                   <div class="d-flex justify-content-between align-items-start mb-2">
                     <h6 class="card-title mb-0">
-                      <i class="fas fa-user me-2 text-primary"></i>{{ consultation.patientName }}
+                      <i class="fas fa-user me-2 text-primary"></i>
+                      <template v-if="consultation.isGroupConsultation">
+                        Group Consultation
+                      </template>
+                      <template v-else>
+                        {{ consultation.patientName }}
+                      </template>
                     </h6>
                     <span v-if="consultation.isQueueEntry && consultation.status === 'waiting'" class="badge bg-info">
                       <i class="fas fa-hourglass-half me-1"></i>Waiting
@@ -66,7 +72,6 @@
                       <i class="fas fa-clock me-1"></i>Ongoing
                     </span>
                   </div>
-                  
                   <div class="consultation-details">
                     <p class="card-text text-muted mb-2">
                       <i class="fas fa-user-md me-2"></i>{{ consultation.doctorName }}
@@ -77,33 +82,54 @@
                     <p v-if="consultation.queueNumber" class="card-text text-muted mb-2">
                       <i class="fas fa-list-ol me-2"></i>Queue #{{ consultation.queueNumber }}
                     </p>
-                    <p v-if="consultation.symptoms" class="card-text mb-2">
-                      <strong>Symptoms:</strong> {{ truncateText(consultation.symptoms, 80) }}
-                    </p>
-                  </div>
-                  
-                  <div class="mt-3">
-                    <button 
-                      v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
-                      @click="startConsultation(consultation)"
-                      class="btn btn-success btn-sm w-100"
-                    >
-                      <i class="fas fa-play me-1"></i>Start Consultation
-                    </button>
-                    <button 
-                      v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'"
-                      @click="continueConsultation(consultation)"
-                      class="btn btn-warning btn-sm w-100"
-                    >
-                      <i class="fas fa-stethoscope me-1"></i>Continue Consultation
-                    </button>
-                    <button 
-                      v-else
-                      @click="continueConsultation(consultation)"
-                      class="btn btn-primary btn-sm w-100"
-                    >
-                      <i class="fas fa-arrow-right me-1"></i>Continue
-                    </button>
+                    <template v-if="consultation.isGroupConsultation">
+                      <div class="mb-2">
+                        <label class="form-label">Select Patient:</label>
+                        <select v-model="selectedPatientId[consultation.queueId]" class="form-select form-select-sm mb-2">
+                          <option v-for="patient in consultation.patients" :key="patient.patientId" :value="patient.patientId">
+                            {{ patient.patientName }}
+                          </option>
+                        </select>
+                        <div v-if="selectedPatient(consultation)">
+                          <div class="mb-2">
+                            <strong>Symptoms:</strong>
+                            <span class="text-muted">{{ truncateText(selectedPatient(consultation).symptoms, 80) }}</span>
+                          </div>
+                          <button
+                            class="btn btn-success btn-sm w-100"
+                            @click="startConsultationForPatient(consultation, selectedPatient(consultation))"
+                          >
+                            <i class="fas fa-play me-1"></i>Start Consultation
+                          </button>
+                        </div>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <p v-if="consultation.symptoms" class="card-text mb-2">
+                        <strong>Symptoms:</strong> {{ truncateText(consultation.symptoms, 80) }}
+                      </p>
+                      <button
+                        v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
+                        @click="startConsultation(consultation)"
+                        class="btn btn-success btn-sm w-100"
+                      >
+                        <i class="fas fa-play me-1"></i>Start Consultation
+                      </button>
+                      <button
+                        v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'"
+                        @click="continueConsultation(consultation)"
+                        class="btn btn-warning btn-sm w-100"
+                      >
+                        <i class="fas fa-stethoscope me-1"></i>Continue Consultation
+                      </button>
+                      <button
+                        v-else
+                        @click="continueConsultation(consultation)"
+                        class="btn btn-primary btn-sm w-100"
+                      >
+                        <i class="fas fa-arrow-right me-1"></i>Continue
+                      </button>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -394,6 +420,22 @@ export default {
       }, 45000);
     };
 
+    const selectedPatientId = ref({});
+    const selectedPatient = (consultation) => {
+      if (!consultation.isGroupConsultation) return null;
+      const id = selectedPatientId.value[consultation.queueId];
+      return consultation.patients.find(p => p.patientId === id);
+    };
+    const startConsultationForPatient = (consultation, patient) => {
+      // Use the same logic as startConsultation, but for the selected patient
+      startConsultation({
+        ...consultation,
+        patientId: patient.patientId,
+        patientName: patient.patientName,
+        symptoms: patient.symptoms
+      });
+    };
+
     onMounted(() => {
       console.log('OngoingConsultations component mounted');
       fetchOngoingConsultations();
@@ -444,7 +486,10 @@ export default {
       retryWithBackoff,
       formatDate,
       formatTime,
-      truncateText
+      truncateText,
+      selectedPatientId,
+      selectedPatient,
+      startConsultationForPatient,
     };
   }
 };
