@@ -150,66 +150,55 @@
 <script>
 import axios from 'axios';
 import * as bootstrap from 'bootstrap';
-import { getTodayInMYT } from '../../utils/dateUtils';
+import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
 
 export default {
   name: 'QueueManagement',
   data() {
-
     return {
+      queueList: [],
       patients: [],
       doctors: [],
-      queueList: [],
-      selectedDate: getTodayInMYT(), // Today's date in MYT
-      newQueue: {
-        patientId: '',
-        doctorId: ''
-      },
-      eventSource: null,
-      refreshInterval: null,
-      dateFilterTimeout: null, // Add debounce timeout
-      currentQueueRequest: null, // Add request controller
-      lastRefreshTime: 0, // Track last refresh to avoid rapid calls
-      // Payment modal data
+      selectedDate: '',
       selectedQueue: null,
-      paymentMethod: '',
-      processing: false,
-      paymentModal: null
+      paymentAmount: 0,
+      isLoading: false,
+      isDoctorLoading: false,
+      isPaymentProcessing: false,
+      
+      // SSE connection management
+      eventSource: null,
+      reconnectAttempts: 0,
+      maxReconnectAttempts: 5,
+      reconnectDelay: 1000,
+      
+      // Remove old throttling variables as they're handled by requestManager
+      // lastRefreshTime: 0,
+      // currentQueueRequest: null
     };
   },
   computed: {
     currentQueue() {
-      return this.queueList.find(q => q.status === 'in_consultation');
+      return this.queueList.find(queue => queue.status === 'in_consultation');
     }
   },
   created() {
+    this.selectedDate = this.getTodayInMYT();
     this.loadData();
-    // Refresh queue list every 30 seconds as backup
-    this.refreshInterval = setInterval(this.loadQueueList, 30000);
-    // Initialize real-time updates
-    this.initializeSSE();
   },
-  async mounted() {
-    await this.loadData();
+  mounted() {
+    // Initialize SSE connection with better error handling
     this.initializeSSE();
     
-    // Request notification permission for queue updates
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
+    // Set up beforeunload handler
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
   },
-  async activated() {
-    // This will be called when returning to this component (if using keep-alive)
-    console.log('Queue management component activated - refreshing data');
-    await this.loadQueueList();
+  activated() {
+    // Refresh data when component is activated (for keep-alive)
+    this.loadData();
   },
   beforeUnmount() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-    if (this.eventSource) {
-      this.eventSource.close();
-    }
+    this.cleanup();
   },
   methods: {
     formatQueueNumber(queueNumber) {
@@ -223,89 +212,93 @@ export default {
       return queueNumber;
     },
     async loadData() {
+      if (this.isLoading) {
+        console.log('⏩ Data loading already in progress, skipping duplicate request');
+        return;
+      }
+      
+      console.log('🔄 Loading queue management data...');
       await Promise.all([
         this.loadPatients(),
         this.loadDoctors(),
         this.loadQueueList()
       ]);
     },
+
     async loadPatients() {
       try {
-        const response = await axios.get('/api/patients');
-        console.log('Raw patient API response:', response);
+        const response = await makeProtectedRequest(
+          'load-patients-queue',
+          async (signal) => {
+            return await axios.get('/api/patients', { signal });
+          },
+          {
+            throttleMs: 10000, // Cache patients for 10 seconds
+            timeout: 15000
+          }
+        );
         
-        // Check the data structure
-        if (response.data && Array.isArray(response.data)) {
-          this.patients = response.data;
-          console.log('Sample patient item:', this.patients.length > 0 ? JSON.stringify(this.patients[0]) : 'No patients');
-        } else {
-          console.error('Unexpected patient data format:', response.data);
-          this.patients = [];
-        }
+        this.patients = response.data;
+        console.log('✅ Patients loaded for queue management');
         
-        if (this.patients.length === 0) {
-          console.warn('No patients were loaded from the API');
-        }
       } catch (error) {
-        console.error('Error loading patients:', error);
-        this.patients = [];
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Patient loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading patients:', error);
+        this.$toast?.error?.('Failed to load patients data');
       }
     },
+
     async loadDoctors() {
       try {
-        const response = await axios.get('/api/doctors');
-        console.log('Raw doctor API response:', response);
+        this.isDoctorLoading = true;
         
-        // Check the data structure
-        if (response.data && Array.isArray(response.data)) {
-          this.doctors = response.data;
-          
-          // Detailed logging for each doctor to see firstName and lastName fields
-          this.doctors.forEach((doctor, index) => {
-            console.log(`Doctor ${index + 1}:`, {
-              id: doctor.id,
-              firstName: doctor.firstName,
-              lastName: doctor.lastName,
-              specialization: doctor.specialization,
-              raw: doctor
-            });
-          });
-          
-        } else {
-          console.error('Unexpected doctor data format:', response.data);
-          this.doctors = [];
-        }
+        const response = await makeProtectedRequest(
+          'load-doctors-queue',
+          async (signal) => {
+            return await axios.get('/api/doctors', { signal });
+          },
+          {
+            throttleMs: 30000, // Cache doctors for 30 seconds (they change less frequently)
+            timeout: 10000
+          }
+        );
         
-        if (this.doctors.length === 0) {
-          console.warn('No doctors were loaded from the API');
-        }
+        this.doctors = response.data;
+        console.log('✅ Doctors loaded for queue management');
+        
       } catch (error) {
-        console.error('Error loading doctors:', error);
-        this.doctors = [];
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Doctor loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading doctors:', error);
+        this.$toast?.error?.('Failed to load doctors data');
+      } finally {
+        this.isDoctorLoading = false;
       }
     },
+
     async loadQueueList() {
-      // Throttle rapid successive calls (minimum 500ms between calls)
-      const now = Date.now();
-      if (now - this.lastRefreshTime < 500) {
-        console.log('⏩ Queue refresh throttled - too soon since last call');
-        return;
-      }
-      this.lastRefreshTime = now;
-      
-      // Cancel previous request if still pending
-      if (this.currentQueueRequest) {
-        this.currentQueueRequest.abort();
-      }
-      
-      // Create new AbortController for this request
-      this.currentQueueRequest = new AbortController();
-      
       try {
-        console.log('Loading queue list for date:', this.selectedDate);
-        const response = await axios.get(`/api/queue?date=${this.selectedDate}`, {
-          signal: this.currentQueueRequest.signal
-        });
+        this.isLoading = true;
+        
+        const response = await makeProtectedRequest(
+          `load-queue-${this.selectedDate}`,
+          async (signal) => {
+            return await axios.get(`/api/queue?date=${this.selectedDate}`, { signal });
+          },
+          {
+            throttleMs: 1000,  // Minimum 1 second between queue refreshes
+            timeout: 15000,
+            maxRetries: 2
+          }
+        );
+        
         console.log('Queue API response:', response);
         
         if (response.data && Array.isArray(response.data)) {
@@ -317,50 +310,223 @@ export default {
           } else {
             console.log(`ℹ️ No queue entries found for ${this.selectedDate}`);
           }
-          
-          // Log each queue item for debugging
-          this.queueList.forEach((queue, index) => {
-            console.log(`Queue ${index + 1}:`, {
-              id: queue.id,
-              queueNumber: queue.queueNumber,
-              registrationNumber: queue.registrationNumber,
-              patientName: queue.patient?.name,
-              doctorName: queue.doctor?.name,
-              status: queue.status,
-              time: queue.time || queue.queueDateTime
-            });
-          });
         } else {
-          console.error('Unexpected queue data format:', response.data);
+          console.warn('⚠️ Invalid queue data received:', response.data);
           this.queueList = [];
         }
+        
       } catch (error) {
-        if (error.name === 'AbortError' || error.name === 'CanceledError') {
-          console.log('⏹️ Queue request was cancelled');
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Queue loading skipped:', error.message);
           return;
         }
-        if (error.code === 'ERR_CANCELED') {
-          console.log('⏹️ Queue request was cancelled (axios)');
-          return;
+        
+        console.error('❌ Error loading queue list:', error);
+        this.$toast?.error?.(`Failed to load queue for ${this.selectedDate}`);
+        
+        // Don't clear existing data on error to maintain UI state
+        if (!this.queueList.length) {
+          this.queueList = [];
         }
-        console.error('❌ Error loading queue:', error);
-        // Only clear the queue list if it's a real error, not a cancellation
-        if (error.response) {
-          // Server responded with error status
-          console.error('Server error:', error.response.status, error.response.data);
-        } else if (error.request) {
-          // Request was made but no response received
-          console.error('Network error - no response received');
-        } else {
-          // Something else happened
-          console.error('Request error:', error.message);
-        }
-        this.queueList = [];
+        
       } finally {
-        this.currentQueueRequest = null;
+        this.isLoading = false;
       }
     },
-    
+
+    async manualRefresh() {
+      console.log('🔄 Manual refresh triggered');
+      
+      // Show user feedback
+      this.$toast?.info?.('Refreshing queue data...');
+      
+      try {
+        // Force refresh by clearing cache
+        await makeProtectedRequest(
+          `load-queue-${this.selectedDate}`,
+          async (signal) => {
+            return await axios.get(`/api/queue?date=${this.selectedDate}&_t=${Date.now()}`, { signal });
+          },
+          {
+            throttleMs: 500,   // Allow more frequent manual refreshes
+            skipThrottle: true, // Skip throttling for manual refresh
+            timeout: 20000
+          }
+        );
+        
+        this.$toast?.success?.('Queue data refreshed');
+        
+      } catch (error) {
+        console.error('❌ Manual refresh failed:', error);
+        this.$toast?.error?.('Failed to refresh queue data');
+      }
+    },
+
+    async acceptPayment() {
+      if (this.isPaymentProcessing) {
+        console.log('⏩ Payment processing already in progress');
+        return;
+      }
+
+      try {
+        this.isPaymentProcessing = true;
+        
+        await makeProtectedRequest(
+          `process-payment-${this.selectedQueue.id}`,
+          async (signal) => {
+            return await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
+              amount: this.paymentAmount,
+              paymentMethod: 'cash'
+            }, { signal });
+          },
+          {
+            throttleMs: 1000,    // Prevent rapid payment processing
+            timeout: 20000,      // Longer timeout for payment processing
+            maxRetries: 1,       // Only retry once for payments
+            skipThrottle: false  // Always respect throttling for payments
+          }
+        );
+
+        console.log('✅ Payment processed successfully');
+        this.$toast?.success?.('Payment processed successfully');
+        
+        // Close modal and refresh queue
+        const modal = bootstrap.Modal.getInstance(document.getElementById('paymentModal'));
+        modal?.hide();
+        
+        this.selectedQueue = null;
+        this.paymentAmount = 0;
+        
+        // Refresh queue list
+        await this.loadQueueList();
+        
+      } catch (error) {
+        if (error.message.includes('throttled')) {
+          this.$toast?.warning?.('Please wait before processing another payment');
+          return;
+        }
+        
+        console.error('❌ Payment processing failed:', error);
+        
+        if (error.response?.status === 409) {
+          this.$toast?.error?.('Payment has already been processed for this queue');
+        } else if (error.response?.status === 400) {
+          this.$toast?.error?.('Invalid payment amount or method');
+        } else {
+          this.$toast?.error?.('Payment processing failed. Please try again.');
+        }
+      } finally {
+        this.isPaymentProcessing = false;
+      }
+    },
+
+    async updateStatus(queueId, newStatus) {
+      try {
+        await makeProtectedRequest(
+          `update-queue-status-${queueId}`,
+          async (signal) => {
+            return await axios.put(`/api/queue/${queueId}/status`, {
+              status: newStatus
+            }, { signal });
+          },
+          {
+            throttleMs: 500,
+            timeout: 10000,
+            maxRetries: 1
+          }
+        );
+        
+        console.log(`✅ Queue ${queueId} status updated to ${newStatus}`);
+        
+        // Refresh queue list to reflect changes
+        await this.loadQueueList();
+        
+      } catch (error) {
+        console.error('❌ Error updating queue status:', error);
+        this.$toast?.error?.('Failed to update queue status');
+      }
+    },
+
+    initializeSSE() {
+      // Close existing connection
+      if (this.eventSource) {
+        this.eventSource.close();
+      }
+
+      try {
+        console.log('🔌 Initializing SSE connection for queue updates...');
+        this.eventSource = new EventSource('/api/queue/stream');
+        
+        this.eventSource.onopen = () => {
+          console.log('✅ SSE connection established');
+          this.reconnectAttempts = 0;
+          this.$toast?.success?.('Real-time updates connected', { timeout: 2000 });
+        };
+        
+        this.eventSource.onmessage = (event) => {
+          try {
+            const queueData = JSON.parse(event.data);
+            console.log('📡 SSE queue update received:', queueData);
+            this.handleQueueUpdate(queueData);
+          } catch (error) {
+            console.error('❌ Error parsing SSE data:', error);
+          }
+        };
+        
+        this.eventSource.onerror = (error) => {
+          console.error('❌ SSE connection error:', error);
+          
+          if (this.eventSource.readyState === EventSource.CLOSED) {
+            this.handleSSEReconnect();
+          }
+        };
+        
+      } catch (error) {
+        console.error('❌ Failed to initialize SSE:', error);
+        this.$toast?.warning?.('Real-time updates unavailable');
+      }
+    },
+
+    handleSSEReconnect() {
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.warn('⚠️ Max SSE reconnection attempts reached');
+        this.$toast?.warning?.('Real-time updates disconnected. Please refresh manually.');
+        return;
+      }
+
+      this.reconnectAttempts++;
+      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
+      
+      console.log(`🔄 Attempting SSE reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+      
+      setTimeout(() => {
+        this.initializeSSE();
+      }, delay);
+    },
+
+    // Component cleanup
+    cleanup() {
+      console.log('🧹 Cleaning up QueueManagement component...');
+      
+      // Close SSE connection
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+      
+      // Cancel all pending requests
+      cancelAllRequests();
+      
+      // Remove event listeners
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
+      
+      console.log('✅ QueueManagement cleanup completed');
+    },
+
+    handleBeforeUnload() {
+      this.cleanup();
+    },
+
     getTodayInMYT() {
       // Get actual current date in Malaysia timezone
       const now = new Date();
@@ -377,31 +543,8 @@ export default {
       return dateString;
     },
     setToday() {
-      this.selectedDate = getTodayInMYT();
+      this.selectedDate = this.getTodayInMYT();
       this.loadQueueList();
-    },
-    manualRefresh() {
-      // Clear any pending debounced calls
-      if (this.dateFilterTimeout) {
-        clearTimeout(this.dateFilterTimeout);
-        this.dateFilterTimeout = null;
-      }
-      // Immediately load queue list
-      console.log('Manual queue refresh triggered');
-      this.loadQueueList();
-    },
-    async addToQueue() {
-      try {
-        await axios.post('/api/queue', this.newQueue);
-        this.newQueue = {
-          patientId: '',
-          doctorId: ''
-        };
-        this.loadQueueList();
-      } catch (error) {
-        console.error('Error adding to queue:', error);
-        alert('Error adding to queue. Please try again.');
-      }
     },
     processPayment(queue) {
       console.log('processPayment called with queue:', queue);
@@ -491,101 +634,6 @@ export default {
       };
       return statusClasses[status] || 'badge bg-secondary';
     },
-    initializeSSE() {
-      // Skip SSE if not supported or in development
-      if (!window.EventSource) {
-        console.warn('EventSource not supported, skipping SSE initialization');
-        return;
-      }
-      
-      // Initialize Server-Sent Events for real-time queue updates
-      try {
-        // Close existing connection if any
-        if (this.eventSource) {
-          this.eventSource.close();
-        }
-        
-        this.eventSource = new EventSource('/api/sse/queue-updates');
-        
-        this.eventSource.onmessage = (event) => {
-          try {
-            const update = JSON.parse(event.data);
-            
-            if (update.type === 'queue_status_update') {
-              this.handleQueueUpdate(update.data);
-            }
-          } catch (error) {
-            console.error('Error parsing SSE message:', error);
-          }
-        };
-        
-        this.eventSource.addEventListener('heartbeat', (event) => {
-          // Just keep the connection alive, no action needed
-          console.log('SSE heartbeat received');
-        });
-        
-        this.eventSource.onerror = (error) => {
-          console.warn('SSE connection error (this is expected in development):', error);
-          
-          // Don't attempt automatic reconnection to reduce console noise
-          // The regular refresh interval will handle updates
-          if (this.eventSource) {
-            this.eventSource.close();
-            this.eventSource = null;
-          }
-        };
-        
-        this.eventSource.onopen = () => {
-          console.log('SSE connection established for queue updates');
-        };
-      } catch (error) {
-        console.warn('SSE initialization failed (using fallback polling):', error);
-      }
-    },
-    handleQueueUpdate(queueData) {
-      // Find and update the specific queue item in the list
-      const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
-      
-      if (queueIndex !== -1) {
-        // Update existing queue item
-        this.queueList[queueIndex] = {
-          ...this.queueList[queueIndex],
-          status: queueData.status,
-          patient: queueData.patient,
-          doctor: queueData.doctor,
-          queueDateTime: queueData.queueDateTime
-        };
-        
-        // Show notification
-        this.showUpdateNotification(queueData);
-      } else {
-        // If queue item not found, only refresh if there's no pending request
-        if (!this.currentQueueRequest) {
-          console.log('Queue item not found, refreshing list...');
-          this.loadQueueList();
-        } else {
-          console.log('Queue refresh skipped - request already in progress');
-        }
-      }
-    },
-    showUpdateNotification(queueData) {
-      // Create a simple notification (you can enhance this with a proper notification library)
-      const message = `Queue #${this.formatQueueNumber(queueData.queueNumber)} status updated to: ${this.formatStatus(queueData.status)}`;
-      
-      // Simple browser notification (optional)
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Queue Update', {
-          body: message,
-          icon: '/favicon.ico',
-          timeout: 3000
-        });
-      }
-      
-      // Console log for development
-      console.log('Queue update:', message);
-      
-      // You could also add a toast notification here using a library like vue-toastification
-    },
     formatDateTime(datetime) {
       if (!datetime) return '';
       const date = new Date(datetime);
@@ -630,69 +678,13 @@ export default {
   },
   watch: {
     selectedDate() {
-      // Clear existing timeout
-      if (this.dateFilterTimeout) {
-        clearTimeout(this.dateFilterTimeout);
-      }
-      
-      // Set new timeout for 2 seconds
-      this.dateFilterTimeout = setTimeout(() => {
-        console.log('Queue date filter triggered after 2 second delay:', this.selectedDate);
-        this.loadQueueList();
-      }, 2000);
+      console.log('📅 Date changed to:', this.selectedDate);
+      this.loadQueueList();
     },
     '$route.query.refresh'() {
       // Refresh queue list when refresh parameter changes
-      console.log('Refresh parameter detected - reloading queue list');
+      console.log('🔄 Refresh parameter detected - reloading queue list');
       this.loadQueueList();
-    }
-  },
-  async created() {
-    await this.loadData();
-    this.initializeSSE();
-    
-    // Request notification permission for queue updates
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  },
-  async mounted() {
-    await this.loadData();
-    this.initializeSSE();
-    
-    // Request notification permission for queue updates
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  },
-  async activated() {
-    // This will be called when returning to this component (if using keep-alive)
-    console.log('Queue management component activated - refreshing data');
-    await this.loadQueueList();
-  },
-  beforeUnmount() {
-    // Cleanup intervals
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-      this.refreshInterval = null;
-    }
-    
-    // Cleanup SSE connection
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-    
-    // Cleanup pending requests
-    if (this.currentQueueRequest) {
-      this.currentQueueRequest.abort();
-      this.currentQueueRequest = null;
-    }
-    
-    // Cleanup debounce timeout
-    if (this.dateFilterTimeout) {
-      clearTimeout(this.dateFilterTimeout);
-      this.dateFilterTimeout = null;
     }
   }
 };

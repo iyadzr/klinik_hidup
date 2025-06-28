@@ -11,8 +11,12 @@
           </div>
           <div class="card-body">
             <div class="text-center mb-4">
-              <div class="profile-avatar">
-                {{ userInitials }}
+              <div class="profile-avatar-container">
+                <img v-if="user.profileImage" :src="user.profileImage" alt="Profile" class="profile-avatar-image">
+                <div v-else class="profile-avatar-initials">{{ userInitials }}</div>
+                <button class="upload-btn" @click="openImageUpload">
+                  <i class="fas fa-camera"></i>
+                </button>
               </div>
               <h5 class="mt-3">{{ user.name }}</h5>
               <p class="text-muted">{{ user.email }}</p>
@@ -133,10 +137,43 @@
       </div>
     </div>
   </div>
+
+  <!-- Profile Image Upload Modal (true overlay) -->
+  <div v-if="showImageUploadModal">
+    <div class="profile-modal-backdrop"></div>
+    <div class="profile-modal-outer">
+      <div class="modal-content" style="max-width: 400px; width: 100%;">
+        <div class="modal-header">
+          <h5 class="modal-title">Update Profile Picture</h5>
+          <button type="button" class="btn-close" @click="closeImageUpload"></button>
+        </div>
+        <div class="modal-body text-center">
+          <input type="file" ref="fileInput" @change="handleFileSelect" accept="image/*" class="d-none"/>
+          <button class="btn btn-primary mb-3" @click="triggerFileInput">
+            <i class="fas fa-upload me-2"></i>Choose Image
+          </button>
+          <div v-if="selectedFile" class="text-muted mb-3">
+            {{ selectedFile.name }}
+          </div>
+          <button v-if="user.profileImage" class="btn btn-outline-danger btn-sm" @click="removeProfileImage">
+            <i class="fas fa-trash me-1"></i>Remove Image
+          </button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeImageUpload">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="uploadImage" :disabled="!selectedFile || uploading">
+            <span v-if="uploading" class="spinner-border spinner-border-sm me-2"></span>
+            {{ uploading ? 'Uploading...' : 'Upload' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
 import axios from 'axios';
+import { nextTick } from 'vue';
 
 export default {
   name: 'UserProfile',
@@ -156,7 +193,10 @@ export default {
       success: null,
       showCurrentPassword: false,
       showNewPassword: false,
-      showConfirmPassword: false
+      showConfirmPassword: false,
+      showImageUploadModal: false,
+      selectedFile: null,
+      uploading: false
     };
   },
   computed: {
@@ -173,88 +213,158 @@ export default {
       return this.form.newPassword === this.form.confirmPassword;
     }
   },
-  mounted() {
-    this.loadUserData();
+  async mounted() {
+    console.log('UserProfile component mounted');
+    // Force remove any leftover modal/backdrop
+    this.showImageUploadModal = false;
+    document.body.classList.remove('modal-open');
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    await this.loadUserData();
   },
   methods: {
-    loadUserData() {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        try {
+    async loadUserData() {
+      this.loading = true;
+      this.error = null;
+      try {
+        // First, get the user ID and token from localStorage
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          this.$router.push('/login');
+          return;
+        }
+        const localUser = JSON.parse(userStr);
+        const userId = localUser.id;
+        const token = localUser.token;
+        if (!userId || !token) {
+          throw new Error('User ID or token not found in local storage.');
+        }
+        // Fetch the latest user data from the server with Authorization header
+        const response = await axios.get(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+        this.user = response.data;
+        // Populate the form with the fresh data
+        this.form.name = this.user.name || '';
+        this.form.email = this.user.email || '';
+        this.form.username = this.user.username || '';
+        // Update localStorage with the fresh data
+        const updatedUser = { ...localUser, ...this.user };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      } catch (e) {
+        console.error('Error loading user data:', e);
+        this.error = 'Failed to load user data. Please try refreshing the page.';
+        // If API fails, fallback to localStorage data
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
           this.user = JSON.parse(userStr);
           this.form.name = this.user.name || '';
           this.form.email = this.user.email || '';
           this.form.username = this.user.username || '';
-        } catch (e) {
-          this.error = 'Error loading user data';
+        } else {
+          this.$router.push('/login');
         }
-      } else {
-        this.$router.push('/login');
+      } finally {
+        this.loading = false;
+      }
+    },
+    openImageUpload() {
+      this.showImageUploadModal = true;
+    },
+    closeImageUpload() {
+      console.log('Closing image upload modal');
+      this.showImageUploadModal = false;
+      this.selectedFile = null;
+    },
+    handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (file) {
+        if (!file.type.startsWith('image/')) {
+          alert('Please select an image file');
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          alert('File size must be less than 5MB');
+          return;
+        }
+        this.selectedFile = file;
+      }
+    },
+    async uploadImage() {
+      if (!this.selectedFile) return;
+      this.uploading = true;
+      try {
+        const formData = new FormData();
+        formData.append('profileImage', this.selectedFile);
+        const userStr = localStorage.getItem('user');
+        const token = userStr ? JSON.parse(userStr).token : null;
+        const headers = { 'Content-Type': 'multipart/form-data' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const response = await axios.post('/api/users/profile-image', formData, { headers });
+        if (response.data.profileImageUrl) {
+          this.user.profileImage = response.data.profileImageUrl;
+          // Update localStorage correctly
+          const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+          currentUser.profileImage = response.data.profileImageUrl;
+          localStorage.setItem('user', JSON.stringify(currentUser));
+          this.$emit('profile-updated');
+        }
+        this.closeImageUpload();
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        alert('Error uploading image: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
+      } finally {
+        this.uploading = false;
+      }
+    },
+    async removeProfileImage() {
+      if (!confirm('Are you sure you want to remove your profile picture?')) return;
+      try {
+        const userStr = localStorage.getItem('user');
+        const token = userStr ? JSON.parse(userStr).token : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        await axios.delete('/api/users/profile-image', { headers });
+        this.user.profileImage = null;
+        // Update localStorage correctly
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        currentUser.profileImage = null;
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        this.$emit('profile-updated');
+        this.closeImageUpload();
+      } catch (error) {
+        console.error('Error removing image:', error);
+        alert('Error removing image: ' + (error.response?.data?.error || error.response?.data?.message || error.message));
       }
     },
     async updateProfile() {
       this.loading = true;
       this.error = null;
       this.success = null;
-
       try {
-        // Validate form
-        if (!this.form.name || !this.form.email || !this.form.username) {
-          this.error = 'Please fill in all required fields';
-          return;
+        const userId = this.user.id;
+        const userStr = localStorage.getItem('user');
+        const token = userStr ? JSON.parse(userStr).token : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        if (!userId) {
+          throw new Error('User ID not found.');
         }
-
-        if (this.form.newPassword && !this.isPasswordMatch) {
-          this.error = 'New passwords do not match';
-          return;
-        }
-
-        if (this.form.newPassword && !this.form.currentPassword) {
-          this.error = 'Current password is required to change password';
-          return;
-        }
-
-        // Prepare update data
-        const updateData = {
-          name: this.form.name,
-          email: this.form.email,
-          username: this.form.username
-        };
-
-        // Add password fields if changing password
-        if (this.form.newPassword) {
-          updateData.currentPassword = this.form.currentPassword;
-          updateData.newPassword = this.form.newPassword;
-        }
-
-        // Make API call to update profile
-        const response = await axios.put('/api/profile', updateData);
-
-        // Update localStorage with new user data
-        const updatedUser = {
-          ...this.user,
-          name: this.form.name,
-          email: this.form.email,
-          username: this.form.username
-        };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-        this.user = updatedUser;
-
-        // Clear password fields
+        const response = await axios.put(`/api/users/${userId}`, this.form, { headers });
+        this.user = response.data.user;
+        localStorage.setItem('user', JSON.stringify(this.user));
+        this.success = 'Profile updated successfully!';
+        // Clear password fields after successful update
         this.form.currentPassword = '';
         this.form.newPassword = '';
         this.form.confirmPassword = '';
-
-        this.success = 'Profile updated successfully';
-
-        // Emit event to update header if needed
-        this.$emit('profile-updated');
-
-      } catch (error) {
-        console.error('Profile update error:', error);
-        this.error = error.response?.data?.message || 'Failed to update profile';
+        // Optionally, reload user data to ensure UI is fully in sync
+        await this.loadUserData();
+      } catch (err) {
+        this.error = err.response?.data?.message || 'An error occurred during profile update.';
       } finally {
         this.loading = false;
+      }
+    },
+    async triggerFileInput() {
+      await nextTick();
+      if (this.$refs.fileInput) {
+        this.$refs.fileInput.click();
       }
     }
   }
@@ -262,6 +372,50 @@ export default {
 </script>
 
 <style scoped>
+.profile-avatar-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto;
+}
+.profile-avatar-image, .profile-avatar-initials {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+.profile-avatar-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #007bff;
+  color: #fff;
+  font-size: 2.5rem;
+  font-weight: bold;
+}
+.upload-btn {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #ddd;
+  color: #007bff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.upload-btn:hover {
+  background: #007bff;
+  color: #fff;
+}
 .profile-avatar {
   width: 80px;
   height: 80px;
@@ -303,5 +457,20 @@ export default {
 .btn-primary:hover {
   background-color: #0056b3;
   border-color: #0056b3;
+}
+
+.profile-modal-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1040;
+}
+.profile-modal-outer {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
 }
 </style> 

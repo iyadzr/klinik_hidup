@@ -768,32 +768,38 @@ export default {
           let patientId, regNumber;
 
           if (this.patientType === 'new') {
-            // Register new patient
-            const response = await axios.post('/api/patients', this.patient);
-            patientId = response.data.id;
+            // Register new patient using the registration endpoint
+            const response = await axios.post('/api/patients/register', {
+              patient: this.patient,
+              doctorId: this.queueInfo.doctorId
+            });
+            patientId = response.data.patientId;
             regNumber = response.data.registrationNumber;
+            
+            // Patient is already queued by the registration endpoint
+            if (response.data) {
+              alert('Patient registered and added to queue successfully!');
+              this.resetForm();
+              this.$router.push('/queue?refresh=' + Date.now());
+            }
+            return; // Exit early since registration endpoint handles both patient creation and queueing
           } else if (this.selectedPatient) {
-            // Update existing patient with any modifications
-            await axios.put(`/api/patients/${this.selectedPatient.id}`, this.patient);
-            patientId = this.selectedPatient.id;
-            regNumber = this.selectedPatient.registrationNumber;
+            // For existing patients, update with symptoms and add to queue
+            const updatedPatient = { ...this.selectedPatient, ...this.patient };
+            const response = await axios.post('/api/patients/register', {
+              patient: updatedPatient,
+              doctorId: this.queueInfo.doctorId
+            });
+            
+            if (response.data) {
+              alert('Existing patient added to queue successfully!');
+              this.resetForm();
+              this.$router.push('/queue?refresh=' + Date.now());
+            }
+            return; // Exit early since registration endpoint handles queueing
           } else {
             alert('Please select an existing patient before proceeding.');
             return;
-          }
-
-          // Add to queue
-          const queueResponse = await axios.post('/api/queue', {
-            patientId: patientId,
-            doctorId: this.queueInfo.doctorId
-          });
-
-          if (queueResponse.data) {
-            alert('Patient registered and added to queue successfully!');
-            // Reset the form for next registration
-            this.resetForm();
-            // Force refresh of queue data by adding a timestamp parameter
-            this.$router.push('/queue?refresh=' + Date.now());
           }
         }
       } catch (error) {

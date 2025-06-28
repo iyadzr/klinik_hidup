@@ -46,7 +46,7 @@ class Queue
     private ?string $paymentMethod = null;
 
     #[ORM\Column(type: "decimal", precision: 10, scale: 2, nullable: true)]
-    private ?float $amount = null;
+    private ?string $amount = null;
 
     public function getRegistrationNumber(): ?int
     {
@@ -183,12 +183,12 @@ class Queue
         return $this;
     }
 
-    public function getAmount(): ?float
+    public function getAmount(): ?string
     {
         return $this->amount;
     }
 
-    public function setAmount(?float $amount): self
+    public function setAmount(?string $amount): self
     {
         $this->amount = $amount;
         return $this;

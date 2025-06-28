@@ -3,19 +3,25 @@
     <!-- Header Bar -->
     <header v-if="isAuthenticated && !isAuthPage" class="app-header">
       <div class="header-left">
+        <button v-if="isMobile" class="sidebar-toggle-btn" @click="toggleSidebar">
+          <i class="fas fa-bars"></i>
+        </button>
         <span class="header-title">Klinik HiDUP sihat</span>
       </div>
       <div class="header-right">
-        <UserProfileMenu :user="currentUser" />
+        <UserProfileMenu :user="currentUser" @profile-updated="updateCurrentUser" />
       </div>
     </header>
 
     <div class="main-area">
-      <!-- Sidebar (move below backdrop for proper stacking) -->
+      <!-- Sidebar Backdrop -->
+      <div v-if="isMobile && isSidebarOpen" class="sidebar-backdrop" @click="closeSidebar"></div>
+      
+      <!-- Sidebar -->
       <nav v-if="isAuthenticated && !isAuthPage" :class="['sidebar', { open: isSidebarOpen }]">
         <ul class="nav flex-column sidebar-nav">
           <li v-for="item in filteredMenu" :key="item.path" class="nav-item">
-            <router-link :to="item.path" class="nav-link">
+            <router-link :to="item.path" class="nav-link" @click="handleLinkClick">
               <i :class="item.icon"></i> {{ item.label }}
             </router-link>
           </li>
@@ -196,7 +202,7 @@
 </style>
 
 <script>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import AuthService from './services/AuthService';
 import UserProfileMenu from './components/UserProfileMenu.vue';
@@ -209,12 +215,38 @@ export default {
     const route = useRoute();
     const isSidebarOpen = ref(false);
     const currentUser = ref(null);
+    const isMobile = ref(window.innerWidth < 992);
 
     // Make computed properties reactive to currentUser changes
     const isAuthenticated = computed(() => !!currentUser.value && !!currentUser.value.token);
     const isSuperAdmin = computed(() => currentUser.value?.roles?.includes('ROLE_SUPER_ADMIN') || false);
     const userRoles = computed(() => currentUser.value?.roles || []);
     const isAuthPage = computed(() => ['/login', '/register'].includes(route.path));
+
+    const toggleSidebar = () => {
+      isSidebarOpen.value = !isSidebarOpen.value;
+    };
+
+    const closeSidebar = () => {
+      isSidebarOpen.value = false;
+    };
+
+    const handleLinkClick = () => {
+      if (isMobile.value) {
+        closeSidebar();
+      }
+    };
+    
+    const handleResize = () => {
+      isMobile.value = window.innerWidth < 992;
+      if (!isMobile.value) {
+        isSidebarOpen.value = false;
+      }
+    };
+
+    const updateCurrentUser = () => {
+      currentUser.value = AuthService.getCurrentUser();
+    };
 
     // Define the menu items with role-based access
     const menu = [
@@ -295,10 +327,6 @@ export default {
       }
     ];
 
-    const toggleSidebar = () => {
-      isSidebarOpen.value = !isSidebarOpen.value;
-    };
-
     const handleLogout = () => {
       AuthService.logout();
       currentUser.value = null;
@@ -360,11 +388,24 @@ export default {
     });
 
     onMounted(() => {
-      loadUserData();
+      currentUser.value = AuthService.getCurrentUser();
+      window.addEventListener('resize', handleResize);
+      
+      // Watch for route changes to close sidebar
+      watch(() => route.path, () => {
+          if (isMobile.value) {
+              closeSidebar();
+          }
+      });
+    });
+
+    onUnmounted(() => {
+      window.removeEventListener('resize', handleResize);
     });
 
     return {
       isSidebarOpen,
+      isMobile,
       currentUser,
       isAuthenticated,
       isSuperAdmin,
@@ -372,7 +413,9 @@ export default {
       isAuthPage,
       hasRole,
       toggleSidebar,
-      handleLogout,
+      closeSidebar,
+      handleLinkClick,
+      updateCurrentUser,
       handleLoginSuccess,
       handleDataChange,
       filteredMenu

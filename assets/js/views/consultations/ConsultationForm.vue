@@ -290,14 +290,7 @@
                     
                     <div class="col-md-2">
                       <div class="form-floating">
-                        <input
-                          type="number"
-                          class="form-control"
-                          :id="`quantity-${index}`"
-                          v-model.number="medItem.quantity"
-                          min="1"
-                          required
-                        >
+                        <input type="number" class="form-control" :id="`quantity-${index}`" v-model.number="medItem.quantity" min="1" required>
                         <label :for="`quantity-${index}`">Qty</label>
                       </div>
                       <small class="text-muted">{{ medItem.unitDescription || medItem.unitType || 'pieces' }}</small>
@@ -305,15 +298,7 @@
                     
                     <div class="col-md-2">
                       <div class="form-floating">
-                        <input
-                          type="number"
-                          class="form-control"
-                          :id="`price-${index}`"
-                          v-model.number="medItem.actualPrice"
-                          min="0"
-                          step="0.01"
-                          placeholder="0.00"
-                        >
+                        <input type="number" class="form-control" :id="`price-${index}`" v-model.number="medItem.actualPrice" min="0" step="0.01" placeholder="0.00">
                         <label :for="`price-${index}`">Price (RM)</label>
                       </div>
                       <small class="text-muted">Final price</small>
@@ -327,23 +312,14 @@
                     
                     <div class="col-md-12" v-if="medItem.showInstructions">
                       <div class="form-floating">
-                        <textarea
-                          class="form-control"
-                          :id="`instructions-${index}`"
-                          v-model="medItem.instructions"
-                          style="height: 60px"
-                          placeholder="Dosage instructions..."
-                        ></textarea>
+                        <textarea class="form-control" :id="`instructions-${index}`" v-model="medItem.instructions" style="height: 60px" placeholder="Dosage instructions...">
+                        </textarea>
                         <label :for="`instructions-${index}`">Instructions</label>
                       </div>
                     </div>
                     
                     <div class="col-md-12">
-                      <button 
-                        type="button" 
-                        class="btn btn-link btn-sm p-0" 
-                        @click="medItem.showInstructions = !medItem.showInstructions"
-                      >
+                      <button type="button" class="btn btn-link btn-sm p-0" @click="medItem.showInstructions = !medItem.showInstructions">
                         {{ medItem.showInstructions ? 'Hide' : 'Add' }} Instructions
                       </button>
                     </div>
@@ -384,12 +360,7 @@
                   Issue Medical Certificate (MC) for this visit
                 </label>
               </div>
-              <button 
-                type="button" 
-                class="btn btn-outline-info btn-sm" 
-                @click="showMCPreview" 
-                v-if="consultation.hasMedicalCertificate && selectedPatient"
-                :disabled="!consultation.mcStartDate || !consultation.mcEndDate">
+              <button type="button" class="btn btn-outline-info btn-sm" @click="showMCPreview" v-if="consultation.hasMedicalCertificate && selectedPatient" :disabled="!consultation.mcStartDate || !consultation.mcEndDate">
                 <i class="fas fa-eye me-1"></i> Review MC
               </button>
             </div>
@@ -398,13 +369,7 @@
               <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="mb-3">
                 <label class="form-label fw-bold">Select patients to print MC for:</label>
                 <div v-for="patient in groupPatients" :key="patient.id" class="form-check">
-                  <input 
-                    class="form-check-input" 
-                    type="checkbox" 
-                    :id="'mc-patient-' + patient.id" 
-                    :value="patient.id" 
-                    v-model="mcSelectedPatientIds"
-                  >
+                  <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
                   <label class="form-check-label" :for="'mc-patient-' + patient.id">
                     {{ patient.name || patient.displayName || 'Unknown' }}
                     <small v-if="patient.relationship" class="text-muted">({{ patient.relationship }})</small>
@@ -832,7 +797,7 @@
 </template>
 
 <script>
-// Helper to get today's date in YYYY-MM-DD npm npmormat
+// Helper to get today's date in YYYY-MM-DD format
 function getTodayDate() {
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -845,8 +810,8 @@ import axios from 'axios';
 import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
 import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
 import * as bootstrap from 'bootstrap';
-import AuthService from '../../services/AuthService';
-import { getTodayInMYT } from '../../utils/dateUtils';
+import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
+import searchDebouncer from '../../utils/searchDebouncer';
 
 export default {
   name: 'ConsultationForm',
@@ -854,26 +819,19 @@ export default {
     MedicalCertificateForm,
     PrescriptionForm
   },
-  emits: [
-    'patientAdded',
-    'patientUpdated',
-    'patientDeleted',
-    'loginSuccess'
-  ],
   data() {
-    const today = new Date().toISOString().split('T')[0];
     return {
       consultation: {
         patientId: null,
         doctorId: null,
-        consultationDate: today,
+        consultationDate: getTodayDate(),
         diagnosis: '',
         notes: '',
         consultationFee: 0,
         hasMedicalCertificate: true,
         medicalCertificateDays: 1,
-        mcStartDate: today,
-        mcEndDate: today,
+        mcStartDate: getTodayDate(),
+        mcEndDate: getTodayDate(),
         medications: [],
         status: 'completed'
       },
@@ -901,7 +859,7 @@ export default {
       instructions: '',
       selectedVisit: null,
       visitDetailsModal: null,
-      medicationSearchTimeout: null,
+      medicationSearcher: searchDebouncer,
       newMedicationForm: {
         name: '',
         unitType: '',
@@ -1187,31 +1145,21 @@ export default {
     async searchMedications(medItem, event) {
       const searchTerm = event.target.value;
       
-      if (this.medicationSearchTimeout) {
-        clearTimeout(this.medicationSearchTimeout);
-      }
-      
-      if (searchTerm.length < 2) {
+      try {
+        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
+        
+        if (results) {
+          medItem.suggestions = results;
+          medItem.selectedSuggestionIndex = results.length > 0 ? 0 : -1;
+          medItem.showCreateNew = true;
+        }
+        
+      } catch (error) {
+        console.error('Medication search error:', error);
         medItem.suggestions = [];
         medItem.selectedSuggestionIndex = -1;
-        return;
+        medItem.showCreateNew = true;
       }
-      
-      this.medicationSearchTimeout = setTimeout(async () => {
-        try {
-          const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
-          medItem.suggestions = response.data;
-          medItem.selectedSuggestionIndex = 0; // Pre-select first suggestion
-          
-          // Always ensure the "create new" option is visible by adding a flag
-          medItem.showCreateNew = true;
-        } catch (error) {
-          console.error('Error searching medications:', error);
-          medItem.suggestions = [];
-          medItem.selectedSuggestionIndex = -1;
-          medItem.showCreateNew = true; // Still show create new on error
-        }
-      }, 300);
     },
     
     selectMedication(medItem, medication) {
@@ -1379,9 +1327,7 @@ export default {
     },
     formatQueueNumber(queueNumber) {
       if (!queueNumber) return '';
-      // Ensure string
       queueNumber = queueNumber.toString();
-      // Pad to 4 digits (e.g., 8001 -> 8001, 801 -> 0801)
       if (queueNumber.length === 4) return queueNumber;
       if (queueNumber.length === 3) return '0' + queueNumber;
       if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
@@ -1536,7 +1482,7 @@ export default {
       `;
 
       // Create a new window for printing
-      const printWindow = window.open('', '_blank', 'width=400,height=300');
+      const printWindow = window.open('', '', 'width=400,height=300');
       printWindow.document.write(labelContent);
       printWindow.document.close();
       
@@ -1564,73 +1510,444 @@ export default {
     }
   },
   async created() {
-    await this.loadPatients();
-    await this.loadDoctors();
-    this.medicalCertificateModal = new bootstrap.Modal(document.getElementById('medicalCertificateModal'));
-    
-    // Check if we're coming from the queue with patient/doctor info
-    const routeQuery = this.$route.query;
-    if (routeQuery.queueNumber && routeQuery.patientId && routeQuery.doctorId) {
-      // Auto-fill from queue information
-      this.consultation.patientId = parseInt(routeQuery.patientId);
-      this.consultation.doctorId = parseInt(routeQuery.doctorId);
-      this.queueNumber = routeQuery.queueNumber;
-      
-      // Check if this is a group consultation
-      if (routeQuery.groupId) {
-        this.isGroupConsultation = true;
-        this.groupId = routeQuery.groupId;
-        await this.loadGroupPatients();
-      }
-      
-      // Load patient details
-      await this.fetchPatientDetails();
-    } else {
-      // Set the doctor ID from the logged-in user or use the first doctor
-      const user = JSON.parse(localStorage.getItem('user'));
-      if (user && user.id) {
-        this.consultation.doctorId = user.id;
-      } else if (this.doctors && this.doctors.length > 0) {
-        // Temporarily use the first doctor until auth is implemented
-        this.consultation.doctorId = this.doctors[0].id;
-        console.log('Using first doctor as default:', this.doctors[0]);
-      }
-    }
-    
-    if (this.$route.params.id) {
-      await this.loadConsultation();
-    } else {
-      // Default the current date for MC
-      this.consultation.mcStartDate = getTodayDate();
-      this.consultation.mcEndDate = getTodayDate();
-    }
+    // Just load initial data
+    this.loadInitialData();
   },
   
-  mounted() {
-    // Initialize modals - DOM manipulation should happen in mounted, not created
-    const prescriptionModalEl = document.getElementById('prescriptionModal');
-    if (prescriptionModalEl) { 
-      this.prescriptionModal = new Modal(prescriptionModalEl);
-    }
-    
-    // Initialize the MC preview modal as well
-    const mcPreviewModalEl = document.getElementById('mcPreviewModal');
-    if (mcPreviewModalEl) {
-      this.mcPreviewModal = new Modal(mcPreviewModalEl);
+  beforeUnmount() {
+    this.cleanup();
+  },
+  
+  methods: {
+    async loadInitialData() {
+      console.log('🔄 Loading consultation form data...');
+      
+      try {
+        await Promise.all([
+          this.loadPatients(),
+          this.loadDoctors(),
+          this.loadMedications()
+        ]);
+        
+        // Load consultation data if editing
+        if (this.$route.params.id) {
+          await this.loadConsultation();
+        } else {
+          await this.fetchPatientDetails();
+        }
+        
+        // Load group patients if applicable
+        if (this.isGroupConsultation) {
+          await this.loadGroupPatients();
+        }
+        
+      } catch (error) {
+        console.error('❌ Error loading initial data:', error);
+        this.$toast?.error?.('Failed to load consultation data');
+      }
+    },
+
+    async loadPatients() {
+      try {
+        const response = await makeProtectedRequest(
+          'load-patients-consultation',
+          async (signal) => {
+            return await axios.get('/api/patients', { signal });
+          },
+          {
+            throttleMs: 30000, // Cache patients for 30 seconds
+            timeout: 15000
+          }
+        );
+        
+        this.patients = response.data;
+        console.log('✅ Patients loaded for consultation');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Patient loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading patients:', error);
+        this.patients = [];
+      }
+    },
+
+    async loadDoctors() {
+      try {
+        this.isDoctorLoading = true;
+        
+        const response = await makeProtectedRequest(
+          'load-doctors-consultation',
+          async (signal) => {
+            return await axios.get('/api/doctors', { signal });
+          },
+          {
+            throttleMs: 60000, // Cache doctors for 1 minute
+            timeout: 10000
+          }
+        );
+        
+        this.doctors = response.data;
+        console.log('✅ Doctors loaded for consultation');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Doctor loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading doctors:', error);
+        this.doctors = [];
+      } finally {
+        this.isDoctorLoading = false;
+      }
+    },
+
+    async loadMedications() {
+      try {
+        const response = await makeProtectedRequest(
+          'load-medications-consultation',
+          async (signal) => {
+            return await axios.get('/api/medications', { signal });
+          },
+          {
+            throttleMs: 120000, // Cache medications for 2 minutes
+            timeout: 20000
+          }
+        );
+        
+        this.medications = response.data;
+        console.log('✅ Medications loaded for consultation');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Medication loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading medications:', error);
+        this.medications = [];
+      }
+    },
+
+    async fetchPatientDetails() {
+      const patientId = this.$route.query.patientId;
+      if (!patientId) return;
+
+      try {
+        const response = await makeProtectedRequest(
+          `fetch-patient-${patientId}`,
+          async (signal) => {
+            return await axios.get(`/api/patients/${patientId}`, { signal });
+          },
+          {
+            throttleMs: 5000,
+            timeout: 10000
+          }
+        );
+        
+        this.selectedPatientId = patientId;
+        console.log('✅ Patient details loaded');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Patient details loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error fetching patient details:', error);
+        this.$toast?.error?.('Failed to load patient details');
+      }
+    },
+
+    async loadConsultation() {
+      const consultationId = this.$route.params.id;
+      if (!consultationId) return;
+
+      try {
+        const response = await makeProtectedRequest(
+          `load-consultation-${consultationId}`,
+          async (signal) => {
+            return await axios.get(`/api/consultations/${consultationId}`, { signal });
+          },
+          {
+            throttleMs: 2000,
+            timeout: 15000
+          }
+        );
+        
+        // Load consultation data
+        this.consultation = response.data;
+        this.selectedPatientId = response.data.patientId;
+        console.log('✅ Consultation loaded for editing');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Consultation loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading consultation:', error);
+        this.$toast?.error?.('Failed to load consultation data');
+      }
+    },
+
+    async saveConsultation() {
+      if (this.isSaving) {
+        console.log('⏩ Save already in progress');
+        return;
+      }
+
+      try {
+        this.isSaving = true;
+        
+        // Prepare consultation data
+        const consultationData = {
+          ...this.consultation,
+          patientId: this.selectedPatientId,
+          prescribedMedications: this.prescribedMedications,
+          totalAmount: this.totalAmount,
+          mcData: this.consultation.hasMC ? {
+            startDate: this.consultation.mcStartDate,
+            endDate: this.consultation.mcEndDate,
+            days: this.calculateMCDays(),
+            selectedPatientIds: this.mcSelectedPatientIds
+          } : null
+        };
+
+        const url = this.isEditing() 
+          ? `/api/consultations/${this.$route.params.id}` 
+          : '/api/consultations';
+        
+        const method = this.isEditing() ? 'PUT' : 'POST';
+
+        await makeProtectedRequest(
+          `save-consultation-${this.selectedPatientId || 'new'}`,
+          async (signal) => {
+            return await axios({
+              method,
+              url,
+              data: consultationData,
+              signal
+            });
+          },
+          {
+            throttleMs: 2000,     // Prevent rapid saving
+            timeout: 30000,      // Longer timeout for save operations
+            maxRetries: 1,       // Only retry once for saves
+            skipThrottle: false  // Always respect throttling for saves
+          }
+        );
+
+        console.log('✅ Consultation saved successfully');
+        this.$toast?.success?.('Consultation saved successfully');
+        
+        // Redirect to consultations list or queue
+        this.$router.push('/consultations');
+        
+      } catch (error) {
+        if (error.message.includes('throttled')) {
+          this.$toast?.warning?.('Please wait before saving again');
+          return;
+        }
+        
+        console.error('❌ Error saving consultation:', error);
+        
+        if (error.response?.status === 400) {
+          this.$toast?.error?.('Invalid consultation data. Please check all fields.');
+        } else if (error.response?.status === 409) {
+          this.$toast?.error?.('Consultation data has been modified. Please refresh and try again.');
+        } else {
+          this.$toast?.error?.('Failed to save consultation. Please try again.');
+        }
+      } finally {
+        this.isSaving = false;
+      }
+    },
+
+    async searchMedications(medItem, event) {
+      const searchTerm = event.target.value;
+      
+      try {
+        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
+        
+        if (results) {
+          medItem.suggestions = results;
+          medItem.selectedSuggestionIndex = results.length > 0 ? 0 : -1;
+          medItem.showCreateNew = true;
+        }
+        
+      } catch (error) {
+        console.error('Medication search error:', error);
+        medItem.suggestions = [];
+        medItem.selectedSuggestionIndex = -1;
+        medItem.showCreateNew = true;
+      }
+    },
+
+    // The actual search function used by SearchDebouncer
+    async performMedicationSearch(searchTerm, context) {
+      try {
+        const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
+        return response.data;
+        
+      } catch (error) {
+        console.error('❌ Error in medication search API:', error);
+        throw error;
+      }
+    },
+
+    async loadVisitHistories() {
+      if (!this.selectedPatientId || this.isLoadingVisitHistories) return;
+
+      try {
+        this.isLoadingVisitHistories = true;
+        
+        const response = await makeProtectedRequest(
+          `load-visit-histories-${this.selectedPatientId}`,
+          async (signal) => {
+            return await axios.get(`/api/patients/${this.selectedPatientId}/visits`, { signal });
+          },
+          {
+            throttleMs: 5000,
+            timeout: 15000
+          }
+        );
+        
+        this.visitHistories = response.data;
+        console.log('✅ Visit histories loaded');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Visit histories loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading visit histories:', error);
+        this.visitHistories = [];
+        this.$toast?.error?.('Failed to load visit histories');
+      } finally {
+        this.isLoadingVisitHistories = false;
+      }
+    },
+
+    async loadGroupPatients() {
+      const queueNumber = this.$route.query.queueNumber;
+      if (!queueNumber) return;
+
+      try {
+        const response = await makeProtectedRequest(
+          `load-group-patients-${queueNumber}`,
+          async (signal) => {
+            return await axios.get(`/api/queue/${queueNumber}/patients`, { signal });
+          },
+          {
+            throttleMs: 10000,
+            timeout: 15000
+          }
+        );
+        
+        this.groupPatients = response.data;
+        
+        // Default all patients selected for MC
+        this.mcSelectedPatientIds = this.groupPatients.map(p => p.id);
+        
+        console.log('✅ Group patients loaded');
+        
+      } catch (error) {
+        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
+          console.log('⏩ Group patients loading skipped:', error.message);
+          return;
+        }
+        
+        console.error('❌ Error loading group patients:', error);
+        this.groupPatients = [];
+        this.$toast?.error?.('Failed to load group patients');
+      }
+    },
+
+    async createNewMedication() {
+      if (!this.newMedication.name.trim()) {
+        this.$toast?.error?.('Medication name is required');
+        return;
+      }
+
+      try {
+        const response = await makeProtectedRequest(
+          `create-medication-${Date.now()}`,
+          async (signal) => {
+            return await axios.post('/api/medications', this.newMedication, { signal });
+          },
+          {
+            throttleMs: 1000,
+            timeout: 15000,
+            maxRetries: 1
+          }
+        );
+
+        const createdMedication = response.data;
+        
+        // Add to medications list
+        this.medications.push(createdMedication);
+        
+        // Select the new medication for the current item
+        if (this.currentMedicationItem) {
+          this.selectMedication(this.currentMedicationItem, createdMedication);
+        }
+        
+        // Clear the form and close modal
+        this.newMedication = {
+          name: '',
+          category: '',
+          unitType: 'tablet',
+          unitDescription: '',
+          sellingPrice: 0.00
+        };
+        
+        const modal = bootstrap.Modal.getInstance(document.getElementById('createMedicationModal'));
+        modal?.hide();
+        
+        console.log('✅ New medication created successfully');
+        this.$toast?.success?.('New medication created successfully');
+        
+      } catch (error) {
+        if (error.message.includes('throttled')) {
+          this.$toast?.warning?.('Please wait before creating another medication');
+          return;
+        }
+        
+        console.error('❌ Error creating medication:', error);
+        
+        if (error.response?.status === 409) {
+          this.$toast?.error?.('A medication with this name already exists');
+        } else if (error.response?.status === 400) {
+          this.$toast?.error?.('Invalid medication data. Please check all fields.');
+        } else {
+          this.$toast?.error?.('Failed to create medication. Please try again.');
+        }
+      }
+    },
+
+    // Component cleanup
+    cleanup() {
+      console.log('🧹 Cleaning up ConsultationForm component...');
+      
+      // Cancel all pending requests
+      cancelAllRequests();
+      
+      // Cleanup search debouncer
+      if (this.medicationSearcher) {
+        this.medicationSearcher.cleanup();
+        this.medicationSearcher = null;
+      }
+      
+      console.log('✅ ConsultationForm cleanup completed');
     }
 
-    // Initialize patient details if needed
-    if (this.consultation.patientId) {
-      this.fetchPatientDetails();
-    }
-
-    // Initialize visit details modal
-    this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
-    
-    // Initialize with one empty medication row
-    this.addMedicationRow();
   }
-}
+};
 </script>
 
 <style scoped>

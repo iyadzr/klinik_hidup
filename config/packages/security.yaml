@@ -26,8 +26,15 @@ security:
     # Easy way to control access for large sections of your site
     # Note: Only the *first* access control that matches will be used
     access_control:
-        # DEVELOPMENT MODE: Allow public access to all routes
+        # Allow public access to login and register endpoints
+        - { path: ^/api/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/register, roles: PUBLIC_ACCESS }
+        # Restrict all other /api routes to authenticated users
+        - { path: ^/api, roles: ROLE_USER }
+        # Allow public access to everything else (for development)
         - { path: ^/, roles: PUBLIC_ACCESS }
+        # DEVELOPMENT MODE: Allow public access to all other routes
+        # - { path: ^/, roles: PUBLIC_ACCESS }
         # The following are commented out for development:
         # - { path: ^/api, roles: ROLE_USER }
         # - { path: ^/dashboard, roles: ROLE_USER }

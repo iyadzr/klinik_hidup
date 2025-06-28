@@ -23,4 +23,44 @@ class PatientRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    public function findBySearchTermPaginated(string $searchTerm, int $page, int $limit): array
+    {
+        $offset = ($page - 1) * $limit;
+
+        $qb = $this->createQueryBuilder('p')
+            ->where('p.name LIKE :term')
+            ->orWhere('p.nric LIKE :term')
+            ->orWhere('p.phone LIKE :term')
+            ->setParameter('term', '%' . $searchTerm . '%')
+            ->orderBy('p.name', 'ASC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit);
+
+        return $qb->getQuery()->getResult();
+    }
+
+    public function countBySearchTerm(string $searchTerm): int
+    {
+        $qb = $this->createQueryBuilder('p')
+            ->select('count(p.id)')
+            ->where('p.name LIKE :term')
+            ->orWhere('p.nric LIKE :term')
+            ->orWhere('p.phone LIKE :term')
+            ->setParameter('term', '%' . $searchTerm . '%');
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
+    public function findPaginated(int $page, int $limit): array
+    {
+        $offset = ($page - 1) * $limit;
+
+        $qb = $this->createQueryBuilder('p')
+            ->orderBy('p.name', 'ASC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit);
+
+        return $qb->getQuery()->getResult();
+    }
 }

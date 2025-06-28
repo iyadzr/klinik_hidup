@@ -14,7 +14,6 @@
             class="form-control" 
             placeholder="Search by name, NRIC, or phone" 
             v-model="searchQuery" 
-            @keyup.enter="searchPatients"
             @input="onSearchInput"
           >
           <button class="btn btn-outline-primary" @click="searchPatients" :disabled="loading">
@@ -96,6 +95,34 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="d-flex justify-content-between align-items-center mt-4" v-if="totalPages > 1">
+        <div class="d-flex align-items-center">
+            <span class="text-muted me-3">
+                Showing {{ (currentPage - 1) * perPage + 1 }} to {{ Math.min(currentPage * perPage, totalPatients) }} of {{ totalPatients }} patients
+            </span>
+            <select v-model="perPage" @change="loadPatients" class="form-select form-select-sm" style="width: 75px;">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+        </div>
+        <nav>
+            <ul class="pagination mb-0">
+                <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage - 1)">Previous</a>
+                </li>
+                <li class="page-item" v-for="page in pages" :key="page" :class="{ active: currentPage === page }">
+                    <a class="page-link" href="#" @click.prevent="goToPage(page)">{{ page }}</a>
+                </li>
+                <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage + 1)">Next</a>
+                </li>
+            </ul>
+        </nav>
     </div>
 
     <!-- Add/Edit Patient Modal -->
@@ -261,7 +288,7 @@
                     <tr>
                       <th>Date</th>
                       <th>Doctor</th>
-                      <th>Diagnosis</th>
+                      <th>Consultation Details</th>
                       <th>Status</th>
                       <th>Fees</th>
                       <th>Action</th>
@@ -281,8 +308,8 @@
                         </div>
                       </td>
                       <td>
-                        <span v-if="visit.diagnosis" class="badge bg-info">{{ visit.diagnosis }}</span>
-                        <span v-else class="text-muted">No diagnosis</span>
+                        <span v-if="visit.notes" class="text-truncate" style="max-width: 200px; display: inline-block;" :title="visit.notes">{{ visit.notes }}</span>
+                        <span v-else class="text-muted">No consultation details recorded</span>
                       </td>
                       <td>
                         <span :class="getStatusBadgeClass(visit.status)">
@@ -390,16 +417,17 @@
                   </div>
                   <div class="card-body">
                     <div class="mb-3">
-                      <strong>Diagnosis:</strong><br>
-                      <span v-if="selectedVisit.diagnosis" class="badge bg-info">{{ selectedVisit.diagnosis }}</span>
-                      <span v-else class="text-muted">No diagnosis recorded</span>
-                    </div>
-                    <div>
-                      <strong>Notes:</strong><br>
+                      <strong>Consultation Details:</strong><br>
                       <div v-if="selectedVisit.notes" class="bg-light p-2 rounded">
                         {{ selectedVisit.notes }}
                       </div>
-                      <span v-else class="text-muted">No notes recorded</span>
+                      <span v-else class="text-muted">No consultation details recorded</span>
+                    </div>
+                    <div v-if="selectedVisit.diagnosis">
+                      <strong>Diagnosis:</strong><br>
+                      <div class="bg-light p-2 rounded">
+                        {{ selectedVisit.diagnosis }}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -678,7 +706,12 @@ export default {
       showReceiptModal: false,
       selectedVisitForReceipt: null,
       showMCModal: false,
-      selectedVisitForMC: null
+      selectedVisitForMC: null,
+      // Pagination
+      currentPage: 1,
+      totalPages: 0,
+      totalPatients: 0,
+      perPage: 25,
     };
   },
   created() {
@@ -694,84 +727,66 @@ export default {
     async loadPatients() {
       this.loading = true;
       try {
-        const response = await axios.get('/api/patients');
-        this.patients = response.data;
+        const response = await axios.get('/api/patients', {
+          params: {
+            page: this.currentPage,
+            limit: this.perPage,
+          },
+        });
+        this.patients = response.data.data;
+        this.totalPatients = response.data.total;
+        this.totalPages = Math.ceil(response.data.total / this.perPage);
       } catch (error) {
-        console.error('Failed to load patients:', error);
+        console.error('Error loading patients:', error);
+        this.error = 'Failed to load patients';
       } finally {
         this.loading = false;
       }
     },
     async searchPatients() {
-      const trimmedQuery = this.searchQuery ? this.searchQuery.trim() : '';
-      console.log('Search method called with query:', `"${this.searchQuery}"`, 'trimmed:', `"${trimmedQuery}"`);
-      
-      if (!trimmedQuery || trimmedQuery === '') {
-        console.log('Empty search query, loading all patients');
+      if (!this.searchQuery) {
         this.loadPatients();
         return;
       }
-      
       this.loading = true;
       try {
-        console.log('Making search API call for:', trimmedQuery);
         const response = await axios.get('/api/patients/search', {
-          params: { query: trimmedQuery }
+          params: { 
+            query: this.searchQuery,
+            page: this.currentPage,
+            limit: this.perPage,
+          }
         });
-        console.log('Raw search API response:', response);
-        console.log('Response data:', response.data);
-        
-        // Handle debug response format
-        let patientsData;
-        if (response.data.debug && response.data.data !== undefined) {
-          console.log('Debug info from backend:', response.data.debug);
-          patientsData = response.data.data;
-        } else if (response.data.data !== undefined) {
-          patientsData = response.data.data;
-        } else {
-          patientsData = response.data;
-        }
-        
-        console.log('Processed patients data:', patientsData);
-        console.log('Search results count:', patientsData ? patientsData.length : 0);
-        
-        this.patients = Array.isArray(patientsData) ? patientsData : [];
-        console.log('Patients array updated, length:', this.patients.length);
+        this.patients = response.data.data;
+        this.totalPatients = response.data.total;
+        this.totalPages = Math.ceil(response.data.total / this.perPage);
       } catch (error) {
         console.error('Failed to search patients:', error);
-        if (error.response) {
-          console.error('Response status:', error.response.status);
-          console.error('Response data:', error.response.data);
-        }
-        // Reset to all patients on error
-        console.log('Error occurred, loading all patients');
-        this.loadPatients();
+        this.error = 'Failed to search patients';
       } finally {
         this.loading = false;
       }
     },
-    clearSearch() {
-      this.searchQuery = '';
-      this.loadPatients();
-    },
-    
     onSearchInput() {
-      // Temporarily disabled auto-search for debugging
-      // Clear previous timeout
       if (this.searchTimeout) {
         clearTimeout(this.searchTimeout);
       }
-      
-      // Only clear search if input is empty
-      if (!this.searchQuery || this.searchQuery.trim() === '') {
-        this.loadPatients();
-      }
-      
-      // Manual search only - user must click search button or press Enter
+      this.searchTimeout = setTimeout(() => {
+        this.currentPage = 1; // Reset to first page for new search
+        if (this.searchQuery) {
+          this.searchPatients();
+        } else {
+          this.loadPatients();
+        }
+      }, 500);
+    },
+    clearSearch() {
+      this.searchQuery = '';
+      this.currentPage = 1; // Reset to first page
+      this.loadPatients();
     },
     editPatient(patient) {
-      this.editingPatient = patient;
-      this.form = { ...patient };
+      this.editingPatient = { ...patient };
       this.showAddModal = true;
     },
     async deletePatient(patient) {
@@ -1090,11 +1105,33 @@ export default {
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       return diffDays.toString();
-    }
+    },
+
+    goToPage(page) {
+      if (page >= 1 && page <= this.totalPages) {
+        this.currentPage = page;
+        this.loadPatients();
+      }
+    },
   },
   computed: {
     isSuperAdmin() {
       return AuthService.isSuperAdmin();
+    },
+    pages() {
+        const pagesToShow = 5;
+        let startPage = Math.max(1, this.currentPage - Math.floor(pagesToShow / 2));
+        let endPage = Math.min(this.totalPages, startPage + pagesToShow - 1);
+
+        if (endPage - startPage + 1 < pagesToShow) {
+            startPage = Math.max(1, endPage - pagesToShow + 1);
+        }
+        
+        const pages = [];
+        for (let i = startPage; i <= endPage; i++) {
+            pages.push(i);
+        }
+        return pages;
     }
   }
 };

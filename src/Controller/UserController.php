@@ -110,9 +110,8 @@ class UserController extends AbstractController
             $user->setEmail($data['email']);
             $user->setUsername($data['username']);
             
-            // Hash the password
-            $hashedPassword = $this->passwordHasher->hashPassword($user, $data['password']);
-            $user->setPassword($hashedPassword);
+            // Store password as plain text (temporarily for testing)
+            $user->setPassword($data['password']);
 
             // Set roles
             $roles = $data['roles'] ?? ['ROLE_USER'];
@@ -195,6 +194,7 @@ class UserController extends AbstractController
                 'roles' => $user->getRoles(),
                 'isActive' => $user->isActive(),
                 'allowedPages' => $user->getAllowedPages(),
+                'profileImage' => $user->getProfileImage(),
                 'createdAt' => $user->getCreatedAt()?->format('Y-m-d\TH:i:s'),
                 'updatedAt' => $user->getUpdatedAt()?->format('Y-m-d\TH:i:s')
             ]);
@@ -256,10 +256,9 @@ class UserController extends AbstractController
                 $user->setEmail($data['email']);
             }
 
-            // Update password (if provided)
+            // Update password (if provided) - temporarily storing as plain text for testing
             if (isset($data['password']) && !empty(trim($data['password']))) {
-                $hashedPassword = $this->passwordHasher->hashPassword($user, $data['password']);
-                $user->setPassword($hashedPassword);
+                $user->setPassword($data['password']);
             }
 
             // Update roles
@@ -297,7 +296,8 @@ class UserController extends AbstractController
                     'email' => $user->getEmail(),
                     'roles' => $user->getRoles(),
                     'isActive' => $user->isActive(),
-                    'allowedPages' => $user->getAllowedPages()
+                    'allowedPages' => $user->getAllowedPages(),
+                    'profileImage' => $user->getProfileImage()
                 ]
             ]);
             
@@ -396,15 +396,13 @@ class UserController extends AbstractController
     public function uploadProfileImage(Request $request): JsonResponse
     {
         try {
-            // Get current user (for now, we'll use a mock user ID)
-            // In production, get from security context
-            $userId = 1; // Mock user ID
-            
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            if (!$user) {
-                return new JsonResponse(['error' => 'User not found'], 404);
+            // Get current user from token/auth
+            $user = $this->getUser();
+            if (!$user || !($user instanceof \App\Entity\User)) {
+                return new JsonResponse(['error' => 'Not authenticated'], 401);
             }
-
+            $userId = $user->getId();
+            
             $uploadedFile = $request->files->get('profileImage');
             
             if (!$uploadedFile) {
@@ -460,11 +458,14 @@ class UserController extends AbstractController
     }
 
     #[Route('/users/profile-image', name: 'api_users_profile_image_delete', methods: ['DELETE'])]
-    public function removeProfileImage(): JsonResponse
+    public function removeProfileImage(Request $request): JsonResponse
     {
         try {
-            // Get current user (for now, we'll use a mock user ID)
-            $userId = 1; // Mock user ID
+            // Get current user from session
+            $userId = $request->getSession()->get('user_id');
+            if (!$userId) {
+                return new JsonResponse(['error' => 'Not authenticated'], 401);
+            }
             
             $user = $this->entityManager->getRepository(User::class)->find($userId);
             if (!$user) {

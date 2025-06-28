@@ -248,126 +248,39 @@ export default {
       
       // Create abort controller
       currentRequest = new AbortController();
+      const { signal } = currentRequest;
       
       try {
-        const today = getTodayInMYT();
-        console.log('🔍 Fetching data for date:', today);
-        
-        // Use Promise.all but with timeout
-        const timeout = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout')), 10000); // 10 second timeout
-        });
-        
-        const apiCall = Promise.all([
-          axios.get(`/api/queue?date=${today}&limit=20`, { 
-            signal: currentRequest.signal,
-            timeout: 8000 
-          }),
-          axios.get(`/api/consultations?date=${today}&limit=20`, { 
-            signal: currentRequest.signal,
-            timeout: 8000 
-          })
-        ]);
-        
-        const [queueResponse, consultationResponse] = await Promise.race([apiCall, timeout]);
-        
-        let consultations = consultationResponse.data || [];
-        let queueList = queueResponse.data || [];
-        
-        console.log('📊 API responses:', {
-          consultationsCount: consultations.length,
-          queueCount: queueList.length
-        });
-        
-        // Filter for ongoing consultations (not paid, in progress)
-        let ongoing = consultations.filter(consultation => 
-          !consultation.isPaid && consultation.status !== 'completed' && consultation.status !== 'completed_consultation'
-        );
-        
-        // Get patients from queue for this doctor (both waiting and in consultation)
-        let queuePatients = queueList.filter(queue => 
-          queue.status === 'waiting' || queue.status === 'in_consultation'
-        );
-        
-        // Filter by user role
-        if (isSuperAdmin.value) {
-          console.log('👑 Super Admin access - showing all data');
-        } else if (isDoctor.value) {
-          console.log('👨‍⚕️ Doctor access - filtering by doctor assignments');
-          ongoing = ongoing.filter(consultation => 
-            consultation.doctorName && (
-              consultation.doctorName.toLowerCase().includes(currentUser.value.name.toLowerCase()) ||
-              currentUser.value.name.toLowerCase().includes(consultation.doctorName.toLowerCase())
-            )
-          );
-          
-          queuePatients = queuePatients.filter(queue => 
-            queue.doctor && queue.doctor.name && (
-              queue.doctor.name.toLowerCase().includes(currentUser.value.name.toLowerCase()) ||
-              currentUser.value.name.toLowerCase().includes(queue.doctor.name.toLowerCase())
-            )
-          );
-        } else {
-          console.log('👤 Other role access - no consultation data visible');
-          ongoing = [];
-          queuePatients = [];
+        let doctorId = null;
+        if (isDoctor.value && currentUser.value) {
+          doctorId = await AuthService.getDoctorId();
+          console.log('Using doctor ID:', doctorId, 'for user:', currentUser.value.email);
         }
+
+        const response = await axios.get('/api/consultations/ongoing', {
+          signal,
+          params: {
+            doctorId: doctorId
+          }
+        });
         
-        // Convert queue entries to consultation-like format
-        const queueConsultations = queuePatients.map(queue => ({
-          id: `queue_${queue.id}`,
-          isQueueEntry: true,
-          queueId: queue.id,
-          patientId: queue.patient ? queue.patient.id : null,
-          doctorId: queue.doctor ? queue.doctor.id : null,
-          patientName: queue.patient ? queue.patient.name : 'Unknown Patient',
-          doctorName: queue.doctor ? queue.doctor.name : 'Unknown Doctor',
-          consultationDate: queue.queueDateTime,
-          queueNumber: queue.queueNumber,
-          status: queue.status,
-          symptoms: queue.status === 'waiting' ? 'Waiting for consultation' : 'Consultation in progress',
-          isPaid: false
-        }));
-        
-        // Combine queue patients and ongoing consultations
-        const finalData = [...queueConsultations, ...ongoing];
+        ongoingConsultations.value = response.data.ongoing;
+        todayTotal.value = response.data.todayTotal;
+        lastUpdated.value = new Date();
+        error.value = null; // Clear error on success
+        retryCount.value = 0; // Reset retry count
         
         // Update cache
-        cache.value = {
-          data: finalData,
-          timestamp: Date.now(),
-          ttl: 30000
-        };
-        
-        ongoingConsultations.value = finalData;
-        todayTotal.value = consultations.length + queueList.length;
-        lastUpdated.value = new Date();
-        retryCount.value = 0; // Reset retry count on success
-        
-        console.log('✅ Data loaded successfully:', {
-          total: finalData.length,
-          queuePatients: queueConsultations.length,
-          ongoing: ongoing.length
-        });
+        cache.value.data = response.data.ongoing;
+        cache.value.timestamp = Date.now();
         
       } catch (err) {
-        if (err.name === 'AbortError') {
-          console.log('⏹️ Request was cancelled');
-          return;
-        }
-        
-        console.error('Error fetching patient consultations:', err);
-        
-        // Use cached data as fallback if available
-        if (cache.value.data) {
-          console.log('Using stale cache as fallback');
-          ongoingConsultations.value = cache.value.data;
-          error.value = 'Using cached data - ' + (err.response?.data?.message || err.message);
+        if (axios.isCancel(err)) {
+          console.log('Request canceled');
         } else {
-          error.value = err.response?.data?.message || err.message || 'Failed to fetch patient consultations';
+          error.value = 'Failed to load ongoing consultations.';
+          console.error(err);
         }
-        
-        retryCount.value++;
       } finally {
         loading.value = false;
         currentRequest = null;
@@ -502,6 +415,16 @@ export default {
         clearInterval(rateLimitTimeout);
       }
     });
+
+    // This is the fix: reload data when navigating back to the component
+    watch(
+      () => router.currentRoute.value.name,
+      (newName) => {
+        if (newName === 'OngoingConsultations') {
+          fetchOngoingConsultations(false); // Force fetch new data
+        }
+      }
+    );
 
     return {
       ongoingConsultations,

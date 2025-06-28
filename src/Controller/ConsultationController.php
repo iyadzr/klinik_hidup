@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Consultation;
 use App\Entity\Patient;
 use App\Entity\Doctor;
+use App\Entity\Queue;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -478,6 +479,154 @@ class ConsultationController extends AbstractController
         return $data;
     }
 
+    #[Route('/ongoing', name: 'app_consultations_ongoing', methods: ['GET'])]
+    public function ongoing(Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $doctorId = $request->query->get('doctorId');
+            $cacheKey = 'consultations_ongoing' . ($doctorId ? '_doctor_' . $doctorId : '');
+            
+            if ($this->cache) {
+                $data = $this->cache->get($cacheKey, function (ItemInterface $item) use ($doctorId) {
+                    $item->expiresAfter(30); // 30 seconds cache for real-time data
+                    return $this->buildOngoingData($doctorId);
+                });
+            } else {
+                $data = $this->buildOngoingData($doctorId);
+            }
+            
+            return new JsonResponse($data);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching ongoing consultations: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch ongoing consultations'], 500);
+        }
+    }
+    
+    private function buildOngoingData($doctorId = null): array
+    {
+        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        
+        // Set time to the beginning of the day for the start of the range
+        $startOfDay = (clone $today)->setTime(0, 0, 0);
+        
+        // Set time to the end of the day for the end of the range
+        $endOfDay = (clone $today)->setTime(23, 59, 59);
+
+        $ongoingData = [];
+
+        // Get ongoing consultations for the current day
+        $consultationQb = $this->entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('c.id', 'c.consultationDate', 'p.name as patientName', 'd.name as doctorName', 'c.status', 'c.symptoms', 'p.id as patientId', 'd.id as doctorId')
+            ->join('c.patient', 'p')
+            ->join('c.doctor', 'd')
+            ->where('c.status != :status_completed')
+            ->andWhere('c.consultationDate BETWEEN :start AND :end')
+            ->setParameter('status_completed', 'completed')
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay);
+
+        if ($doctorId) {
+            $consultationQb->andWhere('d.id = :doctorId')
+                          ->setParameter('doctorId', $doctorId);
+        }
+
+        $ongoingConsultations = $consultationQb->orderBy('c.consultationDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        // Add ongoing consultations to the data
+        foreach ($ongoingConsultations as $consultation) {
+            $ongoingData[] = [
+                'id' => $consultation['id'],
+                'consultationDate' => $consultation['consultationDate'],
+                'patientName' => $consultation['patientName'],
+                'patientId' => $consultation['patientId'],
+                'doctorName' => $consultation['doctorName'],
+                'doctorId' => $consultation['doctorId'],
+                'status' => $consultation['status'],
+                'symptoms' => $consultation['symptoms'],
+                'isQueueEntry' => false,
+                'queueId' => null,
+                'queueNumber' => null
+            ];
+        }
+
+        // Get queue entries that are waiting for consultation
+        $queueQb = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId', 'p.preInformedIllness as symptoms')
+            ->join('q.patient', 'p')
+            ->join('q.doctor', 'd')
+            ->where('q.status IN (:statuses)')
+            ->andWhere('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('statuses', ['waiting', 'in_consultation'])
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay);
+            
+        // Add doctor filter if specified
+        if ($doctorId) {
+            $queueQb->andWhere('d.id = :queueDoctorId')
+                    ->setParameter('queueDoctorId', $doctorId);
+        }
+        
+        $queueEntries = $queueQb->orderBy('q.queueNumber', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        // Add queue entries to the data
+        foreach ($queueEntries as $queue) {
+            $ongoingData[] = [
+                'id' => null, // No consultation ID yet
+                'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface 
+                    ? $queue['queueDateTime']->format('Y-m-d H:i:s') 
+                    : $queue['queueDateTime'],
+                'patientName' => $queue['patientName'],
+                'patientId' => $queue['patientId'],
+                'doctorName' => $queue['doctorName'],
+                'doctorId' => $queue['doctorId'],
+                'status' => $queue['status'],
+                'symptoms' => $queue['symptoms'],
+                'isQueueEntry' => true,
+                'queueId' => $queue['queueId'],
+                'queueNumber' => $queue['queueNumber']
+            ];
+        }
+
+        // Sort by queue number and consultation date
+        usort($ongoingData, function($a, $b) {
+            if ($a['isQueueEntry'] && $b['isQueueEntry']) {
+                return strcmp($a['queueNumber'], $b['queueNumber']);
+            } elseif ($a['isQueueEntry']) {
+                return -1; // Queue entries first
+            } elseif ($b['isQueueEntry']) {
+                return 1;
+            } else {
+                return strcmp($a['consultationDate'], $b['consultationDate']);
+            }
+        });
+            
+        // Get total consultations for today for the summary card
+        $todayTotal = $this->entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->where('c.consultationDate BETWEEN :start AND :end')
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return [
+            'ongoing' => $ongoingData,
+            'todayTotal' => $todayTotal
+        ];
+    }
+
     #[Route('/{id}', name: 'app_consultations_get', methods: ['GET'])]
     public function get(int $id, Request $request): JsonResponse
     {
@@ -576,102 +725,5 @@ class ConsultationController extends AbstractController
             $this->logger->error('Error updating payment status: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Error updating payment status'], 500);
         }
-    }
-
-    #[Route('/ongoing', name: 'app_consultations_ongoing', methods: ['GET'])]
-    public function ongoing(Request $request): JsonResponse
-    {
-        // Rate limiting
-        if (!$this->checkRateLimit($request)) {
-            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
-        }
-        
-        try {
-            $cacheKey = 'consultations_ongoing';
-            
-            if ($this->cache) {
-                $data = $this->cache->get($cacheKey, function (ItemInterface $item) {
-                    $item->expiresAfter(30); // 30 seconds cache for real-time data
-                    return $this->buildOngoingData();
-                });
-            } else {
-                $data = $this->buildOngoingData();
-            }
-            
-            return new JsonResponse($data);
-        } catch (\Exception $e) {
-            $this->logger->error('Error fetching ongoing consultations: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to fetch ongoing consultations'], 500);
-        }
-    }
-    
-    private function buildOngoingData(): array
-    {
-        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $todayStr = $today->format('Y-m-d');
-        
-        // Use optimized queries with limits
-        $totalConsultations = $this->entityManager->getRepository(Consultation::class)
-            ->createQueryBuilder('c')
-            ->select('COUNT(c.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
-        
-        $todayConsultations = $this->entityManager->getRepository(Consultation::class)
-            ->createQueryBuilder('c')
-            ->select('COUNT(c.id)')
-            ->where('DATE(c.createdAt) = :today')
-            ->setParameter('today', $todayStr)
-            ->getQuery()
-            ->getSingleScalarResult();
-        
-        $recentConsultations = $this->entityManager->getRepository(Consultation::class)
-            ->createQueryBuilder('c')
-            ->select('c.id, c.createdAt, p.name as patientName, d.name as doctorName')
-            ->join('c.patient', 'p')
-            ->join('c.doctor', 'd')
-            ->orderBy('c.createdAt', 'DESC')
-            ->setMaxResults(5)
-            ->getQuery()
-            ->getResult();
-        
-        $totalQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
-            ->createQueryBuilder('q')
-            ->select('COUNT(q.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
-        
-        $todayQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
-            ->createQueryBuilder('q')
-            ->select('COUNT(q.id)')
-            ->where('DATE(q.queueDateTime) = :today')
-            ->setParameter('today', $todayStr)
-            ->getQuery()
-            ->getSingleScalarResult();
-        
-        $recentQueues = $this->entityManager->getRepository(\App\Entity\Queue::class)
-            ->createQueryBuilder('q')
-            ->select('q.id, q.queueDateTime, q.status, q.queueNumber, p.name as patientName, d.name as doctorName')
-            ->join('q.patient', 'p')
-            ->join('q.doctor', 'd')
-            ->orderBy('q.queueDateTime', 'DESC')
-            ->setMaxResults(5)
-            ->getQuery()
-            ->getResult();
-        
-        return [
-            'currentTime' => $today->format('Y-m-d H:i:s T'),
-            'todayDate' => $todayStr,
-            'consultations' => [
-                'total' => $totalConsultations,
-                'today' => $todayConsultations,
-                'recent' => $recentConsultations
-            ],
-            'queues' => [
-                'total' => $totalQueues,
-                'today' => $todayQueues,
-                'recent' => $recentQueues
-            ]
-        ];
     }
 }
