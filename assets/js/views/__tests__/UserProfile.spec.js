@@ -4,6 +4,11 @@ import UserProfile from '../UserProfile.vue';
 describe('UserProfile.vue', () => {
   it('renders profile form', () => {
     const wrapper = mount(UserProfile, {
+      global: {
+        mocks: {
+          $router: { push: jest.fn() }
+        }
+      },
       data() {
         return {
           user: { name: 'Test User', email: 'test@clinic.com', username: 'testuser' },

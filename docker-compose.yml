@@ -84,6 +84,13 @@ services:
     networks:
       - clinic-network
 
+  node:
+    image: node:18
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: tail -f /dev/null
+
 volumes:
   mysql_data:
 
