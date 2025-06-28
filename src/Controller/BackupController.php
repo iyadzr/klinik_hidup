@@ -24,9 +24,11 @@ class BackupController extends AbstractController
         $this->backupService = $backupService;
     }
 
+
     #[Route('/create', name: 'api_backup_create', methods: ['POST'])]
     public function createBackup(): JsonResponse
     {
+        echo "test";
         try {
             $result = $this->backupService->createFullBackup();
             
