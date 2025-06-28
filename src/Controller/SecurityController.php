@@ -12,6 +12,7 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
+use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 
 #[Route('/api')]
 class SecurityController extends AbstractController
@@ -20,7 +21,8 @@ class SecurityController extends AbstractController
     public function login(
         Request $request, 
         EntityManagerInterface $entityManager,
-        UserPasswordHasherInterface $passwordHasher
+        UserPasswordHasherInterface $passwordHasher,
+        JWTTokenManagerInterface $JWTManager
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
         $email = $data['email'] ?? $data['username'] ?? '';
@@ -63,12 +65,8 @@ class SecurityController extends AbstractController
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        // Create a proper session token
-        $token = base64_encode(random_bytes(32));
-        
-        // Store session in session storage or cache (simplified approach)
-        $request->getSession()->set('auth_token', $token);
-        $request->getSession()->set('user_id', $user->getId());
+        // Generate a real JWT token
+        $token = $JWTManager->create($user);
 
         // Return token and user data
         return $this->json([

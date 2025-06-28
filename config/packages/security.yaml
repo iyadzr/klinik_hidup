@@ -13,13 +13,10 @@ security:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
         main:
-            lazy: true
+            pattern: ^/api
+            stateless: true
             provider: app_user_provider
-            # json_login:
-            #     check_path: app_login
-            #     username_path: username
-            #     password_path: password
-            # Disabled for development mode so custom /api/login controller is used.
+            jwt: ~
             logout:
                 path: app_logout
 
@@ -27,6 +24,8 @@ security:
     # Note: Only the *first* access control that matches will be used
     access_control:
         # Allow public access to login and register endpoints
+        - { path: ^/api/sse, roles: PUBLIC_ACCESS }
+        - { path: ^/api/performance/health, roles: PUBLIC_ACCESS }
         - { path: ^/api/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/register, roles: PUBLIC_ACCESS }
         # Restrict all other /api routes to authenticated users
