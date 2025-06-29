@@ -787,6 +787,19 @@ export default {
     },
     editPatient(patient) {
       this.editingPatient = { ...patient };
+      // Populate the form with patient data
+      this.form = {
+        name: patient.name || '',
+        nric: patient.nric || '',
+        email: patient.email || '',
+        phone: patient.phone || '',
+        dateOfBirth: patient.dateOfBirth || '',
+        gender: patient.gender || '',
+        address: patient.address || '',
+        company: patient.company || '',
+        preInformedIllness: patient.preInformedIllness || '',
+        medicalHistory: patient.medicalHistory || ''
+      };
       this.showAddModal = true;
     },
     async deletePatient(patient) {

@@ -8,16 +8,20 @@
         <!-- Font Awesome -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
         {% block stylesheets %}
-            <link rel="stylesheet" href="/build/app.a4ff3c7a.css">
+            <!-- Dynamic CSS loading - NO HARDCODING EVER -->
+            {% for cssFile in webpack_css_assets() %}
+                <link rel="stylesheet" href="{{ cssFile }}">
+            {% endfor %}
         {% endblock %}
     </head>
     <body>
         <div id="app"></div>
         {% block body %}{% endblock %}
         {% block javascripts %}
-            <script src="/build/runtime.4b096f0f.js"></script>
-            <script src="/build/756.f71226ec.js"></script>
-            <script src="/build/app.d0428ae9.js"></script>
+            <!-- Dynamic JS loading - NO HARDCODING EVER -->
+            {% for jsFile in webpack_js_assets() %}
+                <script src="{{ jsFile }}" defer></script>
+            {% endfor %}
         {% endblock %}
     </body>
 </html>

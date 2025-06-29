@@ -10,7 +10,8 @@ Encore
     // directory where compiled assets will be stored
     .setOutputPath('public/build/')
     // public path used by the web server to access the output path
-    .setPublicPath('/build')
+    // Use relative paths in development to avoid hardcoding localhost URLs
+    .setPublicPath(Encore.isProduction() ? '/build' : '/build')
     // Configure for Docker environment - use relative paths
     .setManifestKeyPrefix('build/')
 
@@ -67,11 +68,42 @@ Encore
         options.host = '0.0.0.0';
         options.port = 8080;
         options.allowedHosts = 'all';
-        // Force webpack to not override the public path
+        // Configure WebSocket for Docker environment
+        options.client = {
+            webSocketURL: {
+                protocol: 'ws',
+                hostname: '127.0.0.1',
+                port: 8090,
+                pathname: '/ws'
+            }
+        };
+        // Force webpack to write files to disk so they can be served by nginx
         options.devMiddleware = {
             writeToDisk: true,
         };
     })
+    
+    // Configure webpack to use relative paths in entrypoints.json
+    .addAliases({
+        // This helps ensure consistent path resolution
+    })
 ;
 
-module.exports = Encore.getWebpackConfig();
+// Get the base webpack config
+const config = Encore.getWebpackConfig();
+
+// Override the dev server configuration to prevent absolute URLs in entrypoints.json
+if (!Encore.isProduction()) {
+    // Force relative paths in development
+    config.output.publicPath = '/build/';
+    
+    // Ensure dev server doesn't override our publicPath
+    if (config.devServer) {
+        config.devServer.devMiddleware = {
+            ...config.devServer.devMiddleware,
+            publicPath: '/build/',
+        };
+    }
+}
+
+module.exports = config;

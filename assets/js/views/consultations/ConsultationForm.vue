@@ -33,15 +33,20 @@
                   required
                 >
                   <option value="">Choose patient to consult...</option>
+                  <!-- Show group patients if available, otherwise show regular patients -->
                   <option 
-                    v-for="patient in groupPatients" 
+                    v-for="patient in (groupPatients && groupPatients.length > 0) ? groupPatients : patients" 
                     :key="patient?.id || 'option-' + Math.random()" 
                     :value="patient?.id"
-                    v-if="patient && patient.id"
                   >
-                    {{ patient.name }} ({{ patient.relationship || 'N/A' }})
+                    {{ patient.name || 'Unknown Patient' }} 
+                    {{ patient.relationship ? '(' + (patient.relationship === 'self' ? 'main' : patient.relationship) + ')' : '' }}
                   </option>
                 </select>
+                <!-- Debug info (can be removed later) -->
+                <small class="text-muted mt-1">
+                  Available patients: {{ (groupPatients && groupPatients.length > 0) ? groupPatients.length + ' group patients' : (patients ? patients.length + ' regular patients' : '0 patients') }}
+                </small>
               </div>
               <div class="col-md-6">
                 <div class="group-members-info">
@@ -55,7 +60,7 @@
                       v-if="member && member.id"
                     >
                       {{ member.name }}
-                      <small v-if="member.relationship" class="ms-1">({{ member.relationship }})</small>
+                      <small v-if="member.relationship" class="ms-1">({{ member.relationship === 'self' ? 'main' : member.relationship }})</small>
                     </span>
                   </div>
                 </div>
@@ -73,7 +78,7 @@
               <i class="fas fa-user-injured text-primary me-2"></i>
               Patient Information
               <span v-if="isGroupConsultation && selectedPatient" class="badge bg-info ms-2">
-                {{ selectedPatient.relationship || 'Group Member' }}
+                {{ selectedPatient.relationship === 'self' ? 'main' : (selectedPatient.relationship || 'Group Member') }}
               </span>
             </h5>
             <div class="row g-3">
@@ -95,7 +100,7 @@
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Age</small>
-f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth ? (new Date().getFullYear() - new Date(selectedPatient.dateOfBirth).getFullYear()) + ' years' : 'N/A' }}</span>
+                        <span>{{ selectedPatient && selectedPatient.dateOfBirth ? (new Date().getFullYear() - new Date(selectedPatient.dateOfBirth).getFullYear()) + ' years' : 'N/A' }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Date of Birth</small>
@@ -230,7 +235,7 @@ f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth
                 
                 <!-- Add Medication Button -->
                 <div class="mb-3">
-                  <button type="button" class="btn btn-outline-primary btn-sm" @click="addMedicationRow">
+                  <button type="button" class="btn btn-outline-primary btn-sm" @click.stop="addMedicationRow">
                     <i class="fas fa-plus me-1"></i>Add Medication
                   </button>
                 </div>
@@ -359,28 +364,38 @@ f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="hasMedicalCertificate" v-model="consultation.hasMedicalCertificate" @change="onMCCheckboxChange">
                 <label class="form-check-label fw-bold" for="hasMedicalCertificate">
-                  Issue Medical Certificate (MC) for this visit
+                  Issue Medical Certificate (MC)
                 </label>
               </div>
-              <button type="button" class="btn btn-outline-info btn-sm" @click="showMCPreview" v-if="consultation.hasMedicalCertificate && selectedPatient" :disabled="!consultation.mcStartDate || !consultation.mcEndDate">
+              <button type="button" class="btn btn-outline-info btn-sm" v-if="consultation.hasMedicalCertificate" id="reviewMCButton">
                 <i class="fas fa-eye me-1"></i> Review MC
               </button>
             </div>
             <div v-if="consultation.hasMedicalCertificate">
-              <!-- If group consultation, show checkboxes for each patient -->
+              <!-- If group consultation, show individual MC settings for each patient -->
               <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="mb-3">
-                <label class="form-label fw-bold">Select patients to print MC for:</label>
-                <div v-for="patient in groupPatients" :key="patient?.id || 'patient-' + Math.random()" class="form-check" v-if="patient && patient.id">
-                  <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
-                  <label class="form-check-label" :for="'mc-patient-' + patient.id">
-                    {{ patient.name || patient.displayName || 'Unknown' }}
-                    <small v-if="patient.relationship" class="text-muted">({{ patient.relationship }})</small>
-                  </label>
+                <label class="form-label fw-bold">Medical Certificate for Each Patient:</label>
+                <div v-for="patient in groupPatients" :key="patient?.id || 'patient-' + Math.random()" class="card mb-3" v-if="patient && patient.id">
+                  <div class="card-body">
+                    <div class="form-check mb-3">
+                      <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
+                      <label class="form-check-label fw-bold" :for="'mc-patient-' + patient.id">
+                        {{ patient.name || patient.displayName || 'Unknown' }}
+                        <small v-if="patient.relationship" class="text-muted">({{ patient.relationship === 'self' ? 'main' : patient.relationship }})</small>
+                      </label>
+                    </div>
+                    <div v-if="mcSelectedPatientIds.includes(patient.id)" class="row g-3">
+                      <div class="col-md-6">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" class="form-control" v-model="patient.mcStartDate">
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label">End Date</label>
+                        <input type="date" class="form-control" v-model="patient.mcEndDate">
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <small class="text-muted d-block mt-2">
-                  <i class="fas fa-info-circle me-1"></i>
-                  Each selected patient will get a separate MC with the same dates
-                </small>
               </div>
               
               <!-- Single patient MC (default behavior) -->
@@ -543,7 +558,7 @@ f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth
     </div>
 
     <!-- Prescription Modal -->
-    <div class="modal fade" id="prescriptionModal" tabindex="-1" ref="prescriptionModal">
+    <div class="modal fade" id="prescriptionModal" tabindex="-1">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
@@ -799,6 +814,14 @@ f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth
 </template>
 
 <script>
+import { Modal } from 'bootstrap';
+import axios from 'axios';
+import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
+import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
+import * as bootstrap from 'bootstrap';
+import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
+import searchDebouncer from '../../utils/searchDebouncer';
+
 // Helper to get today's date in YYYY-MM-DD format
 function getTodayDate() {
   const today = new Date();
@@ -807,13 +830,6 @@ function getTodayDate() {
   const dd = String(today.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
-import { Modal } from 'bootstrap';
-import axios from 'axios';
-import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
-import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
-import * as bootstrap from 'bootstrap';
-import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
-import searchDebouncer from '../../utils/searchDebouncer';
 
 export default {
   name: 'ConsultationForm',
@@ -946,15 +962,157 @@ export default {
         printWindow.close();
       }, 300);
     },
+
+    getTodayDate() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    },
+
     showMCPreview() {
-      if (!this.mcPreviewModal) {
-        this.mcPreviewModal = new Modal(document.getElementById('mcPreviewModal'));
+      console.log('🔥 showMCPreview called - RESTORED ORIGINAL VERSION');
+      
+      try {
+        // Use the existing Bootstrap modal (your original implementation)
+        const modalElement = document.getElementById('mcPreviewModal');
+        if (modalElement) {
+          // Initialize Bootstrap modal if not already done
+          if (!this.mcPreviewModal) {
+            this.mcPreviewModal = new bootstrap.Modal(modalElement);
+          }
+          
+          // Show the modal
+          this.mcPreviewModal.show();
+          console.log('✅ Original MC Preview modal displayed');
+        } else {
+          console.error('❌ MC Preview modal element not found');
+          alert('MC Preview modal not found. Please refresh the page.');
+        }
+        
+      } catch (error) {
+        console.error('❌ Error in showMCPreview:', error);
+        alert('Error showing MC preview: ' + error.message);
       }
-      this.mcPreviewModal.show();
+      
+      return true;
     },
     hideMCPreview() {
       if (this.mcPreviewModal) {
         this.mcPreviewModal.hide();
+      }
+    },
+    
+    printMC() {
+      console.log('🖨️ Printing MC - IDENTICAL to preview...');
+      
+      try {
+        // Get the EXACT MC content from the modal
+        const mcContent = document.querySelector('#mcPreviewModal .mc-preview');
+        if (!mcContent) {
+          alert('MC content not found');
+          return;
+        }
+        
+        // Create print window with IDENTICAL styling to the preview
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Medical Certificate - ${this.consultation.mcRunningNumber || 'MC'}</title>
+              <style>
+                /* IDENTICAL styling to the preview modal */
+                body { 
+                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                  margin: 0;
+                  padding: 20px;
+                  background: white;
+                  font-size: 14px;
+                  line-height: 1.5;
+                }
+                
+                /* EXACT same styling as the preview */
+                .mc-preview {
+                  background-color: #e8e5b0 !important;
+                  padding: 20px !important;
+                  border: 1px solid #000 !important;
+                  font-family: inherit;
+                  color: #000;
+                }
+                
+                .text-center { text-align: center !important; }
+                .mb-0 { margin-bottom: 0 !important; }
+                .mb-1 { margin-bottom: 0.25rem !important; }
+                .mb-3 { margin-bottom: 1rem !important; }
+                .mb-4 { margin-bottom: 1.5rem !important; }
+                .ms-3 { margin-left: 1rem !important; }
+                .mt-5 { margin-top: 3rem !important; }
+                .d-flex { display: flex !important; }
+                .justify-content-between { justify-content: space-between !important; }
+                .justify-content-end { justify-content: flex-end !important; }
+                
+                h3 { 
+                  font-weight: bold !important;
+                  font-size: 1.75rem !important;
+                  margin: 0 0 1rem 0 !important;
+                }
+                
+                h4 { 
+                  font-size: 1.5rem !important;
+                  margin: 0 0 1.5rem 0 !important;
+                }
+                
+                p { 
+                  margin: 0 0 0.5rem 0 !important;
+                  font-size: 14px !important;
+                }
+                
+                strong { font-weight: bold !important; }
+                
+                /* Print-specific styles */
+                @media print {
+                  body { 
+                    margin: 0 !important;
+                    padding: 10px !important;
+                  }
+                  .mc-preview { 
+                    background-color: #e8e5b0 !important; 
+                    -webkit-print-color-adjust: exact !important;
+                    color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                  * {
+                    -webkit-print-color-adjust: exact !important;
+                    color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                }
+              </style>
+            </head>
+            <body>
+              ${mcContent.outerHTML}
+            </body>
+          </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        
+        // Print after ensuring content is fully loaded
+        setTimeout(() => {
+          printWindow.print();
+          // Don't close immediately to allow user to see the preview
+          setTimeout(() => {
+            printWindow.close();
+          }, 1000);
+        }, 800);
+        
+        console.log('✅ MC print initiated - IDENTICAL to preview');
+        
+      } catch (error) {
+        console.error('❌ Error printing MC:', error);
+        alert('Error printing MC: ' + error.message);
       }
     },
     calculateMCDays() {
@@ -998,37 +1156,161 @@ export default {
         await this.generateMCNumber();
       }
     },
-    showVisitHistoryModal() {
-      if (!this.visitHistoryModalInstance) {
-        const modalEl = this.$refs.visitHistoryModal;
-        if (modalEl) {
-          this.visitHistoryModalInstance = new Modal(modalEl);
-        }
-      }
-      this.loadVisitHistories();
-      this.visitHistoryModalInstance && this.visitHistoryModalInstance.show();
-    },
-    hideVisitHistoryModal() {
-      this.visitHistoryModalInstance && this.visitHistoryModalInstance.hide();
-    },
-    async loadVisitHistories() {
-      if (!this.consultation.patientId) {
-        this.visitHistories = [];
-        return;
-      }
+
+    // Component cleanup
+    cleanup() {
+      console.log('🧹 Cleaning up ConsultationForm component...');
+      
       try {
-        const response = await axios.get(`/api/consultations/patient/${this.consultation.patientId}`);
-        this.visitHistories = response.data.map(visit => ({
-          id: visit.id,
-          consultationDate: visit.consultationDate,
-          doctor: visit.doctor,
-          diagnosis: visit.diagnosis || '',
-          notes: visit.notes || ''
-        }));
+        // Cleanup Bootstrap modals
+        if (this.mcPreviewModal) {
+          this.mcPreviewModal.dispose();
+          this.mcPreviewModal = null;
+        }
+        if (this.medicalCertificateModal) {
+          this.medicalCertificateModal.dispose();
+          this.medicalCertificateModal = null;
+        }
+        if (this.prescriptionModal) {
+          this.prescriptionModal.dispose();
+          this.prescriptionModal = null;
+        }
+        if (this.visitDetailsModal) {
+          this.visitDetailsModal.dispose();
+          this.visitDetailsModal = null;
+        }
+        
+        // Cleanup search debouncer if it exists
+        if (this.medicationSearcher) {
+          this.medicationSearcher.cleanup();
+          this.medicationSearcher = null;
+        }
+        
+        console.log('✅ ConsultationForm cleanup completed');
       } catch (error) {
-        console.error('Error loading visit histories:', error);
-        this.visitHistories = [];
+        console.error('❌ Error during cleanup:', error);
       }
+    },
+
+
+
+    async loadInitialData() {
+      console.log('🔄 Loading consultation form data...');
+      
+      try {
+        // Initialize from URL parameters first
+        console.log('🔄 Step 1: Initializing from URL parameters');
+        await this.initializeFromUrlParams();
+        
+        // Load basic data
+        console.log('🔄 Step 2: Loading basic data (patients, doctors, medications)');
+        await Promise.all([
+          this.loadPatients(),
+          this.loadDoctors(),
+          this.loadMedications()
+        ]);
+        
+        console.log('📊 After loading basic data:');
+        console.log('- Patients loaded:', this.patients ? this.patients.length : 0);
+        console.log('- Doctors loaded:', this.doctors ? this.doctors.length : 0);
+        console.log('- Medications loaded:', this.medications ? this.medications.length : 0);
+        
+        // Load patient details if we have a patient ID
+        if (this.consultation.patientId) {
+          console.log('🔄 Step 3: Loading patient details for ID:', this.consultation.patientId);
+          await this.fetchPatientDetails();
+        } else {
+          console.log('⚠️ Step 3 skipped: No patient ID to load details');
+        }
+        
+        // Load group patients if applicable
+        if (this.isGroupConsultation) {
+          console.log('🔄 Step 4: Loading group patients (group consultation)');
+          await this.loadGroupPatients();
+        } else {
+          console.log('ℹ️ Step 4 skipped: Not a group consultation');
+        }
+        
+        console.log('✅ Initial data loading completed');
+        
+      } catch (error) {
+        console.error('❌ Error loading initial data:', error);
+      }
+    },
+
+    async initializeFromUrlParams() {
+      // Extract parameters from URL
+      const { queueNumber, queueId, doctorId, patientId } = this.$route.query;
+      
+      console.log('🔍 URL parameters:', { queueNumber, queueId, doctorId, patientId });
+      console.log('🔍 Full route query:', this.$route.query);
+      console.log('🔍 Current route path:', this.$route.path);
+      
+      // Set basic properties from URL
+      if (queueNumber) {
+        this.queueNumber = queueNumber;
+        console.log('✅ Set queue number:', queueNumber);
+      }
+      
+      if (doctorId) {
+        this.consultation.doctorId = parseInt(doctorId);
+        console.log('✅ Set doctor ID:', doctorId);
+      }
+      
+      // Load queue data if queueId is provided
+      if (queueId) {
+        console.log('🔄 Loading queue data for ID:', queueId);
+        try {
+          const response = await axios.get(`/api/queue/${queueId}`);
+          
+          console.log('🔍 Raw queue API response:', response);
+          
+          if (response && response.data) {
+            const queueData = response.data;
+            console.log('🔍 Queue data loaded:', queueData);
+            
+            // Check if this is a group consultation
+            if (queueData.isGroupConsultation) {
+              this.isGroupConsultation = true;
+              this.groupId = queueData.groupId;
+              console.log('✅ Set as group consultation, groupId:', queueData.groupId);
+            } else {
+              // Single patient consultation
+              if (queueData.patient && queueData.patient.id) {
+                this.consultation.patientId = queueData.patient.id;
+                console.log('✅ Set single patient ID from queue:', queueData.patient.id);
+              } else {
+                console.log('⚠️ No patient data in queue response');
+              }
+            }
+            
+            // Set doctor from queue data if not already set
+            if (!this.consultation.doctorId && queueData.doctor && queueData.doctor.id) {
+              this.consultation.doctorId = queueData.doctor.id;
+              console.log('✅ Set doctor ID from queue:', queueData.doctor.id);
+            }
+          } else {
+            console.log('⚠️ No data in queue response');
+          }
+        } catch (error) {
+          console.error('❌ Error loading queue data:', error);
+          console.log('❌ Error details:', error.response ? error.response.data : error.message);
+        }
+      } else {
+        console.log('⚠️ No queue ID provided in URL parameters');
+      }
+      
+      // If patientId is directly provided in URL, use it
+      if (patientId && !this.consultation.patientId) {
+        this.consultation.patientId = parseInt(patientId);
+        console.log('✅ Set patient ID from URL parameter:', patientId);
+      }
+      
+      console.log('🔍 Final consultation state after URL initialization:');
+      console.log('- Patient ID:', this.consultation.patientId);
+      console.log('- Doctor ID:', this.consultation.doctorId);
+      console.log('- Is Group Consultation:', this.isGroupConsultation);
+      console.log('- Queue Number:', this.queueNumber);
     },
 
     async loadPatients() {
@@ -1041,6 +1323,145 @@ export default {
         this.patients = []; // Ensure patients is always an array
       }
     },
+
+    async loadGroupPatients() {
+      const queueNumber = this.$route.query.queueNumber;
+      const queueId = this.$route.query.queueId;
+      console.log('🔍 Loading group patients for queue number:', queueNumber, 'queue ID:', queueId);
+      
+      if (!queueNumber && !queueId) {
+        console.log('⚠️ No queue number or queue ID available for loading group patients');
+        return;
+      }
+
+      try {
+        let response;
+        
+        // Try the queue number endpoint first
+        if (queueNumber) {
+          console.log('🔄 Trying queue number endpoint:', `/api/queue/${queueNumber}/patients`);
+          try {
+            response = await axios.get(`/api/queue/${queueNumber}/patients`);
+            console.log('✅ Group patients loaded via queue number endpoint');
+          } catch (error) {
+            console.log('⚠️ Queue number endpoint failed, trying queue ID endpoint');
+            
+            // Fallback to queue ID endpoint
+            if (queueId) {
+              response = await axios.get(`/api/queue/${queueId}`);
+              
+              // Extract patients from queue data
+              if (response.data && response.data.patients) {
+                response.data = response.data.patients;
+              } else if (response.data && response.data.patient) {
+                // Single patient - convert to array
+                response.data = [response.data.patient];
+              } else {
+                console.log('⚠️ No patient data found in queue response');
+                response.data = [];
+              }
+            }
+          }
+        } else if (queueId) {
+          // Direct queue ID approach
+          response = await axios.get(`/api/queue/${queueId}`);
+          
+          // Extract patients from queue data
+          if (response.data && response.data.patients) {
+            response.data = response.data.patients;
+          } else if (response.data && response.data.patient) {
+            // Single patient - convert to array
+            response.data = [response.data.patient];
+          } else {
+            console.log('⚠️ No patient data found in queue response');
+            response.data = [];
+          }
+        }
+        
+        console.log('🔍 Group patients API response:', response.data);
+        this.groupPatients = Array.isArray(response.data) ? response.data : [];
+        
+        // Default all patients selected for MC
+        this.mcSelectedPatientIds = this.groupPatients.map(p => p.id);
+        
+        console.log('✅ Group patients loaded, count:', this.groupPatients.length);
+        console.log('✅ Group patients data:', this.groupPatients);
+        
+      } catch (error) {
+        console.error('❌ Error loading group patients:', error);
+        console.log('❌ Group patients error details:', error.response ? error.response.data : error.message);
+        this.groupPatients = [];
+      }
+    },
+
+    async fetchPatientDetails() {
+      // Get patientId from URL query or from consultation data
+      const patientId = this.$route.query.patientId || this.consultation.patientId;
+      console.log('🔍 fetchPatientDetails called with patientId:', patientId);
+      console.log('🔍 URL patientId:', this.$route.query.patientId);
+      console.log('🔍 Consultation patientId:', this.consultation.patientId);
+      
+      if (!patientId) {
+        console.log('⚠️ No patient ID available for fetching details');
+        return;
+      }
+
+      try {
+        console.log('🔄 Fetching patient details for ID:', patientId);
+        const response = await axios.get(`/api/patients/${patientId}`);
+        
+        console.log('🔍 Patient details API response:', response);
+        
+        if (response && response.data) {
+          this.fullPatientDetails = response.data;
+          this.consultation.patientId = parseInt(patientId);
+          console.log('✅ Patient details loaded:', response.data.name);
+          console.log('✅ Full patient details:', this.fullPatientDetails);
+          
+          // Try to load visit histories for this patient
+          try {
+            console.log('🔄 Loading visit histories for patient:', patientId);
+            await this.loadVisitHistories();
+          } catch (error) {
+            console.log('⚠️ Visit histories not available for this patient (this is normal for new patients)');
+          }
+        } else {
+          console.log('⚠️ No data in patient details response');
+        }
+        
+      } catch (error) {
+        console.error('❌ Error fetching patient details:', error);
+        console.log('❌ Patient details error:', error.response ? error.response.data : error.message);
+      }
+    },
+
+    async loadVisitHistories() {
+      const patientId = this.consultation.patientId;
+      if (!patientId) return;
+
+      try {
+        const response = await axios.get(`/api/consultations/patient/${patientId}`);
+        
+        this.visitHistories = response.data.map(visit => ({
+          id: visit.id,
+          consultationDate: visit.consultationDate,
+          doctor: visit.doctor,
+          diagnosis: visit.diagnosis || '',
+          notes: visit.notes || ''
+        }));
+        console.log('✅ Visit histories loaded');
+        
+      } catch (error) {
+        // Handle 404 errors gracefully (patient has no visit history)
+        if (error.response && error.response.status === 404) {
+          console.log('📋 No visit history found for this patient (first visit)');
+          this.visitHistories = [];
+        } else {
+          console.error('❌ Error loading visit histories:', error);
+          this.visitHistories = [];
+        }
+      }
+    },
     async loadDoctors() {
       try {
         const response = await axios.get('/api/doctors');
@@ -1049,22 +1470,6 @@ export default {
       } catch (error) {
         console.error('Error loading doctors:', error);
         this.doctors = []; // Ensure doctors is always an array
-      }
-    },
-    async fetchPatientDetails() {
-      if (!this.consultation.patientId) {
-        this.fullPatientDetails = null;
-        this.visitHistories = [];
-        return;
-      }
-      try {
-        const response = await axios.get(`/api/patients/${this.consultation.patientId}`);
-        this.fullPatientDetails = response.data;
-        await this.loadVisitHistories();
-      } catch (error) {
-        console.error('Error fetching patient details:', error);
-        this.fullPatientDetails = null;
-        this.visitHistories = [];
       }
     },
     async loadConsultation() {
@@ -1309,7 +1714,18 @@ export default {
     },
     showVisitDetails(visit) {
       this.selectedVisit = visit;
-      this.visitDetailsModal.show();
+      
+      // Initialize modal if not already done
+      if (!this.visitDetailsModal) {
+        const modalElement = document.getElementById('visitDetailsModal');
+        if (modalElement) {
+          this.visitDetailsModal = new Modal(modalElement);
+        }
+      }
+      
+      if (this.visitDetailsModal) {
+        this.visitDetailsModal.show();
+      }
     },
     getStatusClass(status) {
       const statusMap = {
@@ -1343,37 +1759,6 @@ export default {
       return queueNumber;
     },
     
-    async loadGroupPatients() {
-      if (!this.groupId) return;
-      
-      try {
-        const response = await axios.get(`/api/queue/group/${this.groupId}`);
-        const queueEntry = response.data;
-        
-        if (queueEntry && queueEntry.metadata && queueEntry.metadata.patients) {
-          this.groupPatients = queueEntry.metadata.patients.map(patient => ({
-            id: patient.id,
-            name: patient.name,
-            displayName: patient.name,
-            nric: patient.nric,
-            age: patient.age,
-            gender: patient.gender,
-            phone: patient.phone,
-            relationship: patient.relationship,
-            symptoms: patient.symptoms || ''
-          }));
-          
-          // Set the currently selected patient to the primary patient if not already set
-          if (!this.consultation.patientId && this.groupPatients.length > 0) {
-            const primaryPatient = this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
-            this.consultation.patientId = primaryPatient.id;
-          }
-        }
-      } catch (error) {
-        console.error('Error loading group patients:', error);
-        this.groupPatients = [];
-      }
-    },
     printMedicationLabel(medItem) {
       // Create medication label content
       const labelContent = `
@@ -1523,438 +1908,40 @@ export default {
     this.loadInitialData();
   },
   
+  async mounted() {
+    console.log('🔥 ConsultationForm mounted');
+    
+    // Add native JavaScript event listener for Review MC button
+    setTimeout(() => {
+      const reviewButton = document.getElementById('reviewMCButton');
+      
+      if (reviewButton) {
+        reviewButton.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('🔥 Review MC clicked');
+          this.showMCPreview();
+        });
+        console.log('✅ Native event listener added to Review MC button');
+      } else {
+        console.error('❌ Review MC button not found');
+      }
+    }, 1000);
+    
+    // Initialize URL parameters first (this sets up patient/doctor data)
+    this.initializeFromUrlParams();
+    
+    // Load medications after a short delay to avoid request conflicts
+    setTimeout(async () => {
+      try {
+        await this.loadMedications();
+      } catch (error) {
+        console.log('⚠️ Medication loading failed during mount, will retry later');
+      }
+    }, 500);
+  },
   beforeUnmount() {
     this.cleanup();
-  },
-  
-  methods: {
-    async loadInitialData() {
-      console.log('🔄 Loading consultation form data...');
-      
-      try {
-        await Promise.all([
-          this.loadPatients(),
-          this.loadDoctors(),
-          this.loadMedications()
-        ]);
-        
-        // Load consultation data if editing
-        if (this.$route.params.id) {
-          await this.loadConsultation();
-        } else {
-          await this.fetchPatientDetails();
-        }
-        
-        // Load group patients if applicable
-        if (this.isGroupConsultation) {
-          await this.loadGroupPatients();
-        }
-        
-      } catch (error) {
-        console.error('❌ Error loading initial data:', error);
-        this.$toast?.error?.('Failed to load consultation data');
-      }
-    },
-
-    async loadPatients() {
-      try {
-        const response = await makeProtectedRequest(
-          'load-patients-consultation',
-          async (signal) => {
-            return await axios.get('/api/patients', { signal });
-          },
-          {
-            throttleMs: 30000, // Cache patients for 30 seconds
-            timeout: 15000
-          }
-        );
-        
-        this.patients = response.data;
-        console.log('✅ Patients loaded for consultation');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Patient loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading patients:', error);
-        this.patients = [];
-      }
-    },
-
-    async loadDoctors() {
-      try {
-        this.isDoctorLoading = true;
-        
-        const response = await makeProtectedRequest(
-          'load-doctors-consultation',
-          async (signal) => {
-            return await axios.get('/api/doctors', { signal });
-          },
-          {
-            throttleMs: 60000, // Cache doctors for 1 minute
-            timeout: 10000
-          }
-        );
-        
-        this.doctors = response.data;
-        console.log('✅ Doctors loaded for consultation');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Doctor loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading doctors:', error);
-        this.doctors = [];
-      } finally {
-        this.isDoctorLoading = false;
-      }
-    },
-
-    async loadMedications() {
-      try {
-        const response = await makeProtectedRequest(
-          'load-medications-consultation',
-          async (signal) => {
-            return await axios.get('/api/medications', { signal });
-          },
-          {
-            throttleMs: 120000, // Cache medications for 2 minutes
-            timeout: 20000
-          }
-        );
-        
-        this.medications = response.data;
-        console.log('✅ Medications loaded for consultation');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Medication loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading medications:', error);
-        this.medications = [];
-      }
-    },
-
-    async fetchPatientDetails() {
-      const patientId = this.$route.query.patientId;
-      if (!patientId) return;
-
-      try {
-        const response = await makeProtectedRequest(
-          `fetch-patient-${patientId}`,
-          async (signal) => {
-            return await axios.get(`/api/patients/${patientId}`, { signal });
-          },
-          {
-            throttleMs: 5000,
-            timeout: 10000
-          }
-        );
-        
-        this.selectedPatientId = patientId;
-        console.log('✅ Patient details loaded');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Patient details loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error fetching patient details:', error);
-        this.$toast?.error?.('Failed to load patient details');
-      }
-    },
-
-    async loadConsultation() {
-      const consultationId = this.$route.params.id;
-      if (!consultationId) return;
-
-      try {
-        const response = await makeProtectedRequest(
-          `load-consultation-${consultationId}`,
-          async (signal) => {
-            return await axios.get(`/api/consultations/${consultationId}`, { signal });
-          },
-          {
-            throttleMs: 2000,
-            timeout: 15000
-          }
-        );
-        
-        // Load consultation data
-        this.consultation = response.data;
-        this.selectedPatientId = response.data.patientId;
-        console.log('✅ Consultation loaded for editing');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Consultation loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading consultation:', error);
-        this.$toast?.error?.('Failed to load consultation data');
-      }
-    },
-
-    async saveConsultation() {
-      if (this.isSaving) {
-        console.log('⏩ Save already in progress');
-        return;
-      }
-
-      try {
-        this.isSaving = true;
-        
-        // Prepare consultation data
-        const consultationData = {
-          ...this.consultation,
-          patientId: this.selectedPatientId,
-          prescribedMedications: this.prescribedMedications,
-          totalAmount: this.totalAmount,
-          mcData: this.consultation.hasMC ? {
-            startDate: this.consultation.mcStartDate,
-            endDate: this.consultation.mcEndDate,
-            days: this.calculateMCDays(),
-            selectedPatientIds: this.mcSelectedPatientIds
-          } : null
-        };
-
-        const url = this.isEditing() 
-          ? `/api/consultations/${this.$route.params.id}` 
-          : '/api/consultations';
-        
-        const method = this.isEditing() ? 'PUT' : 'POST';
-
-        await makeProtectedRequest(
-          `save-consultation-${this.selectedPatientId || 'new'}`,
-          async (signal) => {
-            return await axios({
-              method,
-              url,
-              data: consultationData,
-              signal
-            });
-          },
-          {
-            throttleMs: 2000,     // Prevent rapid saving
-            timeout: 30000,      // Longer timeout for save operations
-            maxRetries: 1,       // Only retry once for saves
-            skipThrottle: false  // Always respect throttling for saves
-          }
-        );
-
-        console.log('✅ Consultation saved successfully');
-        this.$toast?.success?.('Consultation saved successfully');
-        
-        // Redirect to consultations list or queue
-        this.$router.push('/consultations');
-        
-      } catch (error) {
-        if (error.message.includes('throttled')) {
-          this.$toast?.warning?.('Please wait before saving again');
-          return;
-        }
-        
-        console.error('❌ Error saving consultation:', error);
-        
-        if (error.response?.status === 400) {
-          this.$toast?.error?.('Invalid consultation data. Please check all fields.');
-        } else if (error.response?.status === 409) {
-          this.$toast?.error?.('Consultation data has been modified. Please refresh and try again.');
-        } else {
-          this.$toast?.error?.('Failed to save consultation. Please try again.');
-        }
-      } finally {
-        this.isSaving = false;
-      }
-    },
-
-    async searchMedications(medItem, event) {
-      const searchTerm = event.target.value;
-      
-      try {
-        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
-        
-        if (results) {
-          medItem.suggestions = results;
-          medItem.selectedSuggestionIndex = results.length > 0 ? 0 : -1;
-          medItem.showCreateNew = true;
-        }
-        
-      } catch (error) {
-        console.error('Medication search error:', error);
-        medItem.suggestions = [];
-        medItem.selectedSuggestionIndex = -1;
-        medItem.showCreateNew = true;
-      }
-    },
-
-    // The actual search function used by SearchDebouncer
-    async performMedicationSearch(searchTerm, context) {
-      try {
-        const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
-        return response.data;
-        
-      } catch (error) {
-        console.error('❌ Error in medication search API:', error);
-        throw error;
-      }
-    },
-
-    async loadVisitHistories() {
-      if (!this.selectedPatientId || this.isLoadingVisitHistories) return;
-
-      try {
-        this.isLoadingVisitHistories = true;
-        
-        const response = await makeProtectedRequest(
-          `load-visit-histories-${this.selectedPatientId}`,
-          async (signal) => {
-            return await axios.get(`/api/patients/${this.selectedPatientId}/visits`, { signal });
-          },
-          {
-            throttleMs: 5000,
-            timeout: 15000
-          }
-        );
-        
-        this.visitHistories = response.data;
-        console.log('✅ Visit histories loaded');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Visit histories loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading visit histories:', error);
-        this.visitHistories = [];
-        this.$toast?.error?.('Failed to load visit histories');
-      } finally {
-        this.isLoadingVisitHistories = false;
-      }
-    },
-
-    async loadGroupPatients() {
-      const queueNumber = this.$route.query.queueNumber;
-      if (!queueNumber) return;
-
-      try {
-        const response = await makeProtectedRequest(
-          `load-group-patients-${queueNumber}`,
-          async (signal) => {
-            return await axios.get(`/api/queue/${queueNumber}/patients`, { signal });
-          },
-          {
-            throttleMs: 10000,
-            timeout: 15000
-          }
-        );
-        
-        this.groupPatients = response.data;
-        
-        // Default all patients selected for MC
-        this.mcSelectedPatientIds = this.groupPatients.map(p => p.id);
-        
-        console.log('✅ Group patients loaded');
-        
-      } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Group patients loading skipped:', error.message);
-          return;
-        }
-        
-        console.error('❌ Error loading group patients:', error);
-        this.groupPatients = [];
-        this.$toast?.error?.('Failed to load group patients');
-      }
-    },
-
-    async createNewMedication() {
-      if (!this.newMedication.name.trim()) {
-        this.$toast?.error?.('Medication name is required');
-        return;
-      }
-
-      try {
-        const response = await makeProtectedRequest(
-          `create-medication-${Date.now()}`,
-          async (signal) => {
-            return await axios.post('/api/medications', this.newMedication, { signal });
-          },
-          {
-            throttleMs: 1000,
-            timeout: 15000,
-            maxRetries: 1
-          }
-        );
-
-        const createdMedication = response.data;
-        
-        // Add to medications list
-        this.medications.push(createdMedication);
-        
-        // Select the new medication for the current item
-        if (this.currentMedicationItem) {
-          this.selectMedication(this.currentMedicationItem, createdMedication);
-        }
-        
-        // Clear the form and close modal
-        this.newMedication = {
-          name: '',
-          category: '',
-          unitType: 'tablet',
-          unitDescription: '',
-          sellingPrice: 0.00
-        };
-        
-        const modal = bootstrap.Modal.getInstance(document.getElementById('createMedicationModal'));
-        modal?.hide();
-        
-        console.log('✅ New medication created successfully');
-        this.$toast?.success?.('New medication created successfully');
-        
-      } catch (error) {
-        if (error.message.includes('throttled')) {
-          this.$toast?.warning?.('Please wait before creating another medication');
-          return;
-        }
-        
-        console.error('❌ Error creating medication:', error);
-        
-        if (error.response?.status === 409) {
-          this.$toast?.error?.('A medication with this name already exists');
-        } else if (error.response?.status === 400) {
-          this.$toast?.error?.('Invalid medication data. Please check all fields.');
-        } else {
-          this.$toast?.error?.('Failed to create medication. Please try again.');
-        }
-      }
-    },
-
-    // Component cleanup
-    cleanup() {
-      console.log('🧹 Cleaning up ConsultationForm component...');
-      
-      // Cancel all pending requests
-      cancelAllRequests();
-      
-      // Cleanup search debouncer
-      if (this.medicationSearcher) {
-        this.medicationSearcher.cleanup();
-        this.medicationSearcher = null;
-      }
-      
-      console.log('✅ ConsultationForm cleanup completed');
-    }
-
   }
 };
 </script>

@@ -764,6 +764,66 @@ class QueueController extends AbstractController
         ];
     }
 
+    #[Route('/{id}', name: 'app_queue_get', methods: ['GET'])]
+    public function getById(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue entry not found'], 404);
+            }
+            
+            $patient = $queue->getPatient();
+            $doctor = $queue->getDoctor();
+            
+            if (!$patient || !$doctor) {
+                return new JsonResponse(['error' => 'Incomplete queue data'], 400);
+            }
+            
+            $queueData = [
+                'id' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'isGroupConsultation' => $queue->isGroupConsultation(),
+                'groupId' => $queue->getGroupId(),
+                'patient' => [
+                    'id' => $patient->getId(),
+                    'name' => $patient->getName(),
+                    'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName(),
+                    'nric' => $patient->getNric(),
+                    'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                    'gender' => $patient->getGender(),
+                    'phone' => $patient->getPhone(),
+                    'address' => $patient->getAddress()
+                ],
+                'doctor' => [
+                    'id' => $doctor->getId(),
+                    'name' => $doctor->getName(),
+                    'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
+                ],
+                'status' => $queue->getStatus(),
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                'isPaid' => $queue->getIsPaid(),
+                'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
+                'paymentMethod' => $queue->getPaymentMethod(),
+                'amount' => $queue->getAmount(),
+                'metadata' => $queue->getMetadata()
+            ];
+            
+            return new JsonResponse($queueData);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue entry: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch queue entry'], 500);
+        }
+    }
+
     #[Route('/{id}', name: 'app_queue_delete', methods: ['DELETE'])]
     public function delete(int $id, Request $request): JsonResponse
     {

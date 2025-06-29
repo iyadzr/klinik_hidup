@@ -31,3 +31,8 @@ services:
     App\Service\BackupService:
         arguments:
             $projectDir: '%kernel.project_dir%'
+    
+    # Asset Service Configuration
+    App\Service\AssetService:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
