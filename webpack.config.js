@@ -11,8 +11,8 @@ Encore
     .setOutputPath('public/build/')
     // public path used by the web server to access the output path
     .setPublicPath('/build')
-    // only needed for CDN's or subdirectory deploy
-    //.setManifestKeyPrefix('build/')
+    // Configure for Docker environment - use relative paths
+    .setManifestKeyPrefix('build/')
 
     /*
      * ENTRY CONFIG
@@ -64,6 +64,13 @@ Encore
     .configureDevServerOptions(options => {
         options.historyApiFallback = true;
         options.hot = true;
+        options.host = '0.0.0.0';
+        options.port = 8080;
+        options.allowedHosts = 'all';
+        // Force webpack to not override the public path
+        options.devMiddleware = {
+            writeToDisk: true,
+        };
     })
 ;
 

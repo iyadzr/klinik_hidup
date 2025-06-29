@@ -21,4 +21,16 @@ class DefaultController extends AbstractController
     {
         return $this->render('base.html.twig');
     }
+
+    #[Route('/consultations/ongoing', name: 'app_consultations_ongoing_page')]
+    public function consultationsOngoing(): Response
+    {
+        return $this->render('base.html.twig');
+    }
+
+    #[Route('/registration', name: 'app_registration_page')]
+    public function registration(): Response
+    {
+        return $this->render('registration/form.html.twig');
+    }
 }

@@ -4,7 +4,7 @@
       <div>
         <h2 class="mb-0">Consultation</h2>
         <small v-if="$route.query.queueNumber" class="text-muted">
-          <i class="fas fa-link me-1"></i>Started from Queue #{{ formatQueueNumber($route.query.queueNumber) }}
+                      <i class="fas fa-link me-1"></i>Started from Queue #{{ $route.query.queueNumber ? ($route.query.queueNumber.toString().length === 4 ? $route.query.queueNumber : $route.query.queueNumber.toString().length === 3 ? '0' + $route.query.queueNumber : $route.query.queueNumber.toString().padStart(4, '0')) : '' }}
         </small>
       </div>
       <div class="d-flex gap-2">
@@ -35,8 +35,9 @@
                   <option value="">Choose patient to consult...</option>
                   <option 
                     v-for="patient in groupPatients" 
-                    :key="patient.id" 
-                    :value="patient.id"
+                    :key="patient?.id || 'option-' + Math.random()" 
+                    :value="patient?.id"
+                    v-if="patient && patient.id"
                   >
                     {{ patient.name }} ({{ patient.relationship || 'N/A' }})
                   </option>
@@ -48,9 +49,10 @@
                   <div class="members-list">
                     <span 
                       v-for="(member, index) in groupPatients" 
-                      :key="member.id"
+                      :key="member?.id || 'member-' + index"
                       class="badge me-2 mb-1"
-                      :class="member.id === consultation.patientId ? 'bg-primary' : 'bg-secondary'"
+                      :class="member && member.id === consultation.patientId ? 'bg-primary' : 'bg-secondary'"
+                      v-if="member && member.id"
                     >
                       {{ member.name }}
                       <small v-if="member.relationship" class="ms-1">({{ member.relationship }})</small>
@@ -368,7 +370,7 @@
               <!-- If group consultation, show checkboxes for each patient -->
               <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="mb-3">
                 <label class="form-label fw-bold">Select patients to print MC for:</label>
-                <div v-for="patient in groupPatients" :key="patient.id" class="form-check">
+                <div v-for="patient in groupPatients" :key="patient?.id || 'patient-' + Math.random()" class="form-check" v-if="patient && patient.id">
                   <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
                   <label class="form-check-label" :for="'mc-patient-' + patient.id">
                     {{ patient.name || patient.displayName || 'Unknown' }}
@@ -406,7 +408,7 @@
       <!-- Hidden MC Print Template for Multiple Patients -->
       <div id="mc-print-content" style="display:none">
         <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1">
-          <div v-for="patient in groupPatients" :key="patient.id" v-if="mcSelectedPatientIds.includes(patient.id)">
+          <div v-for="patient in groupPatients" :key="patient?.id || 'print-patient-' + Math.random()" v-if="patient && patient.id && mcSelectedPatientIds.includes(patient.id)">
             <div style="background-color: #e8e5b0; padding: 20px; border: 1px solid #000; font-family: Arial, sans-serif; page-break-after: always;">
               <!-- Clinic Header -->
               <div style="text-align: center; margin-bottom: 15px;">

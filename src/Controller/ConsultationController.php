@@ -479,7 +479,7 @@ class ConsultationController extends AbstractController
         return $data;
     }
 
-    #[Route('/ongoing', name: 'app_consultations_ongoing', methods: ['GET'])]
+    #[Route('/ongoing', name: 'app_consultations_ongoing', methods: ['GET'], priority: 1)]
     public function ongoing(Request $request): JsonResponse
     {
         // Rate limiting
@@ -667,7 +667,7 @@ class ConsultationController extends AbstractController
         ];
     }
 
-    #[Route('/{id}', name: 'app_consultations_get', methods: ['GET'])]
+    #[Route('/{id}', name: 'app_consultations_get', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function get(int $id, Request $request): JsonResponse
     {
         // Rate limiting

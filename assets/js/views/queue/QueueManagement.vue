@@ -455,7 +455,7 @@ export default {
 
       try {
         console.log('🔌 Initializing SSE connection for queue updates...');
-        this.eventSource = new EventSource('/api/queue/stream');
+        this.eventSource = new EventSource('/api/sse/queue-updates');
         
         this.eventSource.onopen = () => {
           console.log('✅ SSE connection established');

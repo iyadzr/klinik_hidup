@@ -577,6 +577,114 @@ class QueueController extends AbstractController
         }
     }
 
+    #[Route('/{queueNumber}/patients', name: 'app_queue_patients', methods: ['GET'])]
+    public function getQueuePatients(string $queueNumber, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            // Find queue by queue number
+            $queue = $this->entityManager->getRepository(Queue::class)
+                ->findOneBy(['queueNumber' => $queueNumber]);
+            
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue not found'], Response::HTTP_NOT_FOUND);
+            }
+            
+            $patients = [];
+            
+            if ($queue->isGroupConsultation()) {
+                // Get all patients in the group
+                $groupId = $queue->getGroupId();
+                $groupQueues = $this->entityManager->getRepository(Queue::class)
+                    ->createQueryBuilder('q')
+                    ->leftJoin('q.patient', 'p')
+                    ->where('q.metadata LIKE :groupId')
+                    ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
+                    ->getQuery()
+                    ->getResult();
+                
+                foreach ($groupQueues as $groupQueue) {
+                    $patient = $groupQueue->getPatient();
+                    if ($patient) {
+                        $patients[] = [
+                            'id' => $patient->getId(),
+                            'name' => $patient->getName(),
+                            'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName(),
+                            'nric' => $patient->getNric(),
+                            'ic' => $patient->getNric(), // Alias for compatibility
+                            'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                            'gender' => $patient->getGender(),
+                            'phoneNumber' => $patient->getPhone(),
+                            'phone' => $patient->getPhone(), // Alias for compatibility
+                            'address' => $patient->getAddress(),
+                            'symptoms' => $this->getQueueSymptoms($groupQueue),
+                            'relationship' => $this->getPatientRelationship($groupQueue)
+                        ];
+                    }
+                }
+            } else {
+                // Single patient
+                $patient = $queue->getPatient();
+                if ($patient) {
+                    $patients[] = [
+                        'id' => $patient->getId(),
+                        'name' => $patient->getName(),
+                        'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName(),
+                        'nric' => $patient->getNric(),
+                        'ic' => $patient->getNric(), // Alias for compatibility
+                        'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+                        'gender' => $patient->getGender(),
+                        'phoneNumber' => $patient->getPhone(),
+                        'phone' => $patient->getPhone(), // Alias for compatibility
+                        'address' => $patient->getAddress(),
+                                                    'symptoms' => $this->getQueueSymptoms($queue),
+                        'relationship' => null
+                    ];
+                }
+            }
+            
+            return new JsonResponse($patients);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue patients: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch queue patients'], 500);
+        }
+    }
+    
+    private function getPatientRelationship(Queue $queue): ?string
+    {
+        $metadata = $queue->getMetadata();
+        if ($metadata) {
+            $data = json_decode($metadata, true);
+            return $data['relationship'] ?? null;
+        }
+        return null;
+    }
+    
+    private function getQueueSymptoms(Queue $queue): ?string
+    {
+        // First check if symptoms are in queue metadata
+        $metadata = $queue->getMetadata();
+        if ($metadata) {
+            $data = json_decode($metadata, true);
+            if (isset($data['symptoms'])) {
+                return $data['symptoms'];
+            }
+        }
+        
+        // Fallback to patient's pre-informed illness
+        $patient = $queue->getPatient();
+        if ($patient && method_exists($patient, 'getPreInformedIllness')) {
+            return $patient->getPreInformedIllness();
+        }
+        
+        return null;
+    }
+
     #[Route('/stats', name: 'app_queue_stats', methods: ['GET'])]
     public function stats(Request $request): JsonResponse
     {

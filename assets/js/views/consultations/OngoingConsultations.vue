@@ -84,24 +84,34 @@
                     </p>
                     <template v-if="consultation.isGroupConsultation">
                       <div class="mb-2">
-                        <label class="form-label">Select Patient:</label>
-                        <select v-model="selectedPatientId[consultation.queueId]" class="form-select form-select-sm mb-2">
-                          <option v-for="patient in consultation.patients" :key="patient.patientId" :value="patient.patientId">
-                            {{ patient.patientName }}
-                          </option>
-                        </select>
-                        <div v-if="selectedPatient(consultation)">
-                          <div class="mb-2">
-                            <strong>Symptoms:</strong>
-                            <span class="text-muted">{{ truncateText(selectedPatient(consultation).symptoms, 80) }}</span>
-                          </div>
-                          <button
-                            class="btn btn-success btn-sm w-100"
-                            @click="startConsultationForPatient(consultation, selectedPatient(consultation))"
-                          >
-                            <i class="fas fa-play me-1"></i>Start Consultation
-                          </button>
-                        </div>
+                        <label class="form-label">Group Members:</label>
+                        <ul class="list-group mb-2">
+                          <li v-for="patient in consultation.patients" :key="patient.patientId" class="list-group-item">
+                            <div class="fw-bold">{{ patient.patientName }}</div>
+                            <div><strong>Symptoms:</strong> <span class="text-muted">{{ truncateText(patient.symptoms, 80) }}</span></div>
+                          </li>
+                        </ul>
+                        <button
+                          v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
+                          @click="startConsultation(consultation)"
+                          class="btn btn-success btn-sm w-100"
+                        >
+                          <i class="fas fa-play me-1"></i>Start Consultation
+                        </button>
+                        <button
+                          v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'"
+                          @click="continueConsultation(consultation)"
+                          class="btn btn-warning btn-sm w-100"
+                        >
+                          <i class="fas fa-stethoscope me-1"></i>Continue Consultation
+                        </button>
+                        <button
+                          v-else
+                          @click="continueConsultation(consultation)"
+                          class="btn btn-primary btn-sm w-100"
+                        >
+                          <i class="fas fa-arrow-right me-1"></i>Continue
+                        </button>
                       </div>
                     </template>
                     <template v-else>
@@ -420,21 +430,7 @@ export default {
       }, 45000);
     };
 
-    const selectedPatientId = ref({});
-    const selectedPatient = (consultation) => {
-      if (!consultation.isGroupConsultation) return null;
-      const id = selectedPatientId.value[consultation.queueId];
-      return consultation.patients.find(p => p.patientId === id);
-    };
-    const startConsultationForPatient = (consultation, patient) => {
-      // Use the same logic as startConsultation, but for the selected patient
-      startConsultation({
-        ...consultation,
-        patientId: patient.patientId,
-        patientName: patient.patientName,
-        symptoms: patient.symptoms
-      });
-    };
+
 
     onMounted(() => {
       console.log('OngoingConsultations component mounted');
@@ -487,9 +483,6 @@ export default {
       formatDate,
       formatTime,
       truncateText,
-      selectedPatientId,
-      selectedPatient,
-      startConsultationForPatient,
     };
   }
 };

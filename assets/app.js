@@ -12,6 +12,7 @@ import { createApp } from 'vue';
 import App from './js/App.vue';
 import router from './js/router';
 import axios from 'axios';
+import AuthService from './js/services/AuthService';
 
 // Font Awesome
 import { library } from '@fortawesome/fontawesome-svg-core';
@@ -29,6 +30,16 @@ axios.defaults.baseURL = 'http://127.0.0.1:8090';
 
 // Configure axios defaults
 axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+
+// Initialize AuthService to set up axios headers
+console.log('🔐 Initializing AuthService...');
+const currentUser = AuthService.getCurrentUser();
+if (currentUser && currentUser.token) {
+  console.log('✅ User found, setting auth header');
+  AuthService.setAuthHeader(currentUser.token);
+} else {
+  console.log('❌ No authenticated user found');
+}
 
 // Add Font Awesome icons
 library.add(

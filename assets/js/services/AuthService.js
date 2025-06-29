@@ -7,6 +7,18 @@ class AuthService {
     if (user && user.token) {
       this.setAuthHeader(user.token);
     }
+    
+    // Add axios interceptor to ensure token is always sent
+    axios.interceptors.request.use(
+      (config) => {
+        const currentUser = this.getCurrentUser();
+        if (currentUser && currentUser.token) {
+          config.headers.Authorization = `Bearer ${currentUser.token}`;
+        }
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
   }
 
   async login(email, password) {
@@ -29,8 +41,43 @@ class AuthService {
   }
 
   logout() {
-    localStorage.removeItem('user');
+    // Clear ALL localStorage data
+    localStorage.clear();
+    
+    // Clear ALL sessionStorage data
+    sessionStorage.clear();
+    
+    // Clear axios authorization header
     delete axios.defaults.headers.common['Authorization'];
+    
+    // Clear all cookies
+    this.clearAllCookies();
+    
+    console.log('Logout: All storage and cookies cleared');
+  }
+
+  clearAllCookies() {
+    // Get all cookies and clear them
+    const cookies = document.cookie.split(";");
+    
+    for (let cookie of cookies) {
+      const eqPos = cookie.indexOf("=");
+      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+      
+      // Clear cookie for current domain
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      
+      // Clear cookie for current domain with dot prefix
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+      
+      // Clear cookie for parent domain (if subdomain)
+      const domain = window.location.hostname;
+      const parts = domain.split('.');
+      if (parts.length > 1) {
+        const parentDomain = '.' + parts.slice(-2).join('.');
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${parentDomain}`;
+      }
+    }
   }
 
   getCurrentUser() {
