@@ -95,15 +95,15 @@
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Age</small>
-                        <span>{{ selectedPatient && selectedPatient.dateOfBirth ? calculateAge(selectedPatient.dateOfBirth) + ' years' : 'N/A' }}</span>
+f                        <span>{{ selectedPatient && selectedPatient.dateOfBirth ? (new Date().getFullYear() - new Date(selectedPatient.dateOfBirth).getFullYear()) + ' years' : 'N/A' }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Date of Birth</small>
-                        <span>{{ formatDateOfBirth(selectedPatient?.dateOfBirth) }}</span>
+                        <span>{{ selectedPatient?.dateOfBirth ? new Date(selectedPatient.dateOfBirth).toLocaleDateString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A' }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Gender</small>
-                        <span>{{ getFullGender(selectedPatient?.gender) }}</span>
+                        <span>{{ selectedPatient?.gender === 'M' ? 'Male' : selectedPatient?.gender === 'F' ? 'Female' : (selectedPatient?.gender || 'N/A') }}</span>
                       </div>
                       <div class="col-md-6">
                         <small class="text-muted d-block">Phone Number</small>
@@ -155,11 +155,11 @@
                     @click="showVisitDetails(visit)"
                     style="cursor: pointer;"
                   >
-                    <td>{{ formatDateOfBirth(visit.consultationDate) }}</td>
+                    <td>{{ visit.consultationDate ? new Date(visit.consultationDate).toLocaleDateString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A' }}</td>
                     <td>Dr. {{ visit.doctor?.name || 'Unknown' }}</td>
                     <td>{{ visit.diagnosis || 'No diagnosis recorded' }}</td>
                     <td>
-                      <span :class="getStatusClass(visit.status)">
+                      <span :class="visit.status === 'Completed' ? 'badge bg-success' : visit.status === 'In Progress' ? 'badge bg-warning' : visit.status === 'Cancelled' ? 'badge bg-danger' : visit.status === 'Pending' ? 'badge bg-info' : 'badge bg-secondary'">
                         {{ visit.status || 'Completed' }}
                       </span>
                     </td>
@@ -428,14 +428,14 @@
               
               <div style="display: flex; justify-content: space-between;">
                 <p>Saya mengesahkan telah memeriksa;</p>
-                <p><strong>Tarikh:</strong> {{ formatDate(new Date()) }}</p>
+                <p><strong>Tarikh:</strong> {{ new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) }}</p>
               </div>
               <p style="margin-left: 15px; margin-bottom: 5px;"><strong>Nama dan No KP:</strong> {{ patient.name || patient.displayName || 'Unknown' }} ({{ patient.nric || patient.ic || '******' }})</p>
               <p style="margin-left: 15px; margin-bottom: 20px;"><strong>dari:</strong> {{ patient.company || 'yang berkenaan' }}</p>
               
               <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
               <p style="margin-left: 15px; margin-bottom: 15px;">
-                <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+                <strong>{{ consultation.mcStartDate && consultation.mcEndDate ? (Math.ceil(Math.abs(new Date(consultation.mcEndDate) - new Date(consultation.mcStartDate)) / (1000 * 60 * 60 * 24)) + 1).toString() : '0' }}</strong> hari mulai <strong>{{ consultation.mcStartDate ? new Date(consultation.mcStartDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong> sehingga <strong>{{ consultation.mcEndDate ? new Date(consultation.mcEndDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong>
               </p>
               
               <div style="display: flex; justify-content: flex-end; margin-top: 40px;">
@@ -468,14 +468,14 @@
             
             <div style="display: flex; justify-content: space-between;">
               <p>Saya mengesahkan telah memeriksa;</p>
-              <p><strong>Tarikh:</strong> {{ formatDate(new Date()) }}</p>
+              <p><strong>Tarikh:</strong> {{ new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) }}</p>
             </div>
             <p style="margin-left: 15px; margin-bottom: 5px;"><strong>Nama dan No KP:</strong> {{ selectedPatient?.name || selectedPatient?.displayName || 'Unknown' }} ({{ selectedPatient?.nric || selectedPatient?.ic || '******' }})</p>
             <p style="margin-left: 15px; margin-bottom: 20px;"><strong>dari:</strong> {{ selectedPatient?.company || 'yang berkenaan' }}</p>
             
             <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
             <p style="margin-left: 15px; margin-bottom: 15px;">
-              <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+              <strong>{{ consultation.mcStartDate && consultation.mcEndDate ? (Math.ceil(Math.abs(new Date(consultation.mcEndDate) - new Date(consultation.mcStartDate)) / (1000 * 60 * 60 * 24)) + 1).toString() : '0' }}</strong> hari mulai <strong>{{ consultation.mcStartDate ? new Date(consultation.mcStartDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong> sehingga <strong>{{ consultation.mcEndDate ? new Date(consultation.mcEndDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong>
             </p>
             
             <div style="display: flex; justify-content: flex-end; margin-top: 40px;">
@@ -592,14 +592,14 @@
               
               <div class="d-flex justify-content-between">
                 <p>Saya mengesahkan telah memeriksa;</p>
-                <p><strong>Tarikh:</strong> {{ formatDate(new Date()) }}</p>
+                <p><strong>Tarikh:</strong> {{ new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) }}</p>
               </div>
               <p class="ms-3 mb-1"><strong>Nama dan No KP:</strong> {{ selectedPatient?.name || selectedPatient?.displayName || 'Unknown' }} ({{ selectedPatient?.nric || selectedPatient?.ic || '******' }})</p>
               <p class="ms-3 mb-4"><strong>dari:</strong> {{ selectedPatient?.company || 'yang berkenaan' }}</p>
               
               <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
               <p class="ms-3 mb-3">
-                <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+                <strong>{{ consultation.mcStartDate && consultation.mcEndDate ? (Math.ceil(Math.abs(new Date(consultation.mcEndDate) - new Date(consultation.mcStartDate)) / (1000 * 60 * 60 * 24)) + 1).toString() : '0' }}</strong> hari mulai <strong>{{ consultation.mcStartDate ? new Date(consultation.mcStartDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong> sehingga <strong>{{ consultation.mcEndDate ? new Date(consultation.mcEndDate).toLocaleDateString('ms-MY', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '' }}</strong>
               </p>
               
               <div class="d-flex justify-content-end mt-5">
@@ -650,7 +650,7 @@
                   </div>
                   <div class="info-item">
                     <label>Status:</label>
-                    <span :class="getStatusClass(selectedVisit.status)">{{ selectedVisit.status || 'Completed' }}</span>
+                    <span :class="selectedVisit.status === 'Completed' ? 'badge bg-success' : selectedVisit.status === 'In Progress' ? 'badge bg-warning' : selectedVisit.status === 'Cancelled' ? 'badge bg-danger' : selectedVisit.status === 'Pending' ? 'badge bg-info' : 'badge bg-secondary'">{{ selectedVisit.status || 'Completed' }}</span>
                   </div>
                 </div>
               </div>
@@ -885,7 +885,12 @@ export default {
         return this.groupPatients.find(p => p.id === this.consultation.patientId);
       }
       
-      return this.patients.find(p => p.id === this.consultation.patientId) || null;
+      // Add safety check to ensure patients is an array
+      if (Array.isArray(this.patients)) {
+        return this.patients.find(p => p.id === this.consultation.patientId) || null;
+      }
+      
+      return null;
     }
   },
   methods: {
@@ -1033,6 +1038,7 @@ export default {
         this.patients = Array.isArray(response.data) ? response.data : (response.data.patients || []);
       } catch (error) {
         console.error('Error loading patients:', error);
+        this.patients = []; // Ensure patients is always an array
       }
     },
     async loadDoctors() {
@@ -1042,6 +1048,7 @@ export default {
         this.doctors = Array.isArray(response.data) ? response.data : (response.data.doctors || []);
       } catch (error) {
         console.error('Error loading doctors:', error);
+        this.doctors = []; // Ensure doctors is always an array
       }
     },
     async fetchPatientDetails() {
