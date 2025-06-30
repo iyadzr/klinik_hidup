@@ -22,13 +22,19 @@ class FinancialController extends AbstractController
     #[Route('/dashboard', name: 'api_financial_dashboard', methods: ['GET'])]
     public function dashboard(Request $request): JsonResponse
     {
-        $period = $request->query->get('period', 'today'); // today, week, month, year
+        $period = $request->query->get('period', 'today'); // today, week, month, quarter, year, all
 
         $startDate = $this->getStartDate($period);
         $endDate = new \DateTime('now');
 
-        // Daily total transactions
-        $dailyStats = $this->getDailyStats($startDate, $endDate);
+        // Current period stats
+        $currentStats = $this->getDailyStats($startDate, $endDate);
+        
+        // Previous period stats for trends
+        $previousPeriodStats = $this->getPreviousPeriodStats($period);
+        
+        // Calculate trends
+        $trends = $this->calculateTrends($currentStats, $previousPeriodStats);
         
         // Monthly stats
         $monthlyStats = $this->getMonthlyStats();
@@ -44,16 +50,17 @@ class FinancialController extends AbstractController
 
         return new JsonResponse([
             'period' => $period,
-            'daily_stats' => $dailyStats,
+            'daily_stats' => $currentStats,
             'monthly_stats' => $monthlyStats,
+            'trends' => $trends,
             'medication_stats' => $medicationStats,
             'payment_method_stats' => $paymentMethodStats,
             'recent_transactions' => $recentTransactions,
             'summary' => [
-                'total_revenue' => $dailyStats['total_amount'],
-                'total_consultations' => $dailyStats['total_consultations'],
-                'average_per_consultation' => $dailyStats['total_consultations'] > 0 
-                    ? round($dailyStats['total_amount'] / $dailyStats['total_consultations'], 2) 
+                'total_revenue' => $currentStats['total_amount'],
+                'total_consultations' => $currentStats['total_consultations'],
+                'average_per_consultation' => $currentStats['total_consultations'] > 0 
+                    ? round($currentStats['total_amount'] / $currentStats['total_consultations'], 2) 
                     : 0
             ]
         ]);
@@ -117,6 +124,46 @@ class FinancialController extends AbstractController
         return new JsonResponse($this->paymentRepository->getSummary());
     }
 
+    #[Route('/export', name: 'api_financial_export', methods: ['GET'])]
+    public function export(Request $request): JsonResponse
+    {
+        try {
+            $period = $request->query->get('period', 'today');
+            $startDate = $this->getStartDate($period);
+            $endDate = new \DateTime('now');
+
+            // Get detailed financial data
+            $payments = $this->paymentRepository->findBy(
+                ['paymentDate' => ['$gte' => $startDate, '$lte' => $endDate]],
+                ['paymentDate' => 'DESC']
+            );
+
+            $exportData = [];
+            foreach ($payments as $payment) {
+                $exportData[] = [
+                    'Date' => $payment->getPaymentDate()->format('Y-m-d H:i:s'),
+                    'Patient' => $payment->getConsultation()->getPatient()->getName(),
+                    'Doctor' => $payment->getConsultation()->getDoctor()->getName(),
+                    'Amount' => $payment->getAmount(),
+                    'Payment Method' => $payment->getPaymentMethod(),
+                    'Reference' => $payment->getReference() ?? '',
+                    'Notes' => $payment->getNotes() ?? ''
+                ];
+            }
+
+            // For now, return JSON data - in a real application, you'd generate Excel/CSV
+            return new JsonResponse([
+                'success' => true,
+                'data' => $exportData,
+                'period' => $period,
+                'total_records' => count($exportData)
+            ]);
+
+        } catch (\Exception $e) {
+            return new JsonResponse(['error' => 'Export failed: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function getStartDate(string $period): \DateTime
     {
         return match ($period) {
@@ -125,8 +172,66 @@ class FinancialController extends AbstractController
             'month' => new \DateTime('-1 month'),
             'quarter' => new \DateTime('-3 months'),
             'year' => new \DateTime('-1 year'),
+            'all' => new \DateTime('2020-01-01'), // Start from a reasonable date
             default => new \DateTime('today'),
         };
+    }
+
+    private function getPreviousPeriodStats(string $period): array
+    {
+        $previousStartDate = match ($period) {
+            'today' => new \DateTime('yesterday'),
+            'week' => new \DateTime('-2 weeks'),
+            'month' => new \DateTime('-2 months'),
+            'quarter' => new \DateTime('-6 months'),
+            'year' => new \DateTime('-2 years'),
+            'all' => new \DateTime('2019-01-01'),
+            default => new \DateTime('yesterday'),
+        };
+
+        $previousEndDate = match ($period) {
+            'today' => new \DateTime('yesterday 23:59:59'),
+            'week' => new \DateTime('-1 week'),
+            'month' => new \DateTime('-1 month'),
+            'quarter' => new \DateTime('-3 months'),
+            'year' => new \DateTime('-1 year'),
+            'all' => new \DateTime('2020-01-01'),
+            default => new \DateTime('yesterday 23:59:59'),
+        };
+
+        return $this->getDailyStats($previousStartDate, $previousEndDate);
+    }
+
+    private function calculateTrends(array $currentStats, array $previousStats): array
+    {
+        $trends = [];
+
+        // Revenue change
+        $currentRevenue = $currentStats['total_amount'];
+        $previousRevenue = $previousStats['total_amount'];
+        $trends['revenue_change'] = $previousRevenue > 0 
+            ? round((($currentRevenue - $previousRevenue) / $previousRevenue) * 100, 2)
+            : 0;
+
+        // Consultations change
+        $currentConsultations = $currentStats['total_consultations'];
+        $previousConsultations = $previousStats['total_consultations'];
+        $trends['consultations_change'] = $previousConsultations > 0 
+            ? round((($currentConsultations - $previousConsultations) / $previousConsultations) * 100, 2)
+            : 0;
+
+        // Average per consultation change
+        $currentAverage = $currentStats['total_consultations'] > 0 
+            ? $currentStats['total_amount'] / $currentStats['total_consultations'] 
+            : 0;
+        $previousAverage = $previousStats['total_consultations'] > 0 
+            ? $previousStats['total_amount'] / $previousStats['total_consultations'] 
+            : 0;
+        $trends['average_change'] = $previousAverage > 0 
+            ? round((($currentAverage - $previousAverage) / $previousAverage) * 100, 2)
+            : 0;
+
+        return $trends;
     }
 
     private function getDailyStats(\DateTime $startDate, \DateTime $endDate): array

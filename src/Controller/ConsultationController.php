@@ -233,20 +233,26 @@ class ConsultationController extends AbstractController
                         $prescribedMed->setConsultation($consultation);
                         $prescribedMed->setMedication($medication);
                         
-                        if (isset($medData['medicationId'])) {
-                            $medication = $this->entityManager->getRepository(\App\Entity\Medication::class)->find($medData['medicationId']);
-                            if ($medication) {
-                                $prescribedMed->setMedication($medication);
-                            }
-                        }
-                        
                         if (isset($medData['quantity'])) {
                             $prescribedMed->setQuantity((int)$medData['quantity']);
                             $prescribedMed->setInstructions($medData['instructions'] ?? null);
                             
-                            // Handle actual price set by doctor
-                            if (isset($medData['actualPrice']) && $medData['actualPrice'] > 0) {
+                            // Handle actual price - allow 0 prices, use medication's selling price as fallback
+                            if (isset($medData['actualPrice']) && is_numeric($medData['actualPrice'])) {
                                 $prescribedMed->setActualPrice((string)$medData['actualPrice']);
+                            } elseif ($medication && $medication->getSellingPrice()) {
+                                // Fallback to medication's selling price if not provided
+                                $prescribedMed->setActualPrice($medication->getSellingPrice());
+                                $this->logger->info('Using medication selling price as fallback', [
+                                    'medication' => $medication->getName(),
+                                    'sellingPrice' => $medication->getSellingPrice()
+                                ]);
+                            } else {
+                                // Set to null if no price available
+                                $prescribedMed->setActualPrice(null);
+                                $this->logger->warning('No price available for prescribed medication', [
+                                    'medication' => $medication ? $medication->getName() : $medData['name']
+                                ]);
                             }
                             
                             $this->entityManager->persist($prescribedMed);
@@ -290,9 +296,23 @@ class ConsultationController extends AbstractController
             ], 201);
         } catch (\Exception $e) {
             $this->logger->error('Error creating consultation: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $data,
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
             ]);
-            return new JsonResponse(['error' => 'Error creating consultation: ' . $e->getMessage()], 500);
+            
+            // More specific error message for debugging
+            $errorMessage = 'Error creating consultation: ' . $e->getMessage();
+            if (strpos($e->getMessage(), 'prescribed_medication') !== false) {
+                $errorMessage .= ' (Issue with prescribed medications)';
+            }
+            
+            return new JsonResponse([
+                'error' => $errorMessage,
+                'details' => $e->getMessage(),
+                'line' => $e->getLine()
+            ], 500);
         }
     }
 
@@ -585,9 +605,9 @@ class ConsultationController extends AbstractController
             ->select('c.id', 'c.consultationDate', 'p.name as patientName', 'd.name as doctorName', 'c.status', 'c.symptoms', 'p.id as patientId', 'd.id as doctorId')
             ->join('c.patient', 'p')
             ->join('c.doctor', 'd')
-            ->where('c.status != :status_completed')
+            ->where('c.status NOT IN (:completed_statuses)')
             ->andWhere('c.consultationDate BETWEEN :start AND :end')
-            ->setParameter('status_completed', 'completed')
+            ->setParameter('completed_statuses', ['completed', 'completed_consultation'])
             ->setParameter('start', $startOfDay)
             ->setParameter('end', $endOfDay);
 
@@ -604,7 +624,9 @@ class ConsultationController extends AbstractController
         foreach ($ongoingConsultations as $consultation) {
             $ongoingData[] = [
                 'id' => $consultation['id'],
-                'consultationDate' => $consultation['consultationDate'],
+                'consultationDate' => $consultation['consultationDate'] instanceof \DateTimeInterface
+                    ? $consultation['consultationDate']->format('Y-m-d H:i:s')
+                    : $consultation['consultationDate'],
                 'patientName' => $consultation['patientName'],
                 'patientId' => $consultation['patientId'],
                 'doctorName' => $consultation['doctorName'],
@@ -701,13 +723,16 @@ class ConsultationController extends AbstractController
         // Sort by queue number and consultation date
         usort($ongoingData, function($a, $b) {
             if ($a['isQueueEntry'] && $b['isQueueEntry']) {
-                return strcmp($a['queueNumber'], $b['queueNumber']);
+                return strcmp($a['queueNumber'] ?? '', $b['queueNumber'] ?? '');
             } elseif ($a['isQueueEntry']) {
                 return -1; // Queue entries first
             } elseif ($b['isQueueEntry']) {
                 return 1;
             } else {
-                return strcmp($a['consultationDate'], $b['consultationDate']);
+                // Both are consultations - compare by date (now both are strings)
+                $dateA = $a['consultationDate'] ?? '';
+                $dateB = $b['consultationDate'] ?? '';
+                return strcmp($dateA, $dateB);
             }
         });
             

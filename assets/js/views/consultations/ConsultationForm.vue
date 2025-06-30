@@ -238,7 +238,7 @@
                 <!-- Medication List -->
                 <div v-for="(medItem, index) in prescribedMedications" :key="index" class="medication-row mb-3 p-3 border rounded">
                   <div class="row g-3">
-                    <div class="col-md-5">
+                    <div class="col-md-6">
                       <div class="form-floating">
                         <input
                           type="text"
@@ -254,12 +254,15 @@
                         >
                         <label :for="`medication-${index}`">Medication Name</label>
                         
-                        <!-- Medication Suggestions Dropdown -->
-                        <div v-if="medItem.suggestions && medItem.suggestions.length > 0" class="medication-suggestions">
-                          <div class="suggestions-header">
+                        <!-- Medication Suggestions Dropdown with Pagination -->
+                        <div v-if="medItem.allSuggestions && medItem.allSuggestions.length > 0" class="medication-suggestions">
+                          <div class="suggestions-header d-flex justify-content-between align-items-center">
                             <small class="text-muted"><i class="fas fa-search me-1"></i>Select from existing medications:</small>
+                            <small class="text-muted">{{ medItem.allSuggestions.length }} results</small>
                           </div>
-                          <div class="suggestion-item" v-for="(suggestion, sIndex) in medItem.suggestions" :key="sIndex"
+                          
+                          <!-- Paginated Suggestions -->
+                          <div class="suggestion-item" v-for="(suggestion, sIndex) in medItem.paginatedSuggestions" :key="sIndex"
                                @click="selectMedication(medItem, suggestion)"
                                :class="{ active: sIndex === medItem.selectedSuggestionIndex }">
                             <div class="suggestion-main">
@@ -276,8 +279,35 @@
                             </div>
                           </div>
                           
+                          <!-- Pagination Controls -->
+                          <div v-if="medItem.totalPages > 1" class="suggestions-pagination">
+                            <div class="d-flex justify-content-between align-items-center py-2 px-3 border-top">
+                              <small class="text-muted">
+                                Page {{ medItem.currentPage }} of {{ medItem.totalPages }}
+                              </small>
+                              <div class="btn-group btn-group-sm">
+                                <button 
+                                  type="button" 
+                                  class="btn btn-outline-secondary btn-sm"
+                                  :disabled="medItem.currentPage === 1"
+                                  @click="changeMedicationPage(medItem, medItem.currentPage - 1)"
+                                >
+                                  <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <button 
+                                  type="button" 
+                                  class="btn btn-outline-secondary btn-sm"
+                                  :disabled="medItem.currentPage === medItem.totalPages"
+                                  @click="changeMedicationPage(medItem, medItem.currentPage + 1)"
+                                >
+                                  <i class="fas fa-chevron-right"></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
                           <!-- Create new medication option - Always show if there's a name and no exact match -->
-                          <div v-if="medItem.name && medItem.name.length >= 2 && !medItem.suggestions.some(s => s.name.toLowerCase() === medItem.name.toLowerCase())" 
+                          <div v-if="medItem.name && medItem.name.length >= 2 && !medItem.allSuggestions.some(s => s.name.toLowerCase() === medItem.name.toLowerCase())" 
                                class="suggestion-item suggestion-create-new"
                                @click="showCreateMedicationModal(medItem)">
                             <div class="suggestion-main">
@@ -290,7 +320,7 @@
                       </div>
                     </div>
                     
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                       <div class="form-floating">
                         <input type="number" class="form-control" :id="`quantity-${index}`" v-model.number="medItem.quantity" min="1" required>
                         <label :for="`quantity-${index}`">Qty</label>
@@ -299,14 +329,6 @@
                     </div>
                     
                     <div class="col-md-2">
-                      <div class="form-floating">
-                        <input type="number" class="form-control" :id="`price-${index}`" v-model.number="medItem.actualPrice" min="0" step="0.01" placeholder="0.00">
-                        <label :for="`price-${index}`">Price (RM)</label>
-                      </div>
-                      <small class="text-muted">Final price</small>
-                    </div>
-                    
-                    <div class="col-md-1">
                       <button type="button" class="btn btn-outline-danger btn-sm h-100" @click="removeMedicationRow(index)">
                         <i class="fas fa-trash"></i>
                       </button>
@@ -532,9 +554,10 @@
           <i class="fas fa-times me-2"></i>
           Cancel
         </button>
-        <button type="submit" class="btn btn-primary">
-          <i class="fas fa-check me-2"></i>
-          Complete Consultation
+        <button type="submit" class="btn btn-primary" :disabled="isLoading">
+          <i v-if="!isLoading" class="fas fa-check me-2"></i>
+          <i v-if="isLoading" class="fas fa-spinner fa-spin me-2"></i>
+          {{ isLoading ? 'Saving...' : 'Complete Consultation' }}
         </button>
       </div>
     </form>
@@ -906,7 +929,7 @@
     <div class="modal fade" id="createMedicationModal" tabindex="-1" aria-labelledby="createMedicationModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header">
+        <div class="modal-header">
             <h5 class="modal-title" id="createMedicationModalLabel">
               <i class="fas fa-plus-circle text-success me-2"></i>
               Add New Medication to Database
@@ -1011,6 +1034,7 @@ import MedicationLabel from '../../components/MedicationLabel.vue';
 import * as bootstrap from 'bootstrap';
 import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
 import searchDebouncer from '../../utils/searchDebouncer';
+import AuthService from '../../services/AuthService';
 
 export default {
   name: 'ConsultationForm',
@@ -1276,6 +1300,13 @@ export default {
       }
     },
     async saveConsultation() {
+      // Prevent multiple submissions
+      if (this.isLoading) {
+        return;
+      }
+      
+      this.isLoading = true;
+      
       try {
         // Validate required fields
         if (!this.consultation.patientId) {
@@ -1307,18 +1338,44 @@ export default {
         };
 
         console.log('Sending consultation data:', consultationData);
+        console.log('Prescribed medications details:', this.prescribedMedications.map(med => ({
+          name: med.name,
+          medicationId: med.medicationId,
+          quantity: med.quantity,
+          actualPrice: med.actualPrice,
+          unitType: med.unitType
+        })));
 
         const response = await axios.post('/api/consultations', consultationData);
         console.log('Consultation saved successfully:', response.data);
 
-        // Prepare consultation summary
-        this.prepareConsultationSummary();
+        // Show success message
+        alert('✅ Consultation saved successfully!');
         
-        // Show summary modal instead of immediate redirect
-        this.consultationSummaryModal.show();
+        // Clear loading state before redirect
+        this.isLoading = false;
+        
+        // Redirect based on user role instead of showing modal
+        const currentUser = AuthService.getCurrentUser();
+        if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
+          // Doctors should go back to ongoing consultations
+          this.$router.push('/consultations/ongoing');
+        } else {
+          // Others go to consultations list for payment processing
+          this.$router.push('/consultations');
+        }
       } catch (error) {
         console.error('Error saving consultation:', error);
-        alert(error.response?.data?.message || error.message || 'Error saving consultation');
+        
+        // Show user-friendly error message
+        const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Error saving consultation';
+        alert('❌ ' + errorMessage);
+        
+        // Clear any loading states
+        this.isLoading = false;
+      } finally {
+        // Ensure loading state is always cleared
+        this.isLoading = false;
       }
     },
     // Enhanced Medication Methods
@@ -1334,8 +1391,12 @@ export default {
         category: '',
         instructions: '',
         showInstructions: false,
-        suggestions: [],
-        selectedSuggestionIndex: -1
+        allSuggestions: [],
+        paginatedSuggestions: [],
+        selectedSuggestionIndex: -1,
+        currentPage: 1,
+        itemsPerPage: 5,
+        totalPages: 1
       });
     },
     
@@ -1351,25 +1412,41 @@ export default {
         if (!this.medicationSearcher) {
           console.warn('⚠️ MedicationSearcher not initialized, using direct search');
           const results = await this.performMedicationSearch(searchTerm);
-          medItem.suggestions = results || [];
-          medItem.selectedSuggestionIndex = results && results.length > 0 ? 0 : -1;
-          medItem.showCreateNew = true;
+          this.updateMedicationPagination(medItem, results || []);
           return;
         }
 
         const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
         
         if (results) {
-          medItem.suggestions = results;
-          medItem.selectedSuggestionIndex = results.length > 0 ? 0 : -1;
-          medItem.showCreateNew = true;
+          this.updateMedicationPagination(medItem, results);
         }
         
       } catch (error) {
         console.error('Medication search error:', error);
-        medItem.suggestions = [];
-        medItem.selectedSuggestionIndex = -1;
-        medItem.showCreateNew = true;
+        this.updateMedicationPagination(medItem, []);
+      }
+    },
+    
+    updateMedicationPagination(medItem, allResults) {
+      medItem.allSuggestions = allResults;
+      medItem.currentPage = 1;
+      medItem.totalPages = Math.ceil(allResults.length / medItem.itemsPerPage);
+      medItem.selectedSuggestionIndex = allResults.length > 0 ? 0 : -1;
+      this.updatePaginatedSuggestions(medItem);
+    },
+    
+    updatePaginatedSuggestions(medItem) {
+      const startIndex = (medItem.currentPage - 1) * medItem.itemsPerPage;
+      const endIndex = startIndex + medItem.itemsPerPage;
+      medItem.paginatedSuggestions = medItem.allSuggestions.slice(startIndex, endIndex);
+    },
+    
+    changeMedicationPage(medItem, newPage) {
+      if (newPage >= 1 && newPage <= medItem.totalPages) {
+        medItem.currentPage = newPage;
+        this.updatePaginatedSuggestions(medItem);
+        medItem.selectedSuggestionIndex = 0; // Reset selection to first item
       }
     },
 
@@ -1392,8 +1469,19 @@ export default {
       medItem.unitType = medication.unitType;
       medItem.unitDescription = medication.unitDescription;
       medItem.category = medication.category;
-      medItem.actualPrice = medication.sellingPrice ? parseFloat(medication.sellingPrice) : 0.00;
-      medItem.suggestions = [];
+      
+      // Ensure actualPrice is set from sellingPrice, with fallback to 0
+      if (medication.sellingPrice && medication.sellingPrice > 0) {
+        medItem.actualPrice = parseFloat(medication.sellingPrice);
+      } else {
+        medItem.actualPrice = 0.00;
+        console.warn(`⚠️ Medication "${medication.name}" has no selling price set. Please set it in Admin > Medications.`);
+      }
+      
+      console.log(`✅ Selected medication: ${medication.name}, Price: RM${medItem.actualPrice}`);
+      
+      medItem.allSuggestions = [];
+      medItem.paginatedSuggestions = [];
       medItem.selectedSuggestionIndex = -1;
     },
     
@@ -1402,7 +1490,7 @@ export default {
       setTimeout(() => {
         if (!medItem.medicationId && medItem.name && medItem.name.length >= 2) {
           // Check if exact match exists in current suggestions
-          const exactMatch = medItem.suggestions.find(med => 
+          const exactMatch = medItem.allSuggestions.find(med => 
             med.name.toLowerCase() === medItem.name.toLowerCase()
           );
           
@@ -1414,19 +1502,21 @@ export default {
             return; // Don't clear suggestions immediately
           }
         }
-        medItem.suggestions = [];
+        medItem.allSuggestions = [];
+        medItem.paginatedSuggestions = [];
         medItem.selectedSuggestionIndex = -1;
       }, 200);
     },
     
     selectFirstSuggestion(medItem) {
-      if (medItem.suggestions && medItem.suggestions.length > 0) {
-        this.selectMedication(medItem, medItem.suggestions[0]);
+      if (medItem.paginatedSuggestions && medItem.paginatedSuggestions.length > 0) {
+        this.selectMedication(medItem, medItem.paginatedSuggestions[0]);
       }
     },
     
     clearSuggestions(medItem) {
-      medItem.suggestions = [];
+      medItem.allSuggestions = [];
+      medItem.paginatedSuggestions = [];
       medItem.selectedSuggestionIndex = -1;
     },
     
@@ -1447,7 +1537,8 @@ export default {
       this.createMedicationModal.show();
       
       // Clear suggestions when showing modal
-      medItem.suggestions = [];
+      medItem.allSuggestions = [];
+      medItem.paginatedSuggestions = [];
     },
     
     async createNewMedication() {
@@ -2343,6 +2434,33 @@ export default {
 .suggestion-create-new .suggestion-main {
   color: #28a745;
   font-weight: 500;
+}
+
+.suggestions-pagination {
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+}
+
+.suggestions-pagination .btn-group-sm .btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  min-width: 30px;
+}
+
+.suggestions-pagination .btn-outline-secondary {
+  border-color: #6c757d;
+  color: #6c757d;
+}
+
+.suggestions-pagination .btn-outline-secondary:hover:not(:disabled) {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  color: white;
+}
+
+.suggestions-pagination .btn-outline-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .medication-row .btn-outline-danger {
