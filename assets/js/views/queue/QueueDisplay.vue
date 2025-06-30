@@ -6,28 +6,14 @@
         <div class="clock-date">{{ currentDate }}</div>
         <span class="clock-time">{{ currentTime }}</span>
       </div>
-      <div class="row h-100">
-        <!-- Left Column - Current Queue Number -->
+      
+      <!-- Dynamic Layout Based on Active Consultations -->
+      <div v-if="activeConsultations.length === 0" class="row h-100">
+        <!-- No Active Consultations - Show Single Row -->
         <div class="col-md-6 d-flex align-items-center justify-content-center bg-primary text-white">
           <div class="text-center">
             <h2 class="display-6 mb-4">Now Serving</h2>
-            <div v-if="currentQueue" class="current-queue-number">
-              <div class="queue-number display-1 fw-bold mb-3">
-                {{ formatQueueNumber(currentQueue.queueNumber) }}
-              </div>
-              <div class="patient-name h4 mb-3">
-                {{ getFormattedPatientName(currentQueue.patient) }}
-              </div>
-              <div class="doctor-info">
-                <div class="doctor-name h5 mb-1">
-                  Dr. {{ getFormattedDoctorName(currentQueue.doctor) }}
-                </div>
-                <div class="room-number h6 text-light">
-                  {{ getDoctorRoom(currentQueue.doctor) }}
-                </div>
-              </div>
-            </div>
-            <div v-else class="no-queue">
+            <div class="no-queue">
               <div class="queue-number display-1 fw-bold mb-3 text-muted">
                 ---
               </div>
@@ -37,7 +23,6 @@
             </div>
           </div>
         </div>
-
         <!-- Right Column - Waiting Count -->
         <div class="col-md-6 d-flex align-items-center justify-content-center bg-warning text-dark">
           <div class="text-center">
@@ -51,6 +36,85 @@
           </div>
         </div>
       </div>
+      
+      <div v-else-if="activeConsultations.length === 1" class="row h-100">
+        <!-- Single Active Consultation - Original Layout -->
+        <div class="col-md-6 d-flex align-items-center justify-content-center bg-primary text-white">
+          <div class="text-center">
+            <h2 class="display-6 mb-4">Now Serving</h2>
+            <div class="current-queue-number">
+              <div class="queue-number display-1 fw-bold mb-3">
+                {{ formatQueueNumber(activeConsultations[0].queueNumber) }}
+              </div>
+              <div class="patient-name h4 mb-3">
+                {{ getFormattedPatientName(activeConsultations[0].patient) }}
+              </div>
+              <div class="doctor-info">
+                <div class="doctor-name h5 mb-1">
+                  Dr. {{ getFormattedDoctorName(activeConsultations[0].doctor) }}
+                </div>
+                <div class="room-number h6 text-light">
+                  {{ getDoctorRoom(activeConsultations[0].doctor) }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Right Column - Waiting Count -->
+        <div class="col-md-6 d-flex align-items-center justify-content-center bg-warning text-dark">
+          <div class="text-center">
+            <h2 class="display-6 mb-4">Waiting</h2>
+            <div class="waiting-count display-1 fw-bold mb-3">
+              {{ waitingCount }}
+            </div>
+            <div class="waiting-label h4">
+              {{ waitingCount === 1 ? 'Patient' : 'Patients' }}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div v-else class="multiple-consultations">
+        <!-- Multiple Active Consultations - Stacked Layout -->
+        <div v-for="(consultation, index) in activeConsultations" :key="consultation.id" 
+             class="row consultation-row" 
+             :class="{ 'mb-3': index < activeConsultations.length - 1 }">
+          <div class="col-md-8 d-flex align-items-center justify-content-center bg-primary text-white">
+            <div class="text-center">
+              <h3 class="h4 mb-3">Now Serving</h3>
+              <div class="current-queue-number">
+                <div class="queue-number display-4 fw-bold mb-2">
+                  {{ formatQueueNumber(consultation.queueNumber) }}
+                </div>
+                <div class="patient-name h5 mb-2">
+                  {{ getFormattedPatientName(consultation.patient) }}
+                </div>
+                <div class="doctor-info">
+                  <div class="doctor-name h6 mb-1">
+                    Dr. {{ getFormattedDoctorName(consultation.doctor) }}
+                  </div>
+                  <div class="room-number small text-light">
+                    {{ getDoctorRoom(consultation.doctor) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="index === 0" class="col-md-4 d-flex align-items-center justify-content-center bg-warning text-dark">
+            <div class="text-center">
+              <h3 class="h4 mb-3">Waiting</h3>
+              <div class="waiting-count display-4 fw-bold mb-2">
+                {{ waitingCount }}
+              </div>
+              <div class="waiting-label h6">
+                {{ waitingCount === 1 ? 'Patient' : 'Patients' }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="col-md-4"></div>
+        </div>
+      </div>
+      
       <button v-if="!isFullscreen" @click="enterFullscreen" class="fullscreen-btn">
         <i class="fas fa-expand"></i> Fullscreen
       </button>
@@ -79,8 +143,25 @@ export default {
     };
   },
   computed: {
-    currentQueue() {
-      return this.queueList.find(q => q.status === 'in_consultation');
+    activeConsultations() {
+      // Get all consultations that are currently in progress
+      const inConsultation = this.queueList.filter(q => q.status === 'in_consultation');
+      
+      // Group by doctor to avoid duplicates and ensure one per doctor
+      const byDoctor = {};
+      inConsultation.forEach(consultation => {
+        const doctorId = consultation.doctor?.id || 'unknown';
+        if (!byDoctor[doctorId]) {
+          byDoctor[doctorId] = consultation;
+        }
+      });
+      
+      // Return as array sorted by doctor name
+      return Object.values(byDoctor).sort((a, b) => {
+        const nameA = this.getFormattedDoctorName(a.doctor);
+        const nameB = this.getFormattedDoctorName(b.doctor);
+        return nameA.localeCompare(nameB);
+      });
     },
     waitingQueue() {
       // Only count each queue entry once, regardless of group size
@@ -612,5 +693,73 @@ body.queue-fullscreen {
   background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
   color: white;
   font-weight: bold;
+}
+
+/* Multiple Consultations Layout */
+.multiple-consultations {
+  padding-top: 8rem; /* Account for clock */
+  height: calc(100vh - 8rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.consultation-row {
+  margin: 0;
+  flex: 1;
+  min-height: 200px;
+}
+
+.consultation-row .col-md-8 {
+  padding: 1.5rem;
+  min-height: 200px;
+}
+
+.consultation-row .col-md-4 {
+  padding: 1.5rem;
+  min-height: 200px;
+}
+
+.multiple-consultations .queue-number {
+  font-size: 5rem !important;
+  line-height: 1;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.multiple-consultations .waiting-count {
+  font-size: 5rem !important;
+  line-height: 1;
+  color: #856404 !important;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+@media (max-width: 768px) {
+  .multiple-consultations {
+    padding-top: 6rem;
+    height: calc(100vh - 6rem);
+  }
+  
+  .consultation-row .col-md-8,
+  .consultation-row .col-md-4 {
+    padding: 1rem;
+    min-height: 150px;
+  }
+  
+  .multiple-consultations .queue-number,
+  .multiple-consultations .waiting-count {
+    font-size: 3rem !important;
+  }
+  
+  .multiple-consultations .h4 {
+    font-size: 1.1rem !important;
+  }
+  
+  .multiple-consultations .h5 {
+    font-size: 1rem !important;
+  }
+  
+  .multiple-consultations .h6 {
+    font-size: 0.9rem !important;
+  }
 }
 </style> 

@@ -90,7 +90,7 @@
               
               <div class="mb-3">
                 <label class="form-label">Specialization</label>
-                <select class="form-select" v-model="form.specialization" required>
+                <select class="form-select" v-model="form.specialization" ref="specializationSelect" required>
                   <option value="General Practice (GP)">General Practice (GP)</option>
                   <option value="Internal Medicine">Internal Medicine</option>
                   <option value="Pediatrics">Pediatrics</option>
@@ -162,6 +162,14 @@ export default {
         licenseNumber: doctor.licenseNumber || ''
       };
       this.showAddModal = true;
+      
+      // Ensure Vue reactivity for the select dropdown
+      this.$nextTick(() => {
+        // Force reactivity update for the specialization select
+        if (this.$refs.specializationSelect) {
+          this.$refs.specializationSelect.value = this.form.specialization;
+        }
+      });
     },
     async deleteDoctor(doctor) {
       if (!confirm(`Are you sure you want to delete Dr. ${doctor.name}?`)) {
@@ -195,8 +203,9 @@ export default {
     },
     async handleSubmit() {
       try {
-        const endpoint = this.editingDoctor ? `/api/doctors/${this.editingDoctor.id}` : '/api/doctors';
-        const method = this.editingDoctor ? 'put' : 'post';
+        const isEditing = this.editingDoctor !== null;
+        const endpoint = isEditing ? `/api/doctors/${this.editingDoctor.id}` : '/api/doctors';
+        const method = isEditing ? 'put' : 'post';
         
         const response = await axios[method](endpoint, {
           name: this.form.name,
@@ -205,17 +214,19 @@ export default {
           specialization: this.form.specialization,
           licenseNumber: this.form.licenseNumber || null
         });
-        console.log('Server response:', response.data);
+        
+        // Store editing state before closing modal (since closeModal resets editingDoctor)
+        const wasEditing = isEditing;
         
         this.closeModal();
         await this.loadDoctors();
         
-        // Show success message with credentials if creating new doctor
-        if (this.editingDoctor) {
+        // Show appropriate success message
+        if (wasEditing) {
           alert('Doctor updated successfully!');
         } else {
           const doctor = response.data.doctor;
-          if (doctor.temporaryPassword) {
+          if (doctor && doctor.temporaryPassword) {
             alert(`Doctor and user account created successfully!\n\nLogin Credentials:\nUsername: ${doctor.username}\nTemporary Password: ${doctor.temporaryPassword}\n\nPlease share these credentials with the doctor.`);
           } else {
             alert('Doctor added successfully!');

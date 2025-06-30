@@ -68,7 +68,10 @@
                     <span v-else-if="consultation.isQueueEntry && consultation.status === 'in_consultation'" class="badge bg-warning text-dark">
                       <i class="fas fa-stethoscope me-1"></i>In Consultation
                     </span>
-                    <span v-else class="badge bg-success">
+                    <span v-else-if="consultation.status === 'completed' || consultation.status === 'completed_consultation'" class="badge bg-success">
+                      <i class="fas fa-check me-1"></i>Completed
+                    </span>
+                    <span v-else class="badge bg-primary">
                       <i class="fas fa-clock me-1"></i>Ongoing
                     </span>
                   </div>
@@ -105,6 +108,14 @@
                         >
                           <i class="fas fa-stethoscope me-1"></i>Continue Consultation
                         </button>
+                        <div
+                          v-else-if="consultation.status === 'completed' || consultation.status === 'completed_consultation'"
+                          class="text-center"
+                        >
+                          <span class="badge bg-success fs-6 py-2 px-3">
+                            <i class="fas fa-check me-1"></i>Completed
+                          </span>
+                        </div>
                         <button
                           v-else
                           @click="continueConsultation(consultation)"
@@ -132,6 +143,14 @@
                       >
                         <i class="fas fa-stethoscope me-1"></i>Continue Consultation
                       </button>
+                      <div
+                        v-else-if="consultation.status === 'completed' || consultation.status === 'completed_consultation'"
+                        class="text-center"
+                      >
+                        <span class="badge bg-success fs-6 py-2 px-3">
+                          <i class="fas fa-check me-1"></i>Completed
+                        </span>
+                      </div>
                       <button
                         v-else
                         @click="continueConsultation(consultation)"
@@ -150,7 +169,7 @@
     </div>
 
     <!-- Quick Actions -->
-    <div v-if="!loading && ongoingConsultations.length" class="row mt-4 g-3">
+    <div v-if="!loading && (ongoingConsultations.length || todayTotal > 0)" class="row mt-4 g-3">
       <div class="col-md-4">
         <div class="card bg-light">
           <div class="card-body text-center">
@@ -170,11 +189,102 @@
         </div>
       </div>
       <div class="col-md-4">
-        <div class="card bg-light">
+        <div class="card bg-light clickable-card" @click="showTodayPatientsModal" title="Click to view all patients for today">
           <div class="card-body text-center">
             <i class="fas fa-calendar-day fa-2x text-success mb-2"></i>
             <h6>Total Today</h6>
             <h4 class="text-success">{{ todayTotal }}</h4>
+            <small class="text-muted">Click to view all</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Today's Patients Modal -->
+    <div class="modal fade" id="todayPatientsModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-calendar-day me-2"></i>
+              Today's Patients ({{ todayTotal }})
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div v-if="loadingTodayPatients" class="text-center py-4">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2 text-muted">Loading today's patients...</p>
+            </div>
+            <div v-else-if="todayPatients.length === 0" class="text-center py-4">
+              <i class="fas fa-calendar-times fa-3x text-muted mb-3"></i>
+              <h6>No Patients Today</h6>
+              <p class="text-muted">No patients have been registered for consultations today.</p>
+            </div>
+            <div v-else>
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Time</th>
+                      <th>Patient</th>
+                      <th>Doctor</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="patient in todayPatients" :key="patient.id + '-' + patient.type">
+                      <td>{{ formatTime(patient.time) }}</td>
+                      <td>
+                        <div class="d-flex align-items-center">
+                          <div class="avatar-sm bg-light rounded-circle me-2 d-flex align-items-center justify-content-center">
+                            <i class="fas fa-user text-secondary"></i>
+                          </div>
+                          <div>
+                            <div class="fw-medium">{{ patient.patientName }}</div>
+                            <small class="text-muted">{{ patient.type === 'queue' ? 'Queue #' + patient.queueNumber : 'Consultation' }}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{{ patient.doctorName }}</td>
+                      <td>
+                        <span class="badge" :class="getTodayPatientStatusClass(patient.status)">
+                          {{ formatTodayPatientStatus(patient.status) }}
+                        </span>
+                      </td>
+                      <td>
+                        <button 
+                          v-if="patient.status === 'waiting'" 
+                          @click="startPatientConsultation(patient)"
+                          class="btn btn-sm btn-success"
+                          title="Start Consultation"
+                        >
+                          <i class="fas fa-play me-1"></i>Start
+                        </button>
+                        <button 
+                          v-else-if="patient.status === 'in_consultation'" 
+                          @click="continuePatientConsultation(patient)"
+                          class="btn btn-sm btn-warning"
+                          title="Continue Consultation"
+                        >
+                          <i class="fas fa-arrow-right me-1"></i>Continue
+                        </button>
+                        <span v-else-if="patient.status === 'completed' || patient.status === 'completed_consultation'" class="badge bg-success">
+                          <i class="fas fa-check me-1"></i>Completed
+                        </span>
+                        <span v-else class="text-muted">-</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>
@@ -201,6 +311,11 @@ export default {
     const retryCount = ref(0);
     const isRateLimited = ref(false);
     const rateLimitCooldown = ref(0);
+    
+    // Today's Patients Modal
+    const todayPatients = ref([]);
+    const loadingTodayPatients = ref(false);
+    const todayPatientsModal = ref(null);
     
     // Request cancellation
     let currentRequest = null;
@@ -430,8 +545,6 @@ export default {
       }, 45000);
     };
 
-
-
     onMounted(() => {
       console.log('OngoingConsultations component mounted');
       fetchOngoingConsultations();
@@ -453,6 +566,86 @@ export default {
         clearInterval(rateLimitTimeout);
       }
     });
+
+    // Today's Patients Modal functionality
+    const showTodayPatientsModal = async () => {
+      loadingTodayPatients.value = true;
+      todayPatients.value = [];
+      
+      try {
+        // Import Bootstrap if not already available
+        const { Modal } = await import('bootstrap');
+        
+        // Show modal
+        if (!todayPatientsModal.value) {
+          todayPatientsModal.value = new Modal(document.getElementById('todayPatientsModal'));
+        }
+        todayPatientsModal.value.show();
+        
+        // Fetch today's patients data
+        await fetchTodayPatients();
+      } catch (error) {
+        console.error('Error showing today patients modal:', error);
+      }
+    };
+
+    const fetchTodayPatients = async () => {
+      try {
+        let doctorId = null;
+        if (isDoctor.value && currentUser.value) {
+          doctorId = await AuthService.getDoctorId();
+        }
+
+        const response = await axios.get('/api/consultations/today-all', {
+          params: { doctorId: doctorId }
+        });
+        
+        todayPatients.value = response.data.patients || [];
+      } catch (error) {
+        console.error('Error fetching today patients:', error);
+        todayPatients.value = [];
+      } finally {
+        loadingTodayPatients.value = false;
+      }
+    };
+
+    const getTodayPatientStatusClass = (status) => {
+      const statusClasses = {
+        'waiting': 'bg-info',
+        'in_consultation': 'bg-warning text-dark',
+        'completed_consultation': 'bg-primary',
+        'completed': 'bg-success',
+        'cancelled': 'bg-danger'
+      };
+      return statusClasses[status] || 'bg-secondary';
+    };
+
+    const formatTodayPatientStatus = (status) => {
+      const statusMap = {
+        'waiting': 'Waiting',
+        'in_consultation': 'In Consultation',
+        'completed_consultation': 'Completed',
+        'completed': 'Completed',
+        'cancelled': 'Cancelled'
+      };
+      return statusMap[status] || status.split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+    };
+
+    const startPatientConsultation = async (patient) => {
+      if (patient.type === 'queue') {
+        await startConsultation(patient);
+      }
+    };
+
+    const continuePatientConsultation = async (patient) => {
+      if (patient.type === 'queue') {
+        continueConsultation(patient);
+      } else {
+        router.push(`/consultations/${patient.id}`);
+      }
+    };
 
     // This is the fix: reload data when navigating back to the component
     watch(
@@ -483,6 +676,14 @@ export default {
       formatDate,
       formatTime,
       truncateText,
+      // Today's Patients Modal
+      todayPatients,
+      loadingTodayPatients,
+      showTodayPatientsModal,
+      getTodayPatientStatusClass,
+      formatTodayPatientStatus,
+      startPatientConsultation,
+      continuePatientConsultation,
     };
   }
 };
@@ -559,5 +760,20 @@ export default {
 
 .bg-light {
   background-color: #f8f9fa !important;
+}
+
+.clickable-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.clickable-card:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.15) !important;
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
 }
 </style> 

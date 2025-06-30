@@ -538,6 +538,34 @@ class ConsultationController extends AbstractController
             return new JsonResponse(['error' => 'Failed to fetch ongoing consultations'], 500);
         }
     }
+
+    #[Route('/today-all', name: 'app_consultations_today_all', methods: ['GET'])]
+    public function todayAll(Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $doctorId = $request->query->get('doctorId');
+            $cacheKey = 'consultations_today_all' . ($doctorId ? '_doctor_' . $doctorId : '');
+            
+            if ($this->cache) {
+                $data = $this->cache->get($cacheKey, function (ItemInterface $item) use ($doctorId) {
+                    $item->expiresAfter(30); // 30 seconds cache
+                    return $this->buildTodayAllData($doctorId);
+                });
+            } else {
+                $data = $this->buildTodayAllData($doctorId);
+            }
+            
+            return new JsonResponse($data);
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching today\'s patients: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch today\'s patients'], 500);
+        }
+    }
     
     private function buildOngoingData($doctorId = null): array
     {
@@ -696,6 +724,100 @@ class ConsultationController extends AbstractController
         return [
             'ongoing' => $ongoingData,
             'todayTotal' => $todayTotal
+        ];
+    }
+
+    private function buildTodayAllData($doctorId = null): array
+    {
+        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        
+        // Set time to the beginning of the day for the start of the range
+        $startOfDay = (clone $today)->setTime(0, 0, 0);
+        
+        // Set time to the end of the day for the end of the range
+        $endOfDay = (clone $today)->setTime(23, 59, 59);
+
+        $allPatients = [];
+
+        // Get all consultations for today (including completed ones)
+        $consultationQb = $this->entityManager->getRepository(Consultation::class)
+            ->createQueryBuilder('c')
+            ->select('c.id', 'c.consultationDate', 'c.status', 'p.name as patientName', 'd.name as doctorName', 'p.id as patientId', 'd.id as doctorId', 'c.createdAt')
+            ->join('c.patient', 'p')
+            ->join('c.doctor', 'd')
+            ->where('c.consultationDate BETWEEN :start AND :end')
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay);
+
+        if ($doctorId) {
+            $consultationQb->andWhere('d.id = :doctorId')
+                          ->setParameter('doctorId', $doctorId);
+        }
+
+        $consultations = $consultationQb->orderBy('c.consultationDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        // Add consultations to the data
+        foreach ($consultations as $consultation) {
+            $allPatients[] = [
+                'id' => $consultation['id'],
+                'type' => 'consultation',
+                'time' => $consultation['consultationDate'],
+                'patientName' => $consultation['patientName'],
+                'patientId' => $consultation['patientId'],
+                'doctorName' => $consultation['doctorName'],
+                'doctorId' => $consultation['doctorId'],
+                'status' => $consultation['status'] ?: 'completed',
+                'queueNumber' => null,
+                'queueId' => null
+            ];
+        }
+
+        // Get all queue entries for today (including completed ones)
+        $queueQb = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId')
+            ->join('q.patient', 'p')
+            ->join('q.doctor', 'd')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay);
+            
+        if ($doctorId) {
+            $queueQb->andWhere('d.id = :queueDoctorId')
+                    ->setParameter('queueDoctorId', $doctorId);
+        }
+        
+        $queueEntries = $queueQb->orderBy('q.queueNumber', 'ASC')
+            ->getQuery()
+            ->getResult();
+
+        // Add queue entries to the data
+        foreach ($queueEntries as $queue) {
+            $allPatients[] = [
+                'id' => $queue['queueId'],
+                'type' => 'queue',
+                'time' => $queue['queueDateTime'],
+                'patientName' => $queue['patientName'],
+                'patientId' => $queue['patientId'],
+                'doctorName' => $queue['doctorName'],
+                'doctorId' => $queue['doctorId'],
+                'status' => $queue['status'],
+                'queueNumber' => $queue['queueNumber'],
+                'queueId' => $queue['queueId']
+            ];
+        }
+
+        // Sort by time
+        usort($allPatients, function($a, $b) {
+            $timeA = $a['time'] instanceof \DateTimeInterface ? $a['time'] : new \DateTime($a['time']);
+            $timeB = $b['time'] instanceof \DateTimeInterface ? $b['time'] : new \DateTime($b['time']);
+            return $timeA <=> $timeB;
+        });
+
+        return [
+            'patients' => $allPatients
         ];
     }
 
