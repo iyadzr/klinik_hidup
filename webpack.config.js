@@ -49,8 +49,16 @@ Encore
         runtimeCompilerBuild: true
     })
 
-    // enables Sass/SCSS support
-    .enableSassLoader()
+    // enables Sass/SCSS support and silences deprecation warnings coming from dependencies
+    .enableSassLoader((loaderOptions) => {
+        // Pass flags directly to Dart-Sass
+        loaderOptions.sassOptions = {
+            // Do *not* print warnings that originate in files under node_modules
+            quietDeps: true,
+            // (optional) hide our own warnings too; comment out if you still want them
+            // quiet: true,
+        };
+    })
 
     // uncomment if you use TypeScript
     //.enableTypeScriptLoader()
@@ -68,19 +76,12 @@ Encore
         options.host = '0.0.0.0';
         options.port = 8080;
         options.allowedHosts = 'all';
-        // Configure WebSocket for Docker environment
-        options.client = {
-            webSocketURL: {
-                protocol: 'ws',
-                hostname: '127.0.0.1',
-                port: 8090,
-                pathname: '/ws'
-            }
-        };
         // Force webpack to write files to disk so they can be served by nginx
         options.devMiddleware = {
             writeToDisk: true,
         };
+        // Disable dev server URLs in entrypoints.json
+        options.devMiddleware.publicPath = '/build/';
     })
     
     // Configure webpack to use relative paths in entrypoints.json
@@ -94,15 +95,18 @@ const config = Encore.getWebpackConfig();
 
 // Override the dev server configuration to prevent absolute URLs in entrypoints.json
 if (!Encore.isProduction()) {
-    // Force relative paths in development
+    // Force relative paths in development to work with any host/port
     config.output.publicPath = '/build/';
     
-    // Ensure dev server doesn't override our publicPath
+    // Prevent webpack from using absolute URLs in entrypoints.json
     if (config.devServer) {
+        // Keep the server configuration but force relative paths
         config.devServer.devMiddleware = {
             ...config.devServer.devMiddleware,
             publicPath: '/build/',
         };
+        // Disable public option which can cause absolute URLs
+        delete config.devServer.public;
     }
 }
 

@@ -204,13 +204,41 @@
               </div>
               
               <div class="mb-3">
-                <label class="form-label">Pre-informed Illness/Symptoms</label>
-                <textarea class="form-control" v-model="form.preInformedIllness" rows="2" placeholder="Initial symptoms or complaints reported during registration"></textarea>
-              </div>
-              
-              <div class="mb-3">
-                <label class="form-label">Medical History</label>
-                <textarea class="form-control" v-model="form.medicalHistory" rows="3" placeholder="Past medical conditions, surgeries, medications, etc."></textarea>
+                <label class="form-label">Visit History</label>
+                <div v-if="editingPatient && editingPatient.id" class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                  <div v-if="visitHistories && visitHistories.length > 0">
+                    <div v-for="visit in visitHistories.slice(0, 5)" :key="visit.id" class="mb-2 pb-2 border-bottom">
+                      <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                          <small class="text-muted">{{ formatDate(visit.consultationDate) }}</small>
+                          <div class="fw-bold">Dr. {{ visit.doctor?.name || 'Unknown' }}</div>
+                          <div class="text-muted small">{{ visit.diagnosis || 'No diagnosis recorded' }}</div>
+                        </div>
+                        <button 
+                          type="button" 
+                          class="btn btn-outline-primary btn-sm" 
+                          @click="showVisitDetails(visit)"
+                        >
+                          <i class="fas fa-eye"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div v-if="visitHistories.length > 5" class="text-center">
+                      <button type="button" class="btn btn-link btn-sm" @click="showVisitHistory(editingPatient)">
+                        View all {{ visitHistories.length }} visits
+                      </button>
+                    </div>
+                  </div>
+                  <div v-else class="text-center text-muted py-3">
+                    <i class="fas fa-file-medical-alt fa-2x mb-2"></i>
+                    <div>No visit history found</div>
+                    <small>This is the patient's first visit</small>
+                  </div>
+                </div>
+                <div v-else class="text-muted p-3 border rounded">
+                  <i class="fas fa-info-circle me-2"></i>
+                  Visit history will be available after saving the patient
+                </div>
               </div>
               
               <div class="text-end">
@@ -696,6 +724,7 @@ export default {
       showVisitHistoryModal: false,
       selectedPatientForHistory: null,
       visitHistory: [],
+      visitHistories: [],
       loadingVisitHistory: false,
       // Visit Details Modal
       showVisitDetailsModal: false,
@@ -785,7 +814,7 @@ export default {
       this.currentPage = 1; // Reset to first page
       this.loadPatients();
     },
-    editPatient(patient) {
+    async editPatient(patient) {
       this.editingPatient = { ...patient };
       // Populate the form with patient data
       this.form = {
@@ -796,10 +825,14 @@ export default {
         dateOfBirth: patient.dateOfBirth || '',
         gender: patient.gender || '',
         address: patient.address || '',
-        company: patient.company || '',
-        preInformedIllness: patient.preInformedIllness || '',
-        medicalHistory: patient.medicalHistory || ''
+        company: patient.company || ''
       };
+      
+      // Load visit history for the patient
+      if (patient.id) {
+        await this.loadVisitHistory(patient.id);
+      }
+      
       this.showAddModal = true;
     },
     async deletePatient(patient) {
@@ -878,9 +911,7 @@ export default {
         dateOfBirth: '',
         gender: '',
         address: '',
-        company: '',
-        preInformedIllness: '',
-        medicalHistory: ''
+        company: ''
       };
     },
     formatDateOfBirth(dateOfBirth) {
@@ -905,14 +936,24 @@ export default {
       this.showVisitHistoryModal = true;
       await this.loadVisitHistory(patient.id);
     },
+    
+
+
+
 
     async loadVisitHistory(patientId) {
       this.loadingVisitHistory = true;
       this.visitHistory = [];
+      this.visitHistories = [];
+      
+      if (!patientId) {
+        this.loadingVisitHistory = false;
+        return;
+      }
       
       try {
         const response = await axios.get(`/api/consultations/patient/${patientId}`);
-        this.visitHistory = response.data.map(visit => {
+        const processedVisits = response.data.map(visit => {
           // Parse medications if it's a JSON string
           let medications = [];
           if (visit.medications) {
@@ -928,12 +969,25 @@ export default {
           
           return {
             ...visit,
-            medications: medications
+            medications: medications,
+            id: visit.id,
+            consultationDate: visit.consultationDate,
+            doctor: visit.doctor,
+            diagnosis: visit.diagnosis || '',
+            notes: visit.notes || '',
+            status: visit.status || 'Completed',
+            queueNumber: visit.queueNumber
           };
         });
+        
+        // Populate both arrays for different uses
+        this.visitHistory = processedVisits;
+        this.visitHistories = processedVisits;
+        
       } catch (error) {
         console.error('Error loading visit history:', error);
         this.visitHistory = [];
+        this.visitHistories = [];
       } finally {
         this.loadingVisitHistory = false;
       }

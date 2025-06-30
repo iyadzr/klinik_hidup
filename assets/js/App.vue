@@ -248,6 +248,59 @@ export default {
       currentUser.value = AuthService.getCurrentUser();
     };
 
+    let tokenCheckInterval = null;
+    let expirationWarningShown = false;
+
+    const startTokenExpirationMonitoring = () => {
+      // Check token expiration every 5 minutes
+      tokenCheckInterval = setInterval(() => {
+        if (AuthService.isAuthenticated()) {
+          const timeRemaining = AuthService.getTokenTimeRemaining();
+          
+          if (timeRemaining && timeRemaining > 0) {
+            const minutesRemaining = Math.floor(timeRemaining / (1000 * 60));
+            
+            // Warn user when 30 minutes remaining (only once)
+            if (minutesRemaining <= 30 && minutesRemaining > 5 && !expirationWarningShown) {
+              expirationWarningShown = true;
+              console.log(`⚠️ Session expires in ${minutesRemaining} minutes`);
+              
+              // Show warning toast if available
+              if (window.Vue && window.Vue.config && window.Vue.config.globalProperties.$toast) {
+                window.Vue.config.globalProperties.$toast.warning(
+                  `Your session will expire in ${minutesRemaining} minutes. Please save your work.`,
+                  { timeout: 8000 }
+                );
+              }
+            }
+            
+            // Final warning when 5 minutes remaining
+            if (minutesRemaining <= 5 && minutesRemaining > 0) {
+              console.log(`🚨 Session expires in ${minutesRemaining} minutes - final warning`);
+              
+              if (window.Vue && window.Vue.config && window.Vue.config.globalProperties.$toast) {
+                window.Vue.config.globalProperties.$toast.error(
+                  `Session expires in ${minutesRemaining} minutes! Please save your work and refresh to continue.`,
+                  { timeout: 10000 }
+                );
+              }
+            }
+          }
+        } else {
+          // Stop monitoring if user is not authenticated
+          stopTokenExpirationMonitoring();
+        }
+      }, 5 * 60 * 1000); // Check every 5 minutes
+    };
+
+    const stopTokenExpirationMonitoring = () => {
+      if (tokenCheckInterval) {
+        clearInterval(tokenCheckInterval);
+        tokenCheckInterval = null;
+        expirationWarningShown = false;
+      }
+    };
+
     // Define the menu items with role-based access
     const menu = [
       // Core menu items - available to ALL authenticated users
@@ -397,10 +450,14 @@ export default {
               closeSidebar();
           }
       });
+
+      // Set up token expiration monitoring
+      startTokenExpirationMonitoring();
     });
 
     onUnmounted(() => {
       window.removeEventListener('resize', handleResize);
+      stopTokenExpirationMonitoring(); // Clean up token monitoring
     });
 
     return {

@@ -138,14 +138,14 @@
     </div>
   </div>
 
-  <!-- Profile Image Upload Modal (true overlay) -->
+  <!-- Profile Image Upload Modal -->
   <div v-if="showImageUploadModal">
-    <div class="profile-modal-backdrop"></div>
+    <div class="profile-modal-backdrop" @click="closeImageUpload"></div>
     <div class="profile-modal-outer">
-      <div class="modal-content" style="max-width: 400px; width: 100%;">
+      <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Update Profile Picture</h5>
-          <button type="button" class="btn-close" @click="closeImageUpload"></button>
+          <button type="button" class="btn-close" @click="closeImageUpload" aria-label="Close"></button>
         </div>
         <div class="modal-body text-center">
           <input type="file" ref="fileInput" @change="handleFileSelect" accept="image/*" class="d-none"/>
@@ -472,5 +472,65 @@ export default {
   align-items: center;
   justify-content: center;
   z-index: 1050;
+  padding: 1rem;
+}
+.profile-modal-outer .modal-content {
+  background-color: #fff;
+  border: 1px solid rgba(0,0,0,.125);
+  border-radius: 0.375rem;
+  box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
+  max-width: 400px;
+  width: 100%;
+  position: relative;
+}
+.profile-modal-outer .modal-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem;
+  border-bottom: 1px solid #dee2e6;
+  border-top-left-radius: calc(0.375rem - 1px);
+  border-top-right-radius: calc(0.375rem - 1px);
+}
+.profile-modal-outer .modal-title {
+  margin-bottom: 0;
+  line-height: 1.5;
+  color: #212529;
+  font-weight: 500;
+}
+.profile-modal-outer .modal-body {
+  position: relative;
+  flex: 1 1 auto;
+  padding: 1rem;
+}
+.profile-modal-outer .modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.75rem;
+  border-top: 1px solid #dee2e6;
+  border-bottom-right-radius: calc(0.375rem - 1px);
+  border-bottom-left-radius: calc(0.375rem - 1px);
+  gap: 0.5rem;
+}
+.profile-modal-outer .btn-close {
+  box-sizing: content-box;
+  width: 1em;
+  height: 1em;
+  padding: 0.25em 0.25em;
+  color: #000;
+  background: transparent url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000'%3e%3cpath d='m.235 1.477 6.292 6.292L12.82 1.477a.5.5 0 0 1 .708 0l.829.828a.5.5 0 0 1 0 .708L8.065 9.305l6.292 6.292a.5.5 0 0 1 0 .708l-.828.829a.5.5 0 0 1-.708 0L6.529 10.842.237 17.134a.5.5 0 0 1-.708 0l-.828-.829a.5.5 0 0 1 0-.708l6.292-6.292L.235 2.613a.5.5 0 0 1 0-.708l.828-.828a.5.5 0 0 1 .708 0z'/%3e%3c/svg%3e") center/1em auto no-repeat;
+  border: 0;
+  border-radius: 0.375rem;
+  opacity: 0.5;
+  cursor: pointer;
+}
+.profile-modal-outer .btn-close:hover {
+  color: #000;
+  text-decoration: none;
+  opacity: 0.75;
 }
 </style> 

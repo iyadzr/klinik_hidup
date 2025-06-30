@@ -101,12 +101,75 @@ class AuthService {
 
   isAuthenticated() {
     const user = this.getCurrentUser();
-    return !!user && !!user.token;
+    if (!user || !user.token) {
+      return false;
+    }
+    
+    // Check if token is expired (if we can decode it)
+    if (this.isTokenExpired(user.token)) {
+      console.log('🕒 Token is expired, performing logout');
+      this.logout();
+      return false;
+    }
+    
+    return true;
+  }
+  
+  isTokenExpired(token) {
+    if (!token) return true;
+    
+    try {
+      // Decode JWT token to check expiration
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const currentTime = Math.floor(Date.now() / 1000);
+      
+      // Check if token has expired (with 30 second buffer)
+      if (payload.exp && payload.exp < (currentTime + 30)) {
+        console.log('🕒 JWT token will expire soon or has expired');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('❌ Error checking token expiration:', error);
+      return true; // Treat invalid tokens as expired
+    }
   }
 
   hasRole(role) {
     const user = this.getCurrentUser();
     return user && user.roles && Array.isArray(user.roles) && user.roles.includes(role);
+  }
+
+  getTokenExpirationTime() {
+    const user = this.getCurrentUser();
+    if (!user || !user.token) return null;
+    
+    try {
+      const payload = JSON.parse(atob(user.token.split('.')[1]));
+      return payload.exp ? new Date(payload.exp * 1000) : null;
+    } catch (error) {
+      console.error('❌ Error getting token expiration time:', error);
+      return null;
+    }
+  }
+
+  getTokenTimeRemaining() {
+    const expirationTime = this.getTokenExpirationTime();
+    if (!expirationTime) return null;
+    
+    const currentTime = new Date();
+    const timeRemaining = expirationTime.getTime() - currentTime.getTime();
+    
+    return timeRemaining > 0 ? timeRemaining : 0;
+  }
+
+  isTokenExpiringSoon(minutesThreshold = 30) {
+    const timeRemaining = this.getTokenTimeRemaining();
+    if (timeRemaining === null) return false;
+    
+    const threshold = minutesThreshold * 60 * 1000; // Convert to milliseconds
+    return timeRemaining < threshold && timeRemaining > 0;
   }
 
   isSuperAdmin() {

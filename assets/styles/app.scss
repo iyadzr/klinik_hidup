@@ -6,8 +6,17 @@ $info: #3498db;
 $warning: #f1c40f;
 $danger: #e74c3c;
 
-// Import Bootstrap
-@import "~bootstrap/scss/bootstrap";
+// Import Bootstrap using the modern module system
+// All theme colour variables are passed via the `with` block so they override
+// Bootstrap's defaults in a forward-compatible way.
+@use "~bootstrap/scss/bootstrap" with (
+  $primary: $primary,
+  $secondary: $secondary,
+  $success: $success,
+  $info: $info,
+  $warning: $warning,
+  $danger: $danger
+);
 
 // Custom styles
 body {
@@ -29,7 +38,8 @@ body {
 .form-control {
     border-radius: 4px;
     &:focus {
-        box-shadow: 0 0 0 0.2rem rgba($primary, 0.25);
+        // Use namespaced access to Bootstrap variable to avoid global pollution
+        box-shadow: 0 0 0 0.2rem rgba(bootstrap.$primary, 0.25);
     }
 }
 

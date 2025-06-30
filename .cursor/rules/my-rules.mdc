@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+- Do not change or refactor code that is already working unless explicitly requested.
+- Avoid making cosmetic or stylistic changes unless it improves clarity or solves a functional issue.
+- Never remove or change logic that handles edge cases or known bugs unless the fix is explicitly requested.
+- Focus on the root cause of issues. Do not patch symptoms; trace the actual source of bugs or malfunctions.
+- Always validate assumptions with relevant code context or documentation before making a change.
+- my application a dockerized application with containers
+- Avoid to hardcode filenames that may be generated dyanmically and referenced by other codes, as this may break the whole application if a new dynamic file names are generated
