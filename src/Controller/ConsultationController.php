@@ -736,15 +736,38 @@ class ConsultationController extends AbstractController
             }
         });
             
-        // Get total consultations for today for the summary card
-        $todayTotal = $this->entityManager->getRepository(Consultation::class)
+        // Get total patients for today (consultations + queue entries)
+        $consultationQb = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
             ->select('COUNT(c.id)')
             ->where('c.consultationDate BETWEEN :start AND :end')
             ->setParameter('start', $startOfDay)
-            ->setParameter('end', $endOfDay)
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('end', $endOfDay);
+            
+        if ($doctorId) {
+            $consultationQb->join('c.doctor', 'd')
+                          ->andWhere('d.id = :doctorId')
+                          ->setParameter('doctorId', $doctorId);
+        }
+        
+        $consultationCount = $consultationQb->getQuery()->getSingleScalarResult();
+
+        $queueQb = $this->entityManager->getRepository(Queue::class)
+            ->createQueryBuilder('q')
+            ->select('COUNT(q.id)')
+            ->where('q.queueDateTime BETWEEN :start AND :end')
+            ->setParameter('start', $startOfDay)
+            ->setParameter('end', $endOfDay);
+            
+        if ($doctorId) {
+            $queueQb->join('q.doctor', 'd2')
+                   ->andWhere('d2.id = :queueDoctorId')
+                   ->setParameter('queueDoctorId', $doctorId);
+        }
+        
+        $queueCount = $queueQb->getQuery()->getSingleScalarResult();
+
+        $todayTotal = $consultationCount + $queueCount;
 
         return [
             'ongoing' => $ongoingData,

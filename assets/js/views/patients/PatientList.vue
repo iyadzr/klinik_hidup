@@ -164,7 +164,23 @@
                            placeholder="e.g., 123456-12-1234"
                            maxlength="14"
                            required>
+                    <div class="form-check-container mt-2" v-if="!editingPatient">
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="nricFormatEdit" id="newNricEdit" value="new" v-model="nricFormatType" @change="handleNRICFormatChange">
+                        <label class="form-check-label" for="newNricEdit">
+                          New NRIC (with dashes)
+                        </label>
+                      </div>
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="nricFormatEdit" id="armyPoliceEdit" value="army" v-model="nricFormatType" @change="handleNRICFormatChange">
+                        <label class="form-check-label" for="armyPoliceEdit">
+                          Army/Police (no dashes)
+                        </label>
+                      </div>
+                    </div>
                     <small class="text-muted" v-if="editingPatient">NRIC cannot be changed</small>
+                    <small class="text-muted" v-else-if="nricFormatType === 'new'">12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)</small>
+                    <small class="text-muted" v-else>Army/Police format: no dashes (e.g., 640611015064)</small>
                     <small class="text-danger" v-if="nricError">{{ nricError }}</small>
                   </div>
                 </div>
@@ -180,7 +196,22 @@
                 <div class="col-md-6">
                   <div class="mb-3">
                     <label class="form-label">Phone</label>
-                    <input type="tel" class="form-control" v-model="form.phone" required>
+                    <input type="tel" class="form-control" v-model="form.phone" required @input="handlePhoneInput">
+                    <div class="form-check-container mt-2">
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="phoneFormatEdit" id="mobileEdit" value="mobile" v-model="phoneFormatType" @change="handlePhoneFormatChange">
+                        <label class="form-check-label" for="mobileEdit">
+                          Mobile phone
+                        </label>
+                      </div>
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="phoneFormatEdit" id="fixedLineEdit" value="fixed" v-model="phoneFormatType" @change="handlePhoneFormatChange">
+                        <label class="form-check-label" for="fixedLineEdit">
+                          Fixed line
+                        </label>
+                      </div>
+                    </div>
+                    <small class="text-muted">{{ phoneFormatType === 'mobile' ? 'Mobile format: 011-39954423' : 'Fixed line format: 01-139954423' }}</small>
                   </div>
                 </div>
               </div>
@@ -755,6 +786,10 @@ export default {
       totalPages: 0,
       totalPatients: 0,
       perPage: 25,
+      
+      // Formatting options
+      nricFormatType: 'new', // Default to new NRIC format
+      phoneFormatType: 'mobile', // Default to mobile phone format
     };
   },
   created() {
@@ -864,7 +899,27 @@ export default {
     },
     handleNRICInput(event) {
       if (!this.editingPatient) {
-        this.form.nric = formatNRIC(event.target.value);
+        const input = event.target.value;
+        const cleanNric = input.replace(/\D/g, ''); // Remove all non-digits
+        
+        if (this.nricFormatType === 'new') {
+          // New NRIC format with dashes: YYMMDD-XX-XXXX
+          if (cleanNric.length >= 6) {
+            let formatted = cleanNric.substring(0, 6);
+            if (cleanNric.length > 6) {
+              formatted += '-' + cleanNric.substring(6, 8);
+            }
+            if (cleanNric.length > 8) {
+              formatted += '-' + cleanNric.substring(8, 12);
+            }
+            this.form.nric = formatted;
+          } else {
+            this.form.nric = cleanNric;
+          }
+        } else {
+          // Army/Police format: no dashes, just numbers
+          this.form.nric = cleanNric.substring(0, 12); // Limit to 12 digits
+        }
       }
     },
     formatDisplayNRIC(nric) {
@@ -1202,6 +1257,69 @@ export default {
         this.loadPatients();
       }
     },
+
+    // Phone formatting methods
+    handlePhoneInput(event) {
+      const input = event.target.value;
+      const cleanPhone = input.replace(/\D/g, ''); // Remove all non-digits
+      
+      if (this.phoneFormatType === 'mobile') {
+        // Mobile format: add dash after first 3 numbers (e.g., 011-39954423)
+        if (cleanPhone.length > 3) {
+          this.form.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else {
+          this.form.phone = cleanPhone;
+        }
+      } else {
+        // Fixed line format: add dash after first 2 numbers (e.g., 01-139954423)
+        if (cleanPhone.length > 2) {
+          this.form.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.form.phone = cleanPhone;
+        }
+      }
+    },
+
+    handlePhoneFormatChange() {
+      // Reformat the current phone number when format type changes
+      if (this.form.phone) {
+        const cleanPhone = this.form.phone.replace(/\D/g, '');
+        if (this.phoneFormatType === 'mobile' && cleanPhone.length > 3) {
+          this.form.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else if (this.phoneFormatType === 'fixed' && cleanPhone.length > 2) {
+          this.form.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.form.phone = cleanPhone;
+        }
+      }
+    },
+
+    // NRIC formatting methods
+    handleNRICFormatChange() {
+      // Reformat the current NRIC when format type changes
+      if (this.form.nric) {
+        const cleanNric = this.form.nric.replace(/\D/g, ''); // Remove all non-digits
+        
+        if (this.nricFormatType === 'new') {
+          // New NRIC format with dashes: YYMMDD-XX-XXXX
+          if (cleanNric.length >= 6) {
+            let formatted = cleanNric.substring(0, 6);
+            if (cleanNric.length > 6) {
+              formatted += '-' + cleanNric.substring(6, 8);
+            }
+            if (cleanNric.length > 8) {
+              formatted += '-' + cleanNric.substring(8, 12);
+            }
+            this.form.nric = formatted;
+          } else {
+            this.form.nric = cleanNric;
+          }
+        } else {
+          // Army/Police format: no dashes, just numbers
+          this.form.nric = cleanNric;
+        }
+      }
+    }
   },
   computed: {
     isSuperAdmin() {

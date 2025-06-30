@@ -260,15 +260,44 @@
             <div class="row mb-3">
               <div class="col-md-12">
                 <label class="form-label">NRIC</label>
-                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 930502-14-6087)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
-                <small class="text-muted">12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)</small>
+                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 123456-12-1234)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
+                <div class="form-check-container mt-2">
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="nricFormat" id="newNric" value="new" v-model="nricFormatType" @change="handleNRICFormatChange">
+                    <label class="form-check-label" for="newNric">
+                      New NRIC (with dashes)
+                    </label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="nricFormat" id="armyPolice" value="army" v-model="nricFormatType" @change="handleNRICFormatChange">
+                    <label class="form-check-label" for="armyPolice">
+                      Army/Police (no dashes)
+                    </label>
+                  </div>
+                </div>
+                <small class="text-muted">{{ nricFormatType === 'new' ? '12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)' : 'Army/Police format: no dashes (e.g., 640611015064)' }}</small>
               </div>
             </div>
 
             <div class="row mb-3">
               <div class="col-md-6">
                 <label class="form-label">Phone</label>
-                <input type="tel" v-model="patient.phone" class="form-control" required>
+                <input type="tel" v-model="patient.phone" class="form-control" required @input="handlePhoneInput">
+                <div class="form-check-container mt-2">
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="phoneFormat" id="mobile" value="mobile" v-model="phoneFormatType" @change="handlePhoneFormatChange">
+                    <label class="form-check-label" for="mobile">
+                      Mobile phone
+                    </label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="phoneFormat" id="fixedLine" value="fixed" v-model="phoneFormatType" @change="handlePhoneFormatChange">
+                    <label class="form-check-label" for="fixedLine">
+                      Fixed line
+                    </label>
+                  </div>
+                </div>
+                <small class="text-muted">{{ phoneFormatType === 'mobile' ? 'Mobile format: 011-39954423' : 'Fixed line format: 01-139954423' }}</small>
               </div>
               <div class="col-md-6">
                 <label class="form-label">Date of Birth</label>
@@ -407,6 +436,10 @@ export default {
       doctors: [],
       isLoading: false,
       
+      // Formatting options
+      nricFormatType: 'new', // Default to new NRIC format
+      phoneFormatType: 'mobile', // Default to mobile phone format
+      
       // Multiple patients functionality
       multiplePatients: false,
       patients: [],
@@ -445,10 +478,27 @@ export default {
   methods: {
     handleNRICInput(event, patient = null) {
       const targetPatient = patient || this.patient;
-      const formattedNRIC = formatNRIC(event.target.value);
+      const input = event.target.value;
+      const cleanNric = input.replace(/\D/g, ''); // Remove all non-digits
       
-      // Update the v-model
-      targetPatient.nric = formattedNRIC;
+      if (this.nricFormatType === 'new') {
+        // New NRIC format with dashes: YYMMDD-XX-XXXX
+        if (cleanNric.length >= 6) {
+          let formatted = cleanNric.substring(0, 6);
+          if (cleanNric.length > 6) {
+            formatted += '-' + cleanNric.substring(6, 8);
+          }
+          if (cleanNric.length > 8) {
+            formatted += '-' + cleanNric.substring(8, 12);
+          }
+          targetPatient.nric = formatted;
+        } else {
+          targetPatient.nric = cleanNric;
+        }
+      } else {
+        // Army/Police format: no dashes, just numbers
+        targetPatient.nric = cleanNric.substring(0, 12); // Limit to 12 digits
+      }
       
       // Calculate DOB and gender if it's a valid NRIC
       this.calculateDOBFromNRIC(targetPatient);
@@ -831,6 +881,72 @@ export default {
         alert(errorMessage);
       } finally {
         this.isLoading = false;
+      }
+    },
+
+    // Phone formatting methods
+    handlePhoneInput(event) {
+      const input = event.target.value;
+      const cleanPhone = input.replace(/\D/g, ''); // Remove all non-digits
+      
+      if (this.phoneFormatType === 'mobile') {
+        // Mobile format: add dash after first 3 numbers (e.g., 011-39954423)
+        if (cleanPhone.length > 3) {
+          this.patient.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else {
+          this.patient.phone = cleanPhone;
+        }
+      } else {
+        // Fixed line format: add dash after first 2 numbers (e.g., 01-139954423)
+        if (cleanPhone.length > 2) {
+          this.patient.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.patient.phone = cleanPhone;
+        }
+      }
+    },
+
+    handlePhoneFormatChange() {
+      // Reformat the current phone number when format type changes
+      if (this.patient.phone) {
+        const cleanPhone = this.patient.phone.replace(/\D/g, '');
+        if (this.phoneFormatType === 'mobile' && cleanPhone.length > 3) {
+          this.patient.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else if (this.phoneFormatType === 'fixed' && cleanPhone.length > 2) {
+          this.patient.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.patient.phone = cleanPhone;
+        }
+      }
+    },
+
+    // NRIC formatting methods
+    handleNRICFormatChange() {
+      // Reformat the current NRIC when format type changes
+      if (this.patient.nric) {
+        const cleanNric = this.patient.nric.replace(/\D/g, ''); // Remove all non-digits
+        
+        if (this.nricFormatType === 'new') {
+          // New NRIC format with dashes: YYMMDD-XX-XXXX
+          if (cleanNric.length >= 6) {
+            let formatted = cleanNric.substring(0, 6);
+            if (cleanNric.length > 6) {
+              formatted += '-' + cleanNric.substring(6, 8);
+            }
+            if (cleanNric.length > 8) {
+              formatted += '-' + cleanNric.substring(8, 12);
+            }
+            this.patient.nric = formatted;
+          } else {
+            this.patient.nric = cleanNric;
+          }
+        } else {
+          // Army/Police format: no dashes, just numbers
+          this.patient.nric = cleanNric;
+        }
+        
+        // Recalculate DOB and gender if it's a valid NRIC
+        this.calculateDOBFromNRIC(this.patient);
       }
     }
   }

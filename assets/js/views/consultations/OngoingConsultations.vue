@@ -512,8 +512,23 @@ export default {
       }
     };
     
-    const formatTime = (date) => {
+    const formatTime = (dateInput) => {
       try {
+        if (!dateInput) return 'N/A';
+        
+        let date;
+        if (dateInput instanceof Date) {
+          date = dateInput;
+        } else if (typeof dateInput === 'string') {
+          date = new Date(dateInput);
+        } else {
+          return 'Invalid Time';
+        }
+        
+        if (isNaN(date.getTime())) {
+          return 'Invalid Time';
+        }
+        
         return date.toLocaleTimeString('en-MY', {
           timeZone: 'Asia/Kuala_Lumpur',
           hour: '2-digit',
@@ -521,6 +536,7 @@ export default {
           second: '2-digit'
         });
       } catch (error) {
+        console.error('Error formatting time:', error, 'Input:', dateInput);
         return 'Invalid Time';
       }
     };

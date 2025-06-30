@@ -65,8 +65,38 @@
         </div>
       </div>
 
-      <!-- Patient Information -->
-      <div class="col-12 col-lg-8">
+      <!-- Pre-Informed Illness - First Row (Full Width) -->
+      <div class="col-12">
+        <div class="card section-card mb-4">
+          <div class="card-body">
+            <h5 class="section-title mb-4">
+              <i class="fas fa-clipboard-check text-primary me-2"></i>
+              Pre-Informed Illness
+            </h5>
+            <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
+              <div class="pre-illness-content p-3 bg-light rounded">
+                <div class="d-flex align-items-start gap-3">
+                  <div>
+                    <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
+                  </div>
+                  <div class="flex-grow-1">
+                    <h6 class="fw-bold text-dark mb-2">Patient's Initial Symptoms/Complaint</h6>
+                    <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center text-muted py-4">
+              <i class="fas fa-clipboard fa-2x mb-2"></i>
+              <div>No pre-informed illness data available</div>
+              <small class="text-muted">Patient did not provide initial symptoms during registration</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Patient Information - Second Row (Full Width) -->
+      <div class="col-12">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
@@ -129,8 +159,8 @@
         </div>
       </div>
 
-      <!-- Medical History Section -->
-      <div class="col-12 col-lg-8">
+      <!-- Medical History Section - Third Row (Full Width) -->
+      <div class="col-12">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
@@ -171,36 +201,6 @@
               <i class="fas fa-file-medical-alt fa-2x mb-2"></i>
               <div>No medical history found</div>
               <small class="text-muted">This is the patient's first visit</small>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pre-Informed Illness -->
-      <div class="col-12 col-lg-4">
-        <div class="card section-card mb-4">
-          <div class="card-body">
-            <h5 class="section-title mb-4">
-              <i class="fas fa-clipboard-check text-primary me-2"></i>
-              Pre-Informed Illness
-            </h5>
-            <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
-              <div class="pre-illness-content p-3 bg-light rounded">
-                <div class="d-flex align-items-start gap-3">
-                  <div>
-                    <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
-                  </div>
-                  <div class="flex-grow-1">
-                    <h6 class="fw-bold text-dark mb-2">Patient's Initial Symptoms/Complaint</h6>
-                    <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-else class="text-center text-muted py-4">
-              <i class="fas fa-clipboard fa-2x mb-2"></i>
-              <div>No pre-informed illness data available</div>
-              <small class="text-muted">Patient did not provide initial symptoms during registration</small>
             </div>
           </div>
         </div>
