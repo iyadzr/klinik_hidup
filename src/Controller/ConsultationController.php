@@ -115,6 +115,14 @@ class ConsultationController extends AbstractController
             $data = json_decode($request->getContent(), true);
             $this->logger->info('Received consultation data', ['data' => $data]);
             
+            // Log the specific status value being sent
+            if (isset($data['status'])) {
+                $this->logger->info('Status value received', [
+                    'status' => $data['status'],
+                    'length' => strlen($data['status'])
+                ]);
+            }
+            
             // Get Patient
             $patient = $this->entityManager->getRepository(Patient::class)->find($data['patientId']);
             if (!$patient) {
@@ -156,6 +164,15 @@ class ConsultationController extends AbstractController
             if (isset($data['medications'])) $consultation->setMedications($data['medications']);
             if (isset($data['notes'])) $consultation->setNotes($data['notes']);
             
+            // Handle status field explicitly
+            if (isset($data['status'])) {
+                $this->logger->info('Setting status from frontend', [
+                    'status' => $data['status'],
+                    'length' => strlen($data['status'])
+                ]);
+                $consultation->setStatus($data['status']);
+            }
+            
             // Handle payment information
             if (isset($data['totalAmount'])) $consultation->setTotalAmount($data['totalAmount']);
             
@@ -168,8 +185,22 @@ class ConsultationController extends AbstractController
                 if (isset($data['mcRunningNumber'])) $consultation->setMcRunningNumber($data['mcRunningNumber']);
             }
             
-            $this->entityManager->persist($consultation);
-            $this->entityManager->flush();
+            try {
+                $this->logger->info('About to persist consultation', [
+                    'status' => $consultation->getStatus(),
+                    'status_length' => $consultation->getStatus() ? strlen($consultation->getStatus()) : 0
+                ]);
+                $this->entityManager->persist($consultation);
+                $this->entityManager->flush();
+                $this->logger->info('Consultation persisted successfully');
+            } catch (\Exception $persistError) {
+                $this->logger->error('Error persisting consultation', [
+                    'error' => $persistError->getMessage(),
+                    'status' => $consultation->getStatus(),
+                    'status_length' => $consultation->getStatus() ? strlen($consultation->getStatus()) : 0
+                ]);
+                throw $persistError;
+            }
             
             // Handle prescribed medications if provided
             if (isset($data['prescribedMedications']) && is_array($data['prescribedMedications'])) {
@@ -237,6 +268,7 @@ class ConsultationController extends AbstractController
                 $queue->setStatus('completed_consultation');
                 
                 // Also update the consultation status
+                $this->logger->info('Setting consultation status to completed_consultation');
                 $consultation->setStatus('completed_consultation');
                 
                 $this->entityManager->flush();

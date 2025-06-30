@@ -206,19 +206,19 @@
         </div>
       </div>
 
-      <!-- Consultation Details -->
+      <!-- Remarks/Diagnosis -->
       <div class="col-12">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
               <i class="fas fa-notes-medical text-primary me-2"></i>
-              Consultation Details
+              Remarks/Diagnosis
             </h5>
             <div class="row g-4">
               <div class="col-md-12">
                 <div class="form-floating">
                   <textarea class="form-control" id="remark" v-model="consultation.notes" style="height: 100px" required></textarea>
-                  <label for="remark">Remark</label>
+                  <label for="remark">Remarks/Diagnosis</label>
                 </div>
               </div>
               <!-- Enhanced Medication Prescription Section -->
@@ -347,7 +347,7 @@
         </div>
       </div>
 
-      <!-- MC Checkbox and Dates: visible for doctor, after consultation details -->
+      <!-- MC Checkbox and Dates: visible for doctor, after remarks/diagnosis -->
       <div class="col-12 col-md-6">
         <div class="card section-card mb-4">
           <div class="card-body">
@@ -485,6 +485,22 @@
                 <p style="margin-bottom: 0;">Tandatangan</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Medication Label -->
+      <div class="col-12 col-md-6" v-if="selectedPatient">
+        <div class="card section-card mb-4">
+          <div class="card-body">
+            <h5 class="section-title mb-4">
+              <i class="fas fa-tags text-primary me-2"></i>
+              Medication Label
+            </h5>
+            <p class="text-muted mb-3">
+              Print medication label to stick on medication bags/bottles
+            </p>
+            <MedicationLabel :patient-name="selectedPatient.name || selectedPatient.displayName" />
           </div>
         </div>
       </div>
@@ -706,6 +722,186 @@
         </div>
           </div>
     
+    <!-- Consultation Summary Modal -->
+    <div class="modal fade" id="consultationSummaryModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title">
+              <i class="fas fa-check-circle me-2"></i>
+              Consultation Completed Successfully
+            </h5>
+          </div>
+          <div class="modal-body" v-if="consultationSummary">
+            <div class="alert alert-info mb-4">
+              <i class="fas fa-info-circle me-2"></i>
+              <strong>Please review the following details before proceeding:</strong>
+              This consultation will now be processed by clinic assistants for payment and medication dispensing.
+            </div>
+
+            <!-- Patient Information -->
+            <div class="summary-section mb-4">
+              <h6 class="section-title">
+                <i class="fas fa-user text-primary me-2"></i>
+                Patient Information
+              </h6>
+              <div class="summary-card">
+                <div class="summary-item">
+                  <span class="label">Patient Name:</span>
+                  <span class="value fw-bold">{{ consultationSummary.patientName }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Date:</span>
+                  <span class="value">{{ consultationSummary.date }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Doctor:</span>
+                  <span class="value">{{ consultationSummary.doctorName }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Financial Summary -->
+            <div class="summary-section mb-4">
+              <h6 class="section-title">
+                <i class="fas fa-money-bill text-success me-2"></i>
+                Financial Summary
+              </h6>
+              <div class="summary-card">
+                <div class="summary-item">
+                  <span class="label">Total Amount:</span>
+                  <span class="value fw-bold text-success">RM {{ consultationSummary.totalAmount }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Payment Status:</span>
+                  <span class="value">
+                    <span class="badge bg-warning">Pending Payment</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Documents & Actions Checklist -->
+            <div class="summary-section mb-4">
+              <h6 class="section-title">
+                <i class="fas fa-clipboard-check text-warning me-2"></i>
+                Documents & Actions Checklist
+              </h6>
+              <div class="summary-card">
+                <div class="checklist-item">
+                  <div class="checklist-icon">
+                    <i v-if="consultationSummary.hasMedicalCertificate" class="fas fa-check-circle text-success"></i>
+                    <i v-else class="fas fa-times-circle text-muted"></i>
+                  </div>
+                  <div class="checklist-content">
+                    <span class="checklist-label">Medical Certificate (MC)</span>
+                    <div class="checklist-status">
+                      <span v-if="consultationSummary.hasMedicalCertificate" class="badge bg-success">
+                        <i class="fas fa-file-medical me-1"></i>MC Required ({{ consultationSummary.mcDays }} days)
+                      </span>
+                      <span v-else class="badge bg-secondary">
+                        <i class="fas fa-times me-1"></i>No MC Required
+                      </span>
+                    </div>
+                    <div v-if="consultationSummary.hasMedicalCertificate" class="checklist-details">
+                      <small class="text-muted">
+                        Period: {{ consultationSummary.mcStartDate }} to {{ consultationSummary.mcEndDate }}
+                      </small>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="checklist-item">
+                  <div class="checklist-icon">
+                    <i v-if="consultationSummary.hasMedications" class="fas fa-check-circle text-success"></i>
+                    <i v-else class="fas fa-times-circle text-muted"></i>
+                  </div>
+                  <div class="checklist-content">
+                    <span class="checklist-label">Medication Labels</span>
+                    <div class="checklist-status">
+                      <span v-if="consultationSummary.hasMedications" class="badge bg-info">
+                        <i class="fas fa-tags me-1"></i>Labels Available for Printing
+                      </span>
+                      <span v-else class="badge bg-secondary">
+                        <i class="fas fa-times me-1"></i>No Medications Prescribed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Medications Summary -->
+            <div class="summary-section mb-4" v-if="consultationSummary.hasMedications">
+              <h6 class="section-title">
+                <i class="fas fa-pills text-info me-2"></i>
+                Prescribed Medications Summary
+              </h6>
+              <div class="summary-card">
+                <div class="medications-list">
+                  <div v-for="(medication, index) in consultationSummary.medications" :key="index" class="medication-item">
+                    <div class="medication-info">
+                      <div class="medication-name">{{ medication.name }}</div>
+                      <div class="medication-details">
+                        <span class="quantity">Qty: {{ medication.quantity }}</span>
+                        <span v-if="medication.instructions" class="instructions">{{ medication.instructions }}</span>
+                        <span v-if="medication.actualPrice" class="price">RM {{ parseFloat(medication.actualPrice).toFixed(2) }}</span>
+                      </div>
+                    </div>
+                    <div class="medication-actions">
+                      <button type="button" class="btn btn-sm btn-outline-primary" @click="printSingleMedicationLabel(medication)">
+                        <i class="fas fa-print me-1"></i>Print Label
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Next Steps -->
+            <div class="summary-section">
+              <h6 class="section-title">
+                <i class="fas fa-arrow-right text-primary me-2"></i>
+                Next Steps for Clinic Assistants
+              </h6>
+              <div class="summary-card">
+                <div class="next-steps">
+                  <div class="step-item">
+                    <i class="fas fa-money-check-alt text-success me-2"></i>
+                    <span>Process payment (RM {{ consultationSummary.totalAmount }})</span>
+                  </div>
+                  <div class="step-item" v-if="consultationSummary.hasMedications">
+                    <i class="fas fa-pills text-info me-2"></i>
+                    <span>Dispense prescribed medications</span>
+                  </div>
+                  <div class="step-item" v-if="consultationSummary.hasMedications">
+                    <i class="fas fa-tags text-warning me-2"></i>
+                    <span>Print and attach medication labels</span>
+                  </div>
+                  <div class="step-item" v-if="consultationSummary.hasMedicalCertificate">
+                    <i class="fas fa-file-medical text-primary me-2"></i>
+                    <span>Print and provide Medical Certificate</span>
+                  </div>
+                  <div class="step-item">
+                    <i class="fas fa-receipt text-secondary me-2"></i>
+                    <span>Provide receipt to patient</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="goBackToEdit">
+              <i class="fas fa-edit me-1"></i>Edit Consultation
+            </button>
+            <button type="button" class="btn btn-success" @click="confirmAndProceed">
+              <i class="fas fa-check me-1"></i>Confirm & Proceed to Payment
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
     <!-- Create New Medication Modal -->
     <div class="modal fade" id="createMedicationModal" tabindex="-1" aria-labelledby="createMedicationModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg">
@@ -811,6 +1007,7 @@ import { Modal } from 'bootstrap';
 import axios from 'axios';
 import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
 import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
+import MedicationLabel from '../../components/MedicationLabel.vue';
 import * as bootstrap from 'bootstrap';
 import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
 import searchDebouncer from '../../utils/searchDebouncer';
@@ -819,7 +1016,8 @@ export default {
   name: 'ConsultationForm',
   components: {
     MedicalCertificateForm,
-    PrescriptionForm
+    PrescriptionForm,
+    MedicationLabel
   },
   data() {
     return {
@@ -873,6 +1071,8 @@ export default {
       },
       currentMedicationItem: null,
       createMedicationModal: null,
+      consultationSummary: null,
+      consultationSummaryModal: null,
     };
   },
   computed: {
@@ -1023,7 +1223,7 @@ export default {
           id: visit.id,
           consultationDate: visit.consultationDate,
           doctor: visit.doctor,
-          diagnosis: visit.diagnosis || '',
+          diagnosis: visit.notes || visit.diagnosis || '', // Use notes first, then diagnosis as fallback
           notes: visit.notes || ''
         }));
       } catch (error) {
@@ -1093,7 +1293,7 @@ export default {
           patientId: this.consultation.patientId,
           doctorId: this.consultation.doctorId,
           notes: this.consultation.notes,
-          diagnosis: this.consultation.diagnosis || '',
+          diagnosis: this.consultation.notes || '', // Use notes as diagnosis
           status: this.consultation.status || 'pending',
           consultationFee: parseFloat(this.consultation.consultationFee) || 0,
           medications: JSON.stringify(this.consultation.medications || []), // Convert array to JSON string
@@ -1111,18 +1311,11 @@ export default {
         const response = await axios.post('/api/consultations', consultationData);
         console.log('Consultation saved successfully:', response.data);
 
-        // Show success message
-        alert('Consultation saved successfully');
+        // Prepare consultation summary
+        this.prepareConsultationSummary();
         
-        // Redirect based on user role
-        const currentUser = AuthService.getCurrentUser();
-        if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
-          // Doctors should go back to ongoing consultations
-          this.$router.push('/consultations/ongoing');
-        } else {
-          // Others go to consultations list
-          this.$router.push('/consultations');
-        }
+        // Show summary modal instead of immediate redirect
+        this.consultationSummaryModal.show();
       } catch (error) {
         console.error('Error saving consultation:', error);
         alert(error.response?.data?.message || error.message || 'Error saving consultation');
@@ -1396,114 +1589,342 @@ export default {
       }
     },
     printMedicationLabel(medItem) {
-      // Create medication label content
+      // Use the exact format from your clinic's medication label
+      const patientName = this.selectedPatient?.name || this.selectedPatient?.displayName || 'N/A';
+      const today = new Date();
+      const formattedDate = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
+      
       const labelContent = `
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Medication Label - ${medItem.name}</title>
+          <title>Medication Label - ${patientName}</title>
           <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              font-family: Arial, sans-serif;
+              margin: 10mm;
+            }
+            
+            .medication-label {
+              width: 85mm;
+              height: 55mm;
+              border: 2px solid #000;
+              padding: 3mm;
+              background: white;
+              font-size: 9pt;
+              line-height: 1.1;
+            }
+            
+            .label-border {
+              height: 100%;
+              border: 1px solid #000;
+              padding: 2mm;
+            }
+            
+            .label-header {
+              text-align: center;
+              border-bottom: 1px solid #000;
+              padding-bottom: 2mm;
+              margin-bottom: 2mm;
+            }
+            
+            .clinic-name {
+              font-size: 12pt;
+              font-weight: bold;
+              margin-bottom: 1mm;
+              letter-spacing: 0.5px;
+            }
+            
+            .clinic-details {
+              font-size: 7pt;
+              line-height: 1.2;
+            }
+            
+            .label-content {
+              height: calc(100% - 15mm);
+            }
+            
+            .row-item {
+              display: flex;
+              align-items: center;
+              margin-bottom: 1.5mm;
+              height: 4.5mm;
+            }
+            
+            .label-text {
+              font-size: 8pt;
+              font-weight: bold;
+              width: 15mm;
+              flex-shrink: 0;
+            }
+            
+            .field-box {
+              flex: 1;
+              height: 4mm;
+              border: 1px solid #000;
+              margin-left: 2mm;
+              padding: 0 1mm;
+              display: flex;
+              align-items: center;
+              font-size: 8pt;
+            }
+            
+            .field-box.filled {
+              background-color: transparent;
+              font-weight: bold;
+            }
+            
+            .checkbox-section {
+              margin-top: 2mm;
+              display: flex;
+              align-items: center;
+              flex-wrap: wrap;
+            }
+            
+            .checkbox-section .label-text {
+              font-size: 7pt;
+              width: auto;
+              margin-right: 3mm;
+            }
+            
+            .checkbox-container {
+              display: flex;
+              gap: 5mm;
+            }
+            
+            .checkbox-item {
+              display: flex;
+              align-items: center;
+              gap: 1mm;
+            }
+            
+            .checkbox {
+              width: 3mm;
+              height: 3mm;
+              border: 1px solid #000;
+              flex-shrink: 0;
+            }
+            
+            .checkbox-item span {
+              font-size: 7pt;
+            }
+            
             @media print {
-              @page {
-                size: 75mm 50mm; /* Standard label size */
-                margin: 0;
-              }
               body {
                 margin: 0;
-                padding: 4mm;
-                font-family: Arial, sans-serif;
-                font-size: 10pt;
-                line-height: 1.2;
-                color: #000;
               }
-              .label-container {
-                width: 100%;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
-              }
-              .header {
-                text-align: center;
-                border-bottom: 1px solid #000;
-                padding-bottom: 2mm;
-                margin-bottom: 2mm;
-              }
-              .clinic-name {
-                font-size: 11pt;
-                font-weight: bold;
-                text-transform: uppercase;
-              }
-              .clinic-details {
-                font-size: 8pt;
-              }
-              .patient-info {
-                display: flex;
-                justify-content: space-between;
-                font-size: 9pt;
-                margin-bottom: 2mm;
-              }
-              .medication-details {
-                margin-bottom: 2mm;
-              }
-              .medication-name {
-                font-size: 14pt;
-                font-weight: bold;
-                text-transform: uppercase;
-              }
-              .dosage {
-                font-size: 10pt;
-              }
-              .instructions {
-                font-size: 11pt;
-                font-weight: bold;
-                text-align: center;
-                border: 1px solid #000;
-                padding: 2mm;
-                margin-bottom: 2mm;
-                text-transform: uppercase;
-              }
-              .footer {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-end;
-                font-size: 8pt;
-              }
-              .dispensed-by {
-                font-style: italic;
-              }
-            }
+              
+                .medication-label {
+    margin: 0;
+    width: 85mm;
+    height: 55mm;
+  }
+}
+
+/* Consultation Summary Modal Styles */
+.summary-section {
+  border-left: 4px solid #007bff;
+  padding-left: 1rem;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+}
+
+.summary-card {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-item .label {
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.summary-item .value {
+  color: #333;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.checklist-item:last-child {
+  border-bottom: none;
+}
+
+.checklist-icon {
+  width: 24px;
+  margin-right: 0.75rem;
+  text-align: center;
+}
+
+.checklist-content {
+  flex: 1;
+}
+
+.checklist-label {
+  font-weight: 600;
+  color: #333;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.checklist-status {
+  margin-bottom: 0.25rem;
+}
+
+.checklist-details {
+  margin-top: 0.25rem;
+}
+
+.medications-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.medication-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  background: white;
+}
+
+.medication-item:last-child {
+  margin-bottom: 0;
+}
+
+.medication-info {
+  flex: 1;
+}
+
+.medication-name {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.medication-details {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.medication-details .quantity {
+  color: #0d6efd;
+  font-weight: 500;
+}
+
+.medication-details .instructions {
+  color: #6c757d;
+}
+
+.medication-details .price {
+  color: #198754;
+  font-weight: 500;
+}
+
+.medication-actions {
+  margin-left: 1rem;
+}
+
+.next-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.step-item i {
+  width: 20px;
+  text-align: center;
+}
           </style>
         </head>
         <body>
-          <div class="label-container">
-            <div class="header">
-              <div class="clinic-name">Klinik Hidup Sihat</div>
-              <div class="clinic-details">
-                No. 6, Tingkat 1, Jalan 2, Taman Sri Jambu, 43000 Kajang, Selangor. Tel: 03-8740 0678
+          <div class="medication-label">
+            <div class="label-border">
+              <!-- Header -->
+              <div class="label-header">
+                <h2 class="clinic-name">KLINIK HIDUP SIHAT</h2>
+                <div class="clinic-details">
+                  8, Jalan 2, Taman Sri Jarbu, 43000 Kajang, Selangor.<br>
+                  Tel: 03-8740 0678
+                </div>
               </div>
-            </div>
 
-            <div class="patient-info">
-              <span class="patient-name"><strong>NAMA:</strong> ${this.patient?.name || 'N/A'}</span>
-              <span class="date"><strong>TARIKH:</strong> ${new Date().toLocaleDateString('en-GB')}</span>
-            </div>
+              <!-- Content -->
+              <div class="label-content">
+                <div class="row-item">
+                  <span class="label-text">Nama :</span>
+                  <div class="field-box filled">${patientName}</div>
+                </div>
 
-            <div class="medication-details">
-              <div class="medication-name">${medItem.name}</div>
-              <div class="dosage">${medItem.unitDescription || ''}</div>
-            </div>
+                <div class="row-item">
+                  <span class="label-text">Tarikh :</span>
+                  <div class="field-box filled">${formattedDate}</div>
+                </div>
 
-            <div class="instructions">
-              ${medItem.instructions || 'MAKAN SEBIJI BILA PERLU'}
-            </div>
+                <div class="row-item">
+                  <span class="label-text">Bil :</span>
+                  <div class="field-box"></div>
+                </div>
 
-            <div class="footer">
-              <div class="quantity">
-                <strong>KUANTITI:</strong> ${medItem.quantity} ${medItem.unitType || 'Biji'}
-              </div>
-              <div class="dispensed-by">
-                Dr. ${this.consultation?.doctorName || 'Adhar'}
+                <div class="row-item">
+                  <span class="label-text">Ubat :</span>
+                  <div class="field-box"></div>
+                </div>
+
+                <div class="checkbox-section">
+                  <span class="label-text">SEBELUM SELEPAS MAKAN</span>
+                  <div class="checkbox-container">
+                    <div class="checkbox-item">
+                      <div class="checkbox"></div>
+                      <span>Kal Sehari</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1512,15 +1933,14 @@ export default {
       `;
 
       // Create a new window for printing
-      const printWindow = window.open('', '', 'width=400,height=300');
+      const printWindow = window.open('', '_blank');
       printWindow.document.write(labelContent);
       printWindow.document.close();
       
-      // Wait for content to load then print
-      printWindow.onload = function() {
+      setTimeout(() => {
         printWindow.print();
         printWindow.close();
-      };
+      }, 250);
     },
 
     async loadInitialData() {
@@ -1555,6 +1975,64 @@ export default {
       // Clean up any ongoing requests or timers
       if (this.medicationSearcher) {
         this.medicationSearcher.cleanup();
+      }
+    },
+
+    prepareConsultationSummary() {
+      const doctor = this.doctors.find(d => d.id === this.consultation.doctorId);
+      const patient = this.selectedPatient;
+      
+      // Calculate MC days
+      let mcDays = 0;
+      if (this.consultation.hasMedicalCertificate && this.consultation.mcStartDate && this.consultation.mcEndDate) {
+        const startDate = new Date(this.consultation.mcStartDate);
+        const endDate = new Date(this.consultation.mcEndDate);
+        mcDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+      }
+
+      // Filter valid medications
+      const validMedications = this.prescribedMedications.filter(med => med.name && med.quantity);
+
+      this.consultationSummary = {
+        patientName: patient?.name || patient?.displayName || 'Unknown Patient',
+        date: new Date().toLocaleDateString('en-MY', {
+          year: 'numeric',
+          month: 'long', 
+          day: 'numeric'
+        }),
+        doctorName: doctor?.name || 'Unknown Doctor',
+        totalAmount: parseFloat(this.consultation.totalAmount || 0).toFixed(2),
+        hasMedicalCertificate: this.consultation.hasMedicalCertificate || false,
+        mcDays: mcDays,
+        mcStartDate: this.consultation.mcStartDate ? new Date(this.consultation.mcStartDate).toLocaleDateString('en-MY') : '',
+        mcEndDate: this.consultation.mcEndDate ? new Date(this.consultation.mcEndDate).toLocaleDateString('en-MY') : '',
+        hasMedications: validMedications.length > 0,
+        medications: validMedications
+      };
+    },
+
+    printSingleMedicationLabel(medication) {
+      // Use the existing printMedicationLabel method
+      this.printMedicationLabel(medication);
+    },
+
+    goBackToEdit() {
+      // Close the summary modal and allow editing
+      this.consultationSummaryModal.hide();
+      this.consultationSummary = null;
+    },
+
+    confirmAndProceed() {
+      // Close modal and redirect based on user role
+      this.consultationSummaryModal.hide();
+      
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
+        // Doctors should go back to ongoing consultations
+        this.$router.push('/consultations/ongoing');
+      } else {
+        // Others go to consultations list for payment processing
+        this.$router.push('/consultations');
       }
     }
   },
@@ -1664,6 +2142,9 @@ export default {
     
     // Load initial data after setting up parameters
     await this.loadInitialData();
+    
+    // Initialize modals
+    this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
   }
 };
 </script>

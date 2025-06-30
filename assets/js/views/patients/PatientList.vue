@@ -319,7 +319,7 @@
                     <tr>
                       <th>Date</th>
                       <th>Doctor</th>
-                      <th>Consultation Details</th>
+                      <th>Remarks/Diagnosis</th>
                       <th>Status</th>
                       <th>Fees</th>
                       <th>Action</th>
@@ -340,7 +340,7 @@
                       </td>
                       <td>
                         <span v-if="visit.notes" class="text-truncate" style="max-width: 200px; display: inline-block;" :title="visit.notes">{{ visit.notes }}</span>
-                        <span v-else class="text-muted">No consultation details recorded</span>
+                        <span v-else class="text-muted">No remarks/diagnosis recorded</span>
                       </td>
                       <td>
                         <span :class="getStatusBadgeClass(visit.status)">
@@ -448,11 +448,11 @@
                   </div>
                   <div class="card-body">
                     <div class="mb-3">
-                      <strong>Consultation Details:</strong><br>
+                      <strong>Remarks/Diagnosis:</strong><br>
                       <div v-if="selectedVisit.notes" class="bg-light p-2 rounded">
                         {{ selectedVisit.notes }}
                       </div>
-                      <span v-else class="text-muted">No consultation details recorded</span>
+                      <span v-else class="text-muted">No remarks/diagnosis recorded</span>
                     </div>
                     <div v-if="selectedVisit.diagnosis">
                       <strong>Diagnosis:</strong><br>
