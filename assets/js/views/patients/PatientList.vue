@@ -51,7 +51,7 @@
             </thead>
             <tbody>
               <tr v-for="(patient, index) in patients" :key="patient.id">
-                <td>{{ index + 1 }}</td>
+                <td>{{ (currentPage - 1) * perPage + index + 1 }}</td>
                 <td>{{ patient.name }}</td>
                 <td>{{ formatDisplayNRIC(patient.nric) || 'N/A' }}</td>
                 <td>{{ patient.phone }}</td>
@@ -98,28 +98,36 @@
     </div>
 
     <!-- Pagination Controls -->
-    <div class="d-flex justify-content-between align-items-center mt-4" v-if="totalPages > 1">
+    <div class="d-flex justify-content-between align-items-center mt-4" v-if="totalPages > 1 || totalPatients > 0">
         <div class="d-flex align-items-center">
             <span class="text-muted me-3">
+                <i class="fas fa-users me-1"></i>
                 Showing {{ (currentPage - 1) * perPage + 1 }} to {{ Math.min(currentPage * perPage, totalPatients) }} of {{ totalPatients }} patients
             </span>
-            <select v-model="perPage" @change="loadPatients" class="form-select form-select-sm" style="width: 75px;">
-                <option value="10">10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-            </select>
+            <div class="d-flex align-items-center">
+                <label class="form-label me-2 mb-0 text-muted">Rows per page:</label>
+                <select v-model="perPage" @change="loadPatients" class="form-select form-select-sm" style="width: 80px;">
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
         </div>
-        <nav>
+        <nav v-if="totalPages > 1">
             <ul class="pagination mb-0">
                 <li class="page-item" :class="{ disabled: currentPage === 1 }">
-                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage - 1)">Previous</a>
+                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage - 1)">
+                        <i class="fas fa-chevron-left me-1"></i>Previous
+                    </a>
                 </li>
                 <li class="page-item" v-for="page in pages" :key="page" :class="{ active: currentPage === page }">
                     <a class="page-link" href="#" @click.prevent="goToPage(page)">{{ page }}</a>
                 </li>
                 <li class="page-item" :class="{ disabled: currentPage === totalPages }">
-                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage + 1)">Next</a>
+                    <a class="page-link" href="#" @click.prevent="goToPage(currentPage + 1)">
+                        Next<i class="fas fa-chevron-right ms-1"></i>
+                    </a>
                 </li>
             </ul>
         </nav>
@@ -454,12 +462,6 @@
                       </div>
                       <span v-else class="text-muted">No remarks/diagnosis recorded</span>
                     </div>
-                    <div v-if="selectedVisit.diagnosis">
-                      <strong>Diagnosis:</strong><br>
-                      <div class="bg-light p-2 rounded">
-                        {{ selectedVisit.diagnosis }}
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -504,38 +506,46 @@
                   <div class="card-header bg-success text-white">
                     <h6 class="mb-0"><i class="fas fa-dollar-sign me-2"></i>Financial Information</h6>
                   </div>
-                  <div class="card-body">
-                    <div class="row">
-                      <div class="col-md-4">
-                        <strong>Consultation Fee:</strong><br>
-                        RM {{ selectedVisit.consultationFee ? parseFloat(selectedVisit.consultationFee).toFixed(2) : '0.00' }}
-                      </div>
-                      <div class="col-md-4">
-                        <strong>Medicines Fee:</strong><br>
-                        RM {{ selectedVisit.medicinesFee ? parseFloat(selectedVisit.medicinesFee).toFixed(2) : '0.00' }}
-                      </div>
-                      <div class="col-md-4 fw-bold">
-                        <strong>Total Amount:</strong><br>
-                        RM {{ selectedVisit.totalAmount ? parseFloat(selectedVisit.totalAmount).toFixed(2) : '0.00' }}
-                      </div>
+                  <div class="card-body text-center">
+                    <div class="fw-bold fs-4">
+                      <strong>Total Amount:</strong><br>
+                      <span class="text-success">RM {{ selectedVisit.totalAmount ? parseFloat(selectedVisit.totalAmount).toFixed(2) : '0.00' }}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               <!-- Medical Certificate -->
-              <div class="col-12" v-if="selectedVisit.mcStartDate || selectedVisit.mcEndDate">
+              <div class="col-12" v-if="selectedVisit.mcStartDate || selectedVisit.mcEndDate || selectedVisit.hasMedicalCertificate">
                 <div class="card">
                   <div class="card-header">
                     <h6 class="mb-0"><i class="fas fa-certificate me-2"></i>Medical Certificate</h6>
                   </div>
                   <div class="card-body">
                     <div class="row">
+                      <div class="col-12 mb-3">
+                        <strong>MC Status:</strong>
+                        <span v-if="selectedVisit.mcStartDate && selectedVisit.mcEndDate" class="badge bg-success ms-2">
+                          <i class="fas fa-check me-1"></i>MC Issued
+                        </span>
+                        <span v-else-if="selectedVisit.hasMedicalCertificate" class="badge bg-warning ms-2">
+                          <i class="fas fa-clock me-1"></i>MC Required
+                        </span>
+                        <span v-else class="badge bg-secondary ms-2">
+                          <i class="fas fa-times me-1"></i>No MC
+                        </span>
+                      </div>
                       <div class="col-md-6" v-if="selectedVisit.mcStartDate">
                         <strong>Start Date:</strong> {{ formatDate(selectedVisit.mcStartDate) }}
                       </div>
                       <div class="col-md-6" v-if="selectedVisit.mcEndDate">
                         <strong>End Date:</strong> {{ formatDate(selectedVisit.mcEndDate) }}
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcStartDate && selectedVisit.mcEndDate">
+                        <strong>Duration:</strong> {{ calculateMCDays(selectedVisit.mcStartDate, selectedVisit.mcEndDate) }} day(s)
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcRunningNumber">
+                        <strong>MC Number:</strong> {{ selectedVisit.mcRunningNumber }}
                       </div>
                       <div class="col-12" v-if="selectedVisit.mcNotes">
                         <strong>MC Notes:</strong><br>

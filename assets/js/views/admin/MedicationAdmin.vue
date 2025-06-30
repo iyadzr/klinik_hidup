@@ -138,11 +138,11 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="medication in paginatedMedications" :key="medication.id">
+              <tr v-for="(medication, index) in paginatedMedications" :key="medication.id">
                 <td>
                   <input type="checkbox" :value="medication.id" v-model="selectedMedications">
                 </td>
-                <td>{{ medication.id }}</td>
+                <td>{{ (currentPage - 1) * parseInt(itemsPerPage) + index + 1 }}</td>
                 <td>
                   <strong>{{ medication.name }}</strong>
                 </td>
