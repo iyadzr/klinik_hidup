@@ -398,20 +398,30 @@ class UserController extends AbstractController
         try {
             // Get current user from token/auth
             $user = $this->getUser();
+            $this->logger->info('Upload attempt - User from getUser(): ' . ($user ? get_class($user) : 'null'));
+            
             if (!$user || !($user instanceof \App\Entity\User)) {
+                $this->logger->error('Authentication failed - user not found or wrong type');
                 return new JsonResponse(['error' => 'Not authenticated'], 401);
             }
             $userId = $user->getId();
+            $this->logger->info('User authenticated successfully - ID: ' . $userId);
             
             $uploadedFile = $request->files->get('profileImage');
             
             if (!$uploadedFile) {
+                $this->logger->error('No file uploaded');
                 return new JsonResponse(['error' => 'No file uploaded'], 400);
             }
 
+            $this->logger->info('File uploaded - Original name: ' . $uploadedFile->getClientOriginalName() . ', Size: ' . $uploadedFile->getSize());
+
             // Validate file
             $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-            if (!in_array($uploadedFile->getMimeType(), $allowedMimes)) {
+            $actualMimeType = $uploadedFile->getMimeType();
+            $this->logger->info('File MIME type: ' . $actualMimeType);
+            
+            if (!in_array($actualMimeType, $allowedMimes)) {
                 return new JsonResponse(['error' => 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.'], 400);
             }
 
@@ -423,28 +433,33 @@ class UserController extends AbstractController
             // Create uploads directory if it doesn't exist
             $uploadsDir = $this->getParameter('kernel.project_dir') . '/public/uploads/profiles';
             if (!is_dir($uploadsDir)) {
+                $this->logger->info('Creating uploads directory: ' . $uploadsDir);
                 mkdir($uploadsDir, 0755, true);
             }
 
             // Generate unique filename
             $extension = $uploadedFile->guessExtension();
             $filename = 'profile_' . $userId . '_' . uniqid() . '.' . $extension;
+            $this->logger->info('Generated filename: ' . $filename);
             
             // Remove old profile image if exists
             if ($user->getProfileImage()) {
                 $oldImagePath = $this->getParameter('kernel.project_dir') . '/public' . $user->getProfileImage();
                 if (file_exists($oldImagePath)) {
                     unlink($oldImagePath);
+                    $this->logger->info('Removed old profile image: ' . $oldImagePath);
                 }
             }
 
             // Move uploaded file
             $uploadedFile->move($uploadsDir, $filename);
+            $this->logger->info('File moved successfully to: ' . $uploadsDir . '/' . $filename);
 
             // Update user profile
             $profileImageUrl = '/uploads/profiles/' . $filename;
             $user->setProfileImage($profileImageUrl);
             $this->entityManager->flush();
+            $this->logger->info('User profile updated with new image URL: ' . $profileImageUrl);
 
             return new JsonResponse([
                 'message' => 'Profile image uploaded successfully',
@@ -452,8 +467,8 @@ class UserController extends AbstractController
             ]);
 
         } catch (\Exception $e) {
-            $this->logger->error('Error uploading profile image: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to upload image'], 500);
+            $this->logger->error('Error uploading profile image: ' . $e->getMessage() . ' | Stack trace: ' . $e->getTraceAsString());
+            return new JsonResponse(['error' => 'Failed to upload image: ' . $e->getMessage()], 500);
         }
     }
 
@@ -461,15 +476,10 @@ class UserController extends AbstractController
     public function removeProfileImage(Request $request): JsonResponse
     {
         try {
-            // Get current user from session
-            $userId = $request->getSession()->get('user_id');
-            if (!$userId) {
+            // Get current user from token/auth
+            $user = $this->getUser();
+            if (!$user || !($user instanceof \App\Entity\User)) {
                 return new JsonResponse(['error' => 'Not authenticated'], 401);
-            }
-            
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            if (!$user) {
-                return new JsonResponse(['error' => 'User not found'], 404);
             }
 
             // Remove old profile image file if exists
@@ -477,6 +487,7 @@ class UserController extends AbstractController
                 $oldImagePath = $this->getParameter('kernel.project_dir') . '/public' . $user->getProfileImage();
                 if (file_exists($oldImagePath)) {
                     unlink($oldImagePath);
+                    $this->logger->info('Removed profile image file: ' . $oldImagePath);
                 }
             }
 

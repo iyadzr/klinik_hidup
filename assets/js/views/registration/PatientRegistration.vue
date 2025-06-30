@@ -172,10 +172,11 @@
                       v-model="currentPatient.nric" 
                       class="form-control" 
                       required 
-                      placeholder="Enter NRIC/Identification Number" 
-                      @input="calculateDOBFromNRIC(currentPatient)"
+                      placeholder="Enter NRIC (e.g., 123456-12-1234)" 
+                      maxlength="14"
+                      @input="handleNRICInput($event, currentPatient)"
                     >
-                    <small class="text-muted">For 12-digit NRIC format, DOB and gender will be auto-calculated</small>
+                    <small class="text-muted">12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)</small>
                   </div>
                 </div>
 
@@ -259,8 +260,8 @@
             <div class="row mb-3">
               <div class="col-md-12">
                 <label class="form-label">NRIC</label>
-                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC/Identification Number" @input="calculateDOBFromNRIC()" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
-                <small class="text-muted">For 12-digit NRIC format (YYMMDD-XX-XXXX), DOB and gender will be auto-calculated</small>
+                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 930502-14-6087)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
+                <small class="text-muted">12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)</small>
               </div>
             </div>
 
@@ -353,6 +354,7 @@
 
 <script>
 import axios from 'axios';
+import { formatNRIC, cleanNRIC, isValidNRIC } from '../../utils/nricFormatter.js';
 
 export default {
   watch: {
@@ -441,6 +443,17 @@ export default {
     await this.loadDoctors();
   },
   methods: {
+    handleNRICInput(event, patient = null) {
+      const targetPatient = patient || this.patient;
+      const formattedNRIC = formatNRIC(event.target.value);
+      
+      // Update the v-model
+      targetPatient.nric = formattedNRIC;
+      
+      // Calculate DOB and gender if it's a valid NRIC
+      this.calculateDOBFromNRIC(targetPatient);
+    },
+    
     calculateDOBFromNRIC(patient = null) {
       const targetPatient = patient || this.patient;
       
@@ -457,8 +470,8 @@ export default {
       }
       
       // Check if the NRIC follows the YYMMDD-XX-XXXX pattern (with or without hyphens)
-      // First, remove hyphens if they exist
-      const cleanNric = nric.replace(/[\s-]/g, '');
+      // Use the cleanNRIC utility
+      const cleanNric = cleanNRIC(nric);
       
       // Check if it has exactly 12 digits
       if (cleanNric.length === 12 && /^\d{12}$/.test(cleanNric)) {

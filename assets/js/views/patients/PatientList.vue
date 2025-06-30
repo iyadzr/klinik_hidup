@@ -53,7 +53,7 @@
               <tr v-for="(patient, index) in patients" :key="patient.id">
                 <td>{{ index + 1 }}</td>
                 <td>{{ patient.name }}</td>
-                <td>{{ patient.nric || 'N/A' }}</td>
+                <td>{{ formatDisplayNRIC(patient.nric) || 'N/A' }}</td>
                 <td>{{ patient.phone }}</td>
                 <td>{{ patient.gender === 'M' ? 'Male' : patient.gender === 'F' ? 'Female' : 'N/A' }}</td>
                                     <td>{{ formatDateOfBirth(patient.dateOfBirth) }}</td>
@@ -151,7 +151,10 @@
                            v-model="form.nric" 
                            :readonly="editingPatient"
                            :class="{ 'bg-light': editingPatient }"
+                           @input="handleNRICInput"
                            @blur="checkNricUniqueness"
+                           placeholder="e.g., 123456-12-1234"
+                           maxlength="14"
                            required>
                     <small class="text-muted" v-if="editingPatient">NRIC cannot be changed</small>
                     <small class="text-danger" v-if="nricError">{{ nricError }}</small>
@@ -276,7 +279,7 @@
                         <strong>Name:</strong> {{ selectedPatientForHistory?.name }}
                       </div>
                       <div class="col-md-3">
-                        <strong>NRIC:</strong> {{ selectedPatientForHistory?.nric || 'N/A' }}
+                        <strong>NRIC:</strong> {{ formatDisplayNRIC(selectedPatientForHistory?.nric) || 'N/A' }}
                       </div>
                       <div class="col-md-3">
                         <strong>Phone:</strong> {{ selectedPatientForHistory?.phone }}
@@ -694,6 +697,7 @@
 <script>
 import axios from 'axios';
 import AuthService from '../../services/AuthService';
+import { formatNRIC } from '../../utils/nricFormatter.js';
 
 export default {
   name: 'PatientList',
@@ -847,6 +851,14 @@ export default {
       } catch (error) {
         console.error('Failed to delete patient:', error);
       }
+    },
+    handleNRICInput(event) {
+      if (!this.editingPatient) {
+        this.form.nric = formatNRIC(event.target.value);
+      }
+    },
+    formatDisplayNRIC(nric) {
+      return formatNRIC(nric);
     },
     async checkNricUniqueness() {
       if (!this.form.nric || this.editingPatient) {

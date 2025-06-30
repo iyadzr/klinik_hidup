@@ -50,6 +50,23 @@ class PatientController extends AbstractController
         $this->logger = $logger;
     }
 
+    /**
+     * Format NRIC for storage - ensure 12-digit NRIC has proper dash formatting
+     */
+    private function formatNRICForStorage(string $nric): string
+    {
+        // Remove all non-digit characters
+        $cleanNric = preg_replace('/\D/', '', $nric);
+        
+        // If it's exactly 12 digits, format as YYMMDD-XX-XXXX
+        if (strlen($cleanNric) === 12) {
+            return substr($cleanNric, 0, 6) . '-' . substr($cleanNric, 6, 2) . '-' . substr($cleanNric, 8, 4);
+        }
+        
+        // Otherwise, return as-is (for non-standard formats or other ID types)
+        return $nric;
+    }
+
     #[Route('', name: 'app_patient_index', methods: ['GET'])]
     public function index(Request $request, PatientRepository $patientRepository): JsonResponse
     {
@@ -191,7 +208,11 @@ class PatientController extends AbstractController
 
             $patient = new Patient();
             $patient->setName($data['name']);
-            $patient->setNric($data['nric']);
+            
+            // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
+            $nric = $this->formatNRICForStorage($data['nric']);
+            $patient->setNric($nric);
+            
             $patient->setEmail($data['email'] ?? '');
             $patient->setPhone($data['phone']);
             
@@ -317,7 +338,11 @@ class PatientController extends AbstractController
             // Create new patient
             $patient = new Patient();
             $patient->setName($patientData['name']);
-            $patient->setNric($patientData['nric']);
+            
+            // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
+            $nric = $this->formatNRICForStorage($patientData['nric']);
+            $patient->setNric($nric);
+            
             $patient->setEmail($patientData['email'] ?? '');
             $patient->setPhone($patientData['phone']);
             
@@ -465,7 +490,9 @@ class PatientController extends AbstractController
             $patient->setName($data['name']);
         }
         if (isset($data['nric'])) {
-            $patient->setNric($data['nric']);
+            // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
+            $nric = $this->formatNRICForStorage($data['nric']);
+            $patient->setNric($nric);
         }
         if (isset($data['email'])) {
             $patient->setEmail($data['email']);
