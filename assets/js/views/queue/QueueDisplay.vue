@@ -279,7 +279,20 @@ export default {
     getFormattedPatientName(patient) {
       if (!patient) return 'Unknown Patient';
       
-      // Handle different patient name formats
+      // For group consultations, show the main patient name only
+      if (patient.isGroupConsultation && patient.groupPatients && Array.isArray(patient.groupPatients)) {
+        // Find the main patient (relationship === 'self') or use the first patient
+        const mainPatient = patient.groupPatients.find(p => p.relationship === 'self') || patient.groupPatients[0];
+        if (mainPatient) {
+          const mainName = mainPatient.displayName || mainPatient.name || 
+                          (mainPatient.firstName && mainPatient.lastName ? `${mainPatient.firstName} ${mainPatient.lastName}` : null);
+          if (mainName) {
+            return `${mainName} (+${patient.groupPatients.length - 1} family)`;
+          }
+        }
+      }
+      
+      // Handle different patient name formats for single patients
       if (patient.displayName) {
         return patient.displayName;
       }

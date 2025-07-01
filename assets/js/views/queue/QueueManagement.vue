@@ -32,6 +32,7 @@
                 <th>Doctor</th>
                 <th>Status</th>
                 <th>Time</th>
+                <th>Medicines</th>
                 <th>Payment Status</th>
               </tr>
             </thead>
@@ -43,7 +44,7 @@
                     <strong>{{ queue.mainPatient ? queue.mainPatient.name : 'Group Consultation' }}</strong>
                     <small class="text-muted d-block">
                       <i class="fas fa-users me-1"></i>
-                      Group ({{ queue.patientCount ?? (queue.patients?.length || 0) }} patients)
+                      Group ({{ queue.patientCount ?? (queue.patients?.length || 0) }} {{ (queue.patientCount ?? (queue.patients?.length || 0)) === 1 ? 'patient' : 'patients' }})
                     </small>
                   </div>
                   <div v-else>
@@ -58,12 +59,33 @@
                 </td>
                 <td>{{ formatDateTime(queue.queueDateTime) }}</td>
                 <td>
+                  <div v-if="queue.hasMedicines">
+                    <!-- Always show clickable medicines button when medicines exist -->
+                    <button class="btn btn-sm fw-bold premium-medicines-btn" @click="viewMedicines(queue)">
+                      <i class="fas fa-pills me-1"></i>
+                      <span class="d-none d-md-inline">Medicines</span>
+                      <span class="d-md-none">Meds</span>
+                    </button>
+                    <!-- Show additional status badge for completed consultations -->
+                    <div v-if="queue.status === 'completed'" class="mt-1">
+                      <span class="badge bg-success badge-sm">
+                        <i class="fas fa-check me-1"></i>Ready
+                      </span>
+                    </div>
+                  </div>
+                  <div v-else>
+                    <span class="text-muted">-</span>
+                  </div>
+                </td>
+                <td>
                   <div v-if="queue.status === 'completed_consultation'">
                     <span v-if="queue.isPaid" class="badge bg-success">
                       <i class="fas fa-check me-1"></i>Paid
                     </span>
-                    <button v-else class="btn btn-sm btn-warning" @click="processPayment(queue)">
-                      <i class="fas fa-dollar-sign me-1"></i>Process Payment
+                    <button v-else class="btn btn-sm fw-bold premium-payment-btn" @click="processPayment(queue)">
+                      <i class="fas fa-credit-card me-1"></i>
+                      <span class="d-none d-md-inline">Payment</span>
+                      <span class="d-md-none">Pay</span>
                     </button>
                   </div>
                   <div v-else-if="queue.status === 'completed'">
@@ -83,23 +105,36 @@
     </div>
   </div>
 
-  <!-- Payment Modal -->
-  <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true" style="padding-top: 100px !important;">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Process Payment</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+  <!-- Payment Modal (Vue-based, No Bootstrap JS) -->
+  <div v-if="showPaymentModal" class="vue-modal-overlay" @click="closePaymentModal">
+    <div class="vue-modal-dialog" @click.stop>
+      <div class="vue-modal-content">
+        <div class="vue-modal-header">
+          <h5 class="vue-modal-title">
+            <i class="fas fa-credit-card me-2"></i>Process Payment
+          </h5>
+          <button type="button" class="vue-btn-close" @click="closePaymentModal" aria-label="Close">
+            <i class="fas fa-times"></i>
+          </button>
         </div>
-        <div class="modal-body">
+        <div class="vue-modal-body">
           <div v-if="selectedQueue">
-            <h6>Patient: {{ selectedQueue.patient?.name }}</h6>
-            <h6>Queue Number: {{ formatQueueNumber(selectedQueue.queueNumber) }}</h6>
-            <h6>Total Amount: RM {{ calculateAmount(selectedQueue) }}</h6>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <h6><i class="fas fa-user me-2"></i>Patient: {{ selectedQueue.patient?.name }}</h6>
+              </div>
+              <div class="col-md-6">
+                <h6><i class="fas fa-list-ol me-2"></i>Queue: {{ formatQueueNumber(selectedQueue.queueNumber) }}</h6>
+              </div>
+            </div>
+            
+            <div class="mb-3">
+              <h6 class="text-primary"><i class="fas fa-money-bill-wave me-2"></i>Total Amount: RM {{ calculateAmount(selectedQueue) }}</h6>
+            </div>
             
             <div class="mt-3">
-              <label class="form-label">Payment Method:</label>
-              <div class="d-flex gap-3">
+              <label class="form-label fw-bold">Payment Method:</label>
+              <div class="d-flex gap-3 mt-2">
                 <div class="form-check">
                   <input 
                     class="form-check-input" 
@@ -110,7 +145,7 @@
                     v-model="paymentMethod"
                   >
                   <label class="form-check-label" for="cash">
-                    <i class="fas fa-money-bill-wave me-2"></i>Cash
+                    <i class="fas fa-money-bill-wave me-2 text-success"></i>Cash
                   </label>
                 </div>
                 <div class="form-check">
@@ -123,24 +158,99 @@
                     v-model="paymentMethod"
                   >
                   <label class="form-check-label" for="card">
-                    <i class="fas fa-credit-card me-2"></i>Card
+                    <i class="fas fa-credit-card me-2 text-primary"></i>Card
                   </label>
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <div class="vue-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closePaymentModal">Cancel</button>
           <button 
             type="button" 
-            class="btn btn-success" 
+            class="btn btn-success fw-bold premium-accept-btn"
             @click="acceptPayment"
             :disabled="!paymentMethod || processing"
           >
             <span v-if="processing" class="spinner-border spinner-border-sm me-2"></span>
+            <i v-if="!processing" class="fas fa-check me-2"></i>
             {{ processing ? 'Processing...' : 'Accept Payment' }}
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simple Vue Modal (No Bootstrap JS) -->
+  <div v-if="showMedicinesModal" class="vue-modal-overlay" @click="closeMedicinesModal">
+    <div class="vue-modal-dialog" @click.stop>
+      <div class="vue-modal-content">
+        <div class="vue-modal-header">
+          <h5 class="vue-modal-title">
+            <i class="fas fa-pills me-2"></i>Prescribed Medicines
+          </h5>
+          <button type="button" class="vue-btn-close" @click="closeMedicinesModal" aria-label="Close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="vue-modal-body">
+          <div v-if="selectedQueue">
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <h6><i class="fas fa-user me-2"></i>Patient: {{ getSelectedQueuePatientName() }}</h6>
+              </div>
+              <div class="col-md-6">
+                <h6><i class="fas fa-list-ol me-2"></i>Queue: {{ formatQueueNumber(selectedQueue.queueNumber) }}</h6>
+              </div>
+            </div>
+            
+            <div v-if="medicinesList && medicinesList.length > 0">
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>Medicine</th>
+                      <th>Dosage</th>
+                      <th>Frequency</th>
+                      <th>Duration</th>
+                      <th>Instructions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(medicine, index) in medicinesList" :key="index">
+                      <td>
+                        <strong>{{ medicine.name || medicine.medicationName || 'Unknown Medicine' }}</strong>
+                        <br>
+                        <small class="text-muted">{{ medicine.unitType || '' }}</small>
+                      </td>
+                      <td>{{ medicine.dosage || '-' }}</td>
+                      <td>{{ medicine.frequency || '-' }}</td>
+                      <td>{{ medicine.duration || '-' }}</td>
+                      <td>
+                        <small>{{ medicine.instructions || '-' }}</small>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              <div class="alert alert-info mt-3">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>For Clinic Assistant:</strong> Please prepare the above medicines for this patient.
+              </div>
+            </div>
+            
+            <div v-else>
+              <div class="text-center text-muted py-4">
+                <i class="fas fa-pills fa-3x mb-3"></i>
+                <p>No medicines prescribed for this patient.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="vue-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeMedicinesModal">Close</button>
         </div>
       </div>
     </div>
@@ -162,6 +272,8 @@ export default {
       selectedDate: '',
       selectedQueue: null,
       paymentAmount: 0,
+      paymentMethod: '',
+      processing: false,
       isLoading: false,
       isDoctorLoading: false,
       isPaymentProcessing: false,
@@ -172,9 +284,12 @@ export default {
       maxReconnectAttempts: 5,
       reconnectDelay: 1000,
       
-      // Remove old throttling variables as they're handled by requestManager
-      // lastRefreshTime: 0,
-      // currentQueueRequest: null
+      // Modal instances
+      showPaymentModal: false,
+      showMedicinesModal: false,
+      
+      // Medicines data
+      medicinesList: []
     };
   },
   computed: {
@@ -192,6 +307,9 @@ export default {
     
     // Set up beforeunload handler
     window.addEventListener('beforeunload', this.handleBeforeUnload);
+    
+    // Add keyboard listener for ESC key
+    window.addEventListener('keydown', this.handleKeydown);
   },
   activated() {
     // Refresh data when component is activated (for keep-alive)
@@ -363,20 +481,25 @@ export default {
     },
 
     async acceptPayment() {
-      if (this.isPaymentProcessing) {
+      if (!this.paymentMethod || !this.selectedQueue) {
+        this.$toast?.error?.('Please select a payment method');
+        return;
+      }
+
+      if (this.processing) {
         console.log('⏩ Payment processing already in progress');
         return;
       }
 
       try {
-        this.isPaymentProcessing = true;
+        this.processing = true;
         
         await makeProtectedRequest(
           `process-payment-${this.selectedQueue.id}`,
           async (signal) => {
             return await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
-              amount: this.paymentAmount,
-              paymentMethod: 'cash'
+              amount: this.calculateAmount(this.selectedQueue),
+              paymentMethod: this.paymentMethod
             }, { signal });
           },
           {
@@ -388,14 +511,17 @@ export default {
         );
 
         console.log('✅ Payment processed successfully');
-        this.$toast?.success?.('Payment processed successfully');
+        this.$toast?.success?.(`Payment of RM ${this.calculateAmount(this.selectedQueue)} received via ${this.paymentMethod}`);
         
-        // Close modal and refresh queue
-        const modal = bootstrap.Modal.getInstance(document.getElementById('paymentModal'));
-        modal?.hide();
+        // Update the queue item in the list
+        const queueIndex = this.queueList.findIndex(q => q.id === this.selectedQueue.id);
+        if (queueIndex !== -1) {
+          this.queueList[queueIndex].isPaid = true;
+          this.queueList[queueIndex].paidAt = new Date().toISOString();
+        }
         
-        this.selectedQueue = null;
-        this.paymentAmount = 0;
+        // Close Vue modal and reset data
+        this.closePaymentModal();
         
         // Refresh queue list
         await this.loadQueueList();
@@ -416,7 +542,7 @@ export default {
           this.$toast?.error?.('Payment processing failed. Please try again.');
         }
       } finally {
-        this.isPaymentProcessing = false;
+        this.processing = false;
       }
     },
 
@@ -519,6 +645,7 @@ export default {
       
       // Remove event listeners
       window.removeEventListener('beforeunload', this.handleBeforeUnload);
+      window.removeEventListener('keydown', this.handleKeydown);
       
       console.log('✅ QueueManagement cleanup completed');
     },
@@ -552,11 +679,8 @@ export default {
       this.paymentMethod = '';
       this.processing = false;
       
-      // Initialize Bootstrap modal if not already done
-      if (!this.paymentModal) {
-        this.paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
-      }
-      this.paymentModal.show();
+      // Show Vue modal (no Bootstrap JS)
+      this.showPaymentModal = true;
     },
     
     calculateAmount(queue) {
@@ -565,44 +689,7 @@ export default {
     },
     
 
-    
-    async acceptPayment() {
-      if (!this.paymentMethod || !this.selectedQueue) {
-        alert('Please select a payment method');
-        return;
-      }
 
-      this.processing = true;
-      try {
-        // Create payment record through the queue endpoint
-        const response = await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
-          paymentMethod: this.paymentMethod,
-          amount: this.calculateAmount(this.selectedQueue)
-        });
-
-        // Update the queue item in the list
-        const queueIndex = this.queueList.findIndex(q => q.id === this.selectedQueue.id);
-        if (queueIndex !== -1) {
-          this.queueList[queueIndex].isPaid = true;
-          this.queueList[queueIndex].paidAt = new Date().toISOString();
-        }
-
-        // Close payment modal
-        this.paymentModal.hide();
-
-        // Show success message
-        alert(`Payment of RM ${this.calculateAmount(this.selectedQueue)} received via ${this.paymentMethod} for ${this.selectedQueue.patient?.name}`);
-
-        // Refresh the queue list
-        this.loadQueueList();
-
-      } catch (error) {
-        console.error('Error processing payment:', error);
-        alert('Error processing payment. Please try again.');
-      } finally {
-        this.processing = false;
-      }
-    },
     async updateStatus(queueId, newStatus) {
       try {
         await axios.put(`/api/queue/${queueId}/status`, { status: newStatus });
@@ -674,6 +761,200 @@ export default {
         return `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim();
       }
       return 'Unknown Doctor';
+    },
+    
+    // Fix for SSE error
+    handleQueueUpdate(queueData) {
+      console.log('📡 SSE queue update received:', queueData);
+      
+      // If this is a group consultation or patientCount is present, always refresh the list
+      if (queueData.isGroupConsultation || typeof queueData.patientCount !== 'undefined') {
+        this.loadQueueList();
+        return;
+      }
+      
+      const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
+      if (queueIndex !== -1) {
+        // Update the specific queue item
+        this.queueList[queueIndex] = {
+          ...this.queueList[queueIndex],
+          status: queueData.status,
+          patient: queueData.patient,
+          doctor: queueData.doctor,
+          queueDateTime: queueData.queueDateTime,
+          hasMedicines: queueData.hasMedicines,
+          isPaid: queueData.isPaid
+        };
+      } else {
+        // If queue not found, refresh the entire list
+        this.loadQueueList();
+      }
+    },
+    
+    // View medicines for a queue
+    async viewMedicines(queue) {
+      console.log('🔍 Viewing medicines for queue:', queue);
+      this.selectedQueue = queue;
+      this.medicinesList = [];
+      
+      try {
+        // Fetch medicines based on consultation ID or queue ID
+        let response;
+        if (queue.consultationId) {
+          response = await axios.get(`/api/consultations/${queue.consultationId}/medications`);
+        } else {
+          // Fallback to queue-based lookup
+          response = await axios.get(`/api/queue/${queue.id}/medications`);
+        }
+        
+        this.medicinesList = response.data || [];
+        console.log('💊 Fetched medicines:', this.medicinesList);
+        
+      } catch (error) {
+        console.error('❌ Error fetching medicines:', error);
+        this.medicinesList = [];
+      }
+      
+      // Show Vue modal (no Bootstrap JS)
+      this.showMedicinesModal = true;
+    },
+    
+    // Close medicines modal
+    closeMedicinesModal() {
+      this.showMedicinesModal = false;
+      // Clean up data
+      this.selectedQueue = null;
+      this.medicinesList = [];
+    },
+    
+    // Close payment modal
+    closePaymentModal() {
+      this.showPaymentModal = false;
+      // Clean up data
+      this.selectedQueue = null;
+      this.paymentAmount = 0;
+      this.paymentMethod = '';
+      this.processing = false;
+    },
+    
+    // Handle keyboard events
+    handleKeydown(event) {
+      if (event.key === 'Escape') {
+        if (this.showMedicinesModal) {
+          this.closeMedicinesModal();
+        } else if (this.showPaymentModal) {
+          this.closePaymentModal();
+        }
+      }
+    },
+    
+    // Handle body scroll locking for modals
+    handleBodyScrollLock(isVisible) {
+      if (isVisible || this.showMedicinesModal || this.showPaymentModal) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.removeProperty('overflow');
+      }
+    },
+    
+    // Get patient name for selected queue (handles both individual and group consultations)
+    getSelectedQueuePatientName() {
+      if (!this.selectedQueue) return 'Unknown Patient';
+      
+      if (this.selectedQueue.isGroupConsultation) {
+        if (this.selectedQueue.mainPatient) {
+          return `${this.selectedQueue.mainPatient.name} (Group of ${this.selectedQueue.patientCount || 0})`;
+        }
+        return `Group Consultation (${this.selectedQueue.patientCount || 0} patients)`;
+      }
+      
+      return this.selectedQueue.patient?.name || 'Unknown Patient';
+    },
+    
+    // Print medicines list
+    printMedicinesList() {
+      const patientName = this.getSelectedQueuePatientName();
+      const queueNumber = this.formatQueueNumber(this.selectedQueue.queueNumber);
+      const today = new Date().toLocaleDateString('en-MY');
+      
+      let printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Medicines List - ${patientName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+            .clinic-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+            .patient-info { margin: 20px 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+            th { background-color: #f0f0f0; font-weight: bold; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="clinic-name">KLINIK HIDUPsihat</div>
+            <div>Medicines List</div>
+          </div>
+          
+          <div class="patient-info">
+            <p><strong>Patient:</strong> ${patientName}</p>
+            <p><strong>Queue Number:</strong> ${queueNumber}</p>
+            <p><strong>Date:</strong> ${today}</p>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Medicine</th>
+                <th>Dosage</th>
+                <th>Frequency</th>
+                <th>Duration</th>
+                <th>Instructions</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      this.medicinesList.forEach(medicine => {
+        printContent += `
+          <tr>
+            <td>
+              <strong>${medicine.name || medicine.medicationName || 'Unknown Medicine'}</strong>
+              ${medicine.unitType ? `<br><small>${medicine.unitType}</small>` : ''}
+            </td>
+            <td>${medicine.dosage || '-'}</td>
+            <td>${medicine.frequency || '-'}</td>
+            <td>${medicine.duration || '-'}</td>
+            <td>${medicine.instructions || '-'}</td>
+          </tr>
+        `;
+      });
+      
+      printContent += `
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            <p>Prepared by: Clinic Assistant</p>
+            <p>Time: ${new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' })}</p>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const printWindow = window.open('', '', 'height=600,width=800');
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 300);
     }
   },
   watch: {
@@ -685,6 +966,14 @@ export default {
       // Refresh queue list when refresh parameter changes
       console.log('🔄 Refresh parameter detected - reloading queue list');
       this.loadQueueList();
+    },
+    showMedicinesModal(isVisible) {
+      // Handle body scroll locking
+      this.handleBodyScrollLock(isVisible);
+    },
+    showPaymentModal(isVisible) {
+      // Handle body scroll locking
+      this.handleBodyScrollLock(isVisible);
     }
   }
 };
@@ -710,6 +999,200 @@ export default {
   background-color: rgba(0, 123, 255, 0.1) !important;
 }
 
+/* Medicines button styling */
+.medicines-btn {
+  background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%) !important;
+  border: none !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.medicines-btn:hover {
+  background: linear-gradient(135deg, #0a58ca 0%, #084298 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.medicines-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.medicines-btn i {
+  font-size: 1.1em;
+  margin-right: 0.3rem;
+}
+
+/* Pulse animation for medicines button */
+.medicines-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.medicines-btn:hover::before {
+  width: 100px;
+  height: 100px;
+}
+
+/* Premium Medicines button styling */
+.premium-medicines-btn {
+  background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 0.5rem 1rem !important;
+  box-shadow: 0 4px 12px rgba(111, 66, 193, 0.4) !important;
+  transition: all 0.3s ease !important;
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.premium-medicines-btn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.premium-medicines-btn:hover:before {
+  left: 100%;
+}
+
+.premium-medicines-btn:hover {
+  background: linear-gradient(135deg, #5a2d91 0%, #432874 100%) !important;
+  transform: translateY(-2px) scale(1.05) !important;
+  box-shadow: 0 6px 20px rgba(111, 66, 193, 0.6) !important;
+  color: white !important;
+}
+
+.premium-medicines-btn:active {
+  transform: translateY(0) scale(1) !important;
+  box-shadow: 0 4px 12px rgba(111, 66, 193, 0.4) !important;
+}
+
+/* Premium Payment button styling */
+.premium-payment-btn {
+  background: linear-gradient(135deg, #20c997 0%, #17a085 100%) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 0.5rem 1rem !important;
+  box-shadow: 0 4px 12px rgba(32, 201, 151, 0.4) !important;
+  transition: all 0.3s ease !important;
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.premium-payment-btn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.premium-payment-btn:hover:before {
+  left: 100%;
+}
+
+.premium-payment-btn:hover {
+  background: linear-gradient(135deg, #17a085 0%, #138f7a 100%) !important;
+  transform: translateY(-2px) scale(1.05) !important;
+  box-shadow: 0 6px 20px rgba(32, 201, 151, 0.6) !important;
+  color: white !important;
+}
+
+.premium-payment-btn:active {
+  transform: translateY(0) scale(1) !important;
+  box-shadow: 0 4px 12px rgba(32, 201, 151, 0.4) !important;
+}
+
+/* Pulse animation for premium buttons */
+@keyframes premium-pulse {
+  0% {
+    box-shadow: 0 4px 12px rgba(111, 66, 193, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(111, 66, 193, 0.8);
+  }
+  100% {
+    box-shadow: 0 4px 12px rgba(111, 66, 193, 0.4);
+  }
+}
+
+.premium-medicines-btn:focus,
+.premium-payment-btn:focus {
+  animation: premium-pulse 1s infinite;
+}
+
+/* Premium Accept Payment button styling */
+.premium-accept-btn {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 0.6rem 1.2rem !important;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4) !important;
+  transition: all 0.3s ease !important;
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.premium-accept-btn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.premium-accept-btn:hover:before {
+  left: 100%;
+}
+
+.premium-accept-btn:hover {
+  background: linear-gradient(135deg, #20c997 0%, #17a085 100%) !important;
+  transform: translateY(-2px) scale(1.05) !important;
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6) !important;
+  color: white !important;
+}
+
+.premium-accept-btn:active {
+  transform: translateY(0) scale(1) !important;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4) !important;
+}
+
+.premium-accept-btn:disabled {
+  background: #6c757d !important;
+  color: #fff !important;
+  transform: none !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+}
+
 /* Modal fallback styles */
 .modal {
   z-index: 1050;
@@ -719,14 +1202,31 @@ export default {
   display: block !important;
 }
 
+/* Enhanced modal styling */
+.modal-content {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 2px solid #dee2e6;
+  border-radius: 10px 10px 0 0;
+}
+
+.modal-title i {
+  color: #0d6efd;
+}
+
+/* Backdrop cleanup styles */
 .modal-backdrop {
   z-index: 1040;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Table styling in modal */
+.modal .table-striped > tbody > tr:nth-of-type(odd) > td {
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 .modal-dialog {
@@ -960,5 +1460,131 @@ export default {
 
 .me-2 {
   margin-right: 0.5rem !important;
+}
+
+/* Vue Modal Styles (No Bootstrap JS conflicts) */
+.vue-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.vue-modal-dialog {
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideIn 0.3s ease-out;
+}
+
+.vue-modal-content {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.vue-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 2px solid #dee2e6;
+}
+
+.vue-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.vue-modal-title i {
+  color: #0d6efd;
+}
+
+.vue-btn-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 35px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  transition: all 0.2s ease;
+}
+
+.vue-btn-close:hover {
+  background-color: #f8f9fa;
+  color: #dc3545;
+  transform: scale(1.1);
+}
+
+.vue-modal-body {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.vue-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background-color: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .vue-modal-dialog {
+    width: 95%;
+    margin: 1rem;
+  }
+  
+  .vue-modal-header,
+  .vue-modal-body,
+  .vue-modal-footer {
+    padding: 1rem;
+  }
+  
+  .vue-modal-title {
+    font-size: 1.1rem;
+  }
 }
 </style>

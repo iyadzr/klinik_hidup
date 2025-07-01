@@ -25,40 +25,57 @@ class MedicalCertificateController extends AbstractController
     public function getNextNumber(): JsonResponse
     {
         try {
-            // Get starting number from settings
-            $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
-            $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
-            $startingNumber = $startingSetting ? (int)$startingSetting->getSettingValue() : 1;
+            $startingNumber = 1; // Default starting number
             
-            // Check existing MC numbers in consultations
-            $consultationRepo = $this->entityManager->getRepository(\App\Entity\Consultation::class);
-            $existingMC = $consultationRepo->createQueryBuilder('c')
-                ->select('MAX(CAST(c.mcRunningNumber AS UNSIGNED)) as maxMC')
-                ->where('c.mcRunningNumber IS NOT NULL')
-                ->getQuery()
-                ->getSingleScalarResult();
+            // Try to get starting number from settings
+            try {
+                $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
+                $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
+                if ($startingSetting && $startingSetting->getSettingValue()) {
+                    $startingNumber = max(1, (int)$startingSetting->getSettingValue());
+                }
+            } catch (\Exception $settingError) {
+                // Settings table might not exist or have issues, use default
+                error_log('MC Settings error: ' . $settingError->getMessage());
+            }
             
-            // Also check in MedicalCertificate entity if it exists
-            $mcRepo = $this->entityManager->getRepository(MedicalCertificate::class);
-            $existingMCEntity = $mcRepo->createQueryBuilder('mc')
-                ->select('MAX(mc.id) as maxId')
-                ->getQuery()
-                ->getSingleScalarResult();
+            $nextNumber = $startingNumber;
             
-            // Use the higher of: configured starting number or (max existing + 1)
-            $nextNumber = max($startingNumber, ($existingMC ?? 0) + 1, ($existingMCEntity ?? 0) + $startingNumber);
+            // Try to check existing MC numbers in consultations
+            try {
+                $consultationRepo = $this->entityManager->getRepository(\App\Entity\Consultation::class);
+                $existingMC = $consultationRepo->createQueryBuilder('c')
+                    ->select('MAX(CAST(c.mcRunningNumber AS UNSIGNED)) as maxMC')
+                    ->where('c.mcRunningNumber IS NOT NULL')
+                    ->andWhere('c.mcRunningNumber REGEXP \'^[0-9]+$\'') // Only numeric values
+                    ->getQuery()
+                    ->getSingleScalarResult();
+                
+                if ($existingMC && $existingMC > 0) {
+                    $nextNumber = max($nextNumber, (int)$existingMC + 1);
+                }
+            } catch (\Exception $queryError) {
+                error_log('MC Query error: ' . $queryError->getMessage());
+            }
+            
+            // Ensure we always have a valid number
+            $nextNumber = max(1, $nextNumber);
             
             return new JsonResponse([
-                'runningNumber' => (string)$nextNumber
+                'runningNumber' => (string)$nextNumber,
+                'success' => true
             ]);
+            
         } catch (\Exception $e) {
-            // Fallback: use starting number from settings or default
-            $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
-            $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
-            $fallbackNumber = $startingSetting ? (int)$startingSetting->getSettingValue() : 1;
+            error_log('MC Generation error: ' . $e->getMessage());
+            
+            // Ultimate fallback: use timestamp-based number
+            $fallbackNumber = date('Y') . date('m') . date('d') . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
             
             return new JsonResponse([
-                'runningNumber' => (string)$fallbackNumber
+                'runningNumber' => $fallbackNumber,
+                'success' => true,
+                'warning' => 'Used fallback number generation method'
             ]);
         }
     }

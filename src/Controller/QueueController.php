@@ -179,7 +179,9 @@ class QueueController extends AbstractController
                         'isPaid' => $queue->getIsPaid(),
                         'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                         'paymentMethod' => $queue->getPaymentMethod(),
-                        'amount' => $queue->getAmount()
+                        'amount' => $queue->getAmount(),
+                        'consultationId' => $this->getQueueConsultationId($queue),
+                        'hasMedicines' => $this->checkQueueHasMedicines($queue)
                     ];
                     $queueData[] = $groupedQueues[$groupId];
                 }
@@ -206,12 +208,69 @@ class QueueController extends AbstractController
                     'isPaid' => $queue->getIsPaid(),
                     'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                     'paymentMethod' => $queue->getPaymentMethod(),
-                    'amount' => $queue->getAmount()
+                    'amount' => $queue->getAmount(),
+                    'consultationId' => $this->getQueueConsultationId($queue),
+                    'hasMedicines' => $this->checkQueueHasMedicines($queue)
                 ];
             }
         }
 
         return $queueData;
+    }
+    
+    /**
+     * Get consultation ID for a queue entry
+     */
+    private function getQueueConsultationId(Queue $queue): ?int
+    {
+        // Find consultation for this queue/patient and doctor
+        $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+            ->createQueryBuilder('c')
+            ->where('c.patient = :patient')
+            ->andWhere('c.doctor = :doctor')
+            ->setParameter('patient', $queue->getPatient())
+            ->setParameter('doctor', $queue->getDoctor())
+            ->orderBy('c.consultationDate', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+            
+        return $consultation ? $consultation->getId() : null;
+    }
+    
+    /**
+     * Check if queue has prescribed medicines
+     */
+    private function checkQueueHasMedicines(Queue $queue): bool
+    {
+        $consultationId = $this->getQueueConsultationId($queue);
+        if (!$consultationId) {
+            return false;
+        }
+        
+        // Check if there are any prescribed medications for this consultation
+        $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+            ->createQueryBuilder('pm')
+            ->where('pm.consultation = :consultationId')
+            ->setParameter('consultationId', $consultationId)
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+            
+        if ($prescribedMeds) {
+            return true;
+        }
+        
+        // Also check for medicines in the consultation medications field (JSON)
+        $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
+        if ($consultation && $consultation->getMedications()) {
+            $medications = json_decode($consultation->getMedications(), true);
+            if (is_array($medications) && !empty($medications)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     #[Route('', name: 'app_queue_create', methods: ['POST'])]
@@ -539,6 +598,41 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Payment method and amount are required'], 400);
             }
             
+            // Check if payment already processed
+            if ($queue->getIsPaid()) {
+                return new JsonResponse(['error' => 'Payment already processed for this queue'], 409);
+            }
+            
+            // Get current user (who is processing the payment)
+            $currentUser = $this->getUser();
+            if (!$currentUser) {
+                return new JsonResponse(['error' => 'User authentication required'], 401);
+            }
+            
+            // Create Payment record for comprehensive tracking
+            $payment = new \App\Entity\Payment();
+            $payment->setAmount($data['amount']);
+            $payment->setPaymentMethod($data['paymentMethod']);
+            $payment->setProcessedBy($currentUser);
+            $payment->setQueue($queue);
+            $payment->setQueueNumber($queue->getQueueNumber());
+            $payment->setReference('Q-' . $queue->getQueueNumber() . '-' . date('YmdHis'));
+            
+            // Link to consultation if exists
+            $consultation = $this->getQueueConsultation($queue);
+            if ($consultation) {
+                $payment->setConsultation($consultation);
+            }
+            
+            // Add notes with medicines information
+            $medicines = $this->getQueueMedicinesInfo($queue);
+            if ($medicines) {
+                $medicinesText = implode(', ', array_map(function($med) {
+                    return $med['name'] . ' (' . ($med['dosage'] ?? 'N/A') . ')';
+                }, $medicines));
+                $payment->setNotes('Medicines: ' . $medicinesText);
+            }
+            
             // Update queue payment status
             $queue->setIsPaid(true);
             $queue->setPaidAt(new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur')));
@@ -550,30 +644,78 @@ class QueueController extends AbstractController
                 $queue->setStatus('completed');
             }
             
+            // Persist both entities
+            $this->entityManager->persist($payment);
             $this->entityManager->flush();
             
             // Clear relevant caches
             if ($this->cache) {
                 $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
                 $this->cache->delete('queue_stats');
+                $this->cache->delete('financial_dashboard');
+                $this->cache->delete('payments_list');
             }
             
-            $this->logger->info('Queue payment processed', [
+            $this->logger->info('Queue payment processed with Payment record', [
                 'queueId' => $id,
+                'paymentId' => $payment->getId(),
                 'paymentMethod' => $data['paymentMethod'],
-                'amount' => $data['amount']
+                'amount' => $data['amount'],
+                'processedBy' => $currentUser instanceof \App\Entity\User ? $currentUser->getId() : 'Unknown'
             ]);
             
             return new JsonResponse([
                 'message' => 'Payment processed successfully',
                 'isPaid' => $queue->getIsPaid(),
                 'paidAt' => $queue->getPaidAt()->format('Y-m-d H:i:s'),
-                'status' => $queue->getStatus()
+                'status' => $queue->getStatus(),
+                'paymentId' => $payment->getId(),
+                'reference' => $payment->getReference()
             ]);
             
         } catch (\Exception $e) {
             $this->logger->error('Error processing queue payment: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Failed to process payment'], 500);
+        }
+    }
+    
+    private function getQueueConsultation(Queue $queue): ?\App\Entity\Consultation
+    {
+        $consultationId = $this->getQueueConsultationId($queue);
+        if ($consultationId) {
+            return $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
+        }
+        return null;
+    }
+    
+    private function getQueueMedicinesInfo(Queue $queue): array
+    {
+        try {
+            $consultationId = $this->getQueueConsultationId($queue);
+            if (!$consultationId) {
+                return [];
+            }
+            
+            $medications = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->createQueryBuilder('pm')
+                ->leftJoin('pm.medication', 'm')
+                ->where('pm.consultation = :consultationId')
+                ->setParameter('consultationId', $consultationId)
+                ->getQuery()
+                ->getResult();
+            
+            return array_map(function($prescribedMed) {
+                $medication = $prescribedMed->getMedication();
+                return [
+                    'name' => $medication ? $medication->getName() : 'Unknown Medicine',
+                    'dosage' => $prescribedMed->getDosage() ?? 'N/A',
+                    'frequency' => $prescribedMed->getFrequency() ?? 'N/A',
+                    'duration' => $prescribedMed->getDuration() ?? 'N/A'
+                ];
+            }, $medications);
+        } catch (\Exception $e) {
+            $this->logger->warning('Error fetching medicines info for payment: ' . $e->getMessage());
+            return [];
         }
     }
 
@@ -816,11 +958,134 @@ class QueueController extends AbstractController
                 'metadata' => $queue->getMetadata()
             ];
             
+            // If this is a group consultation, fetch all group members
+            if ($queue->isGroupConsultation() && $queue->getGroupId()) {
+                $groupId = $queue->getGroupId();
+                
+                // Fetch all patients in this group
+                $groupMembers = $this->entityManager->getRepository(Queue::class)
+                    ->createQueryBuilder('q')
+                    ->leftJoin('q.patient', 'p')
+                    ->where('q.metadata LIKE :groupId')
+                    ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
+                    ->getQuery()
+                    ->getResult();
+                
+                $groupPatients = [];
+                foreach ($groupMembers as $memberQueue) {
+                    $memberPatient = $memberQueue->getPatient();
+                    if ($memberPatient) {
+                        // Get relationship from metadata
+                        $metadata = $memberQueue->getMetadata();
+                        $relationship = 'N/A';
+                        if ($metadata) {
+                            $metadataArray = json_decode($metadata, true);
+                            $relationship = $metadataArray['relationship'] ?? 'N/A';
+                        }
+                        
+                        $groupPatients[] = [
+                            'id' => $memberPatient->getId(),
+                            'name' => $memberPatient->getName(),
+                            'displayName' => method_exists($memberPatient, 'getDisplayName') ? $memberPatient->getDisplayName() : $memberPatient->getName(),
+                            'nric' => $memberPatient->getNric(),
+                            'dateOfBirth' => $memberPatient->getDateOfBirth()?->format('Y-m-d'),
+                            'gender' => $memberPatient->getGender(),
+                            'phone' => $memberPatient->getPhone(),
+                            'address' => $memberPatient->getAddress(),
+                            'relationship' => $relationship,
+                            'preInformedIllness' => method_exists($memberPatient, 'getPreInformedIllness') ? $memberPatient->getPreInformedIllness() : null
+                        ];
+                    }
+                }
+                
+                $queueData['groupPatients'] = $groupPatients;
+                $queueData['patientCount'] = count($groupPatients);
+            }
+            
             return new JsonResponse($queueData);
             
         } catch (\Exception $e) {
             $this->logger->error('Error fetching queue entry: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Failed to fetch queue entry'], 500);
+        }
+    }
+
+    #[Route('/{id}/medications', name: 'app_queue_medications', methods: ['GET'])]
+    public function getQueueMedications(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            
+            if (!$queue) {
+                return new JsonResponse(['message' => 'Queue entry not found'], 404);
+            }
+            
+            $consultationId = $this->getQueueConsultationId($queue);
+            if (!$consultationId) {
+                return new JsonResponse([]); // Return empty array if no consultation found
+            }
+            
+            // Get prescribed medications from PrescribedMedication entities
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->createQueryBuilder('pm')
+                ->leftJoin('pm.medication', 'm')
+                ->where('pm.consultation = :consultationId')
+                ->setParameter('consultationId', $consultationId)
+                ->orderBy('pm.prescribedAt', 'ASC')
+                ->getQuery()
+                ->getResult();
+            
+            $medicationsData = [];
+            
+            if (!empty($prescribedMeds)) {
+                // Use prescribed medications entities
+                foreach ($prescribedMeds as $prescribedMed) {
+                    $medication = $prescribedMed->getMedication();
+                    $medicationsData[] = [
+                        'name' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                        'medicationName' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                        'dosage' => $prescribedMed->getDosage(),
+                        'frequency' => $prescribedMed->getFrequency(),
+                        'duration' => $prescribedMed->getDuration(),
+                        'instructions' => $prescribedMed->getInstructions(),
+                        'quantity' => $prescribedMed->getQuantity(),
+                        'unitType' => $medication ? $medication->getUnitType() : 'pieces',
+                        'actualPrice' => $prescribedMed->getActualPrice()
+                    ];
+                }
+            } else {
+                // Fallback to medications JSON field
+                $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
+                if ($consultation && $consultation->getMedications()) {
+                    $medications = json_decode($consultation->getMedications(), true);
+                    if (is_array($medications)) {
+                        foreach ($medications as $med) {
+                            $medicationsData[] = [
+                                'name' => $med['name'] ?? 'Unknown Medicine',
+                                'medicationName' => $med['name'] ?? 'Unknown Medicine',
+                                'dosage' => $med['dosage'] ?? '-',
+                                'frequency' => $med['frequency'] ?? '-',
+                                'duration' => $med['duration'] ?? '-',
+                                'instructions' => $med['instructions'] ?? '-',
+                                'quantity' => $med['quantity'] ?? 1,
+                                'unitType' => $med['unitType'] ?? 'pieces',
+                                'actualPrice' => $med['actualPrice'] ?? 0
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            return new JsonResponse($medicationsData);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue medications: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch medications'], 500);
         }
     }
 

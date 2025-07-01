@@ -21,7 +21,12 @@
       <nav v-if="isAuthenticated && !isAuthPage" :class="['sidebar', { open: isSidebarOpen }]">
         <ul class="nav flex-column sidebar-nav">
           <li v-for="item in filteredMenu" :key="item.path" class="nav-item">
-            <router-link :to="item.path" class="nav-link" @click="handleLinkClick">
+            <router-link 
+              :to="item.path" 
+              class="nav-link" 
+              @click="handleLinkClick"
+              :class="{ 'router-link-active': isMenuItemActive(item) }"
+            >
               <i :class="item.icon"></i> {{ item.label }}
             </router-link>
           </li>
@@ -358,10 +363,16 @@ export default {
         icon: 'fas fa-pills',
         roles: ['ROLE_DOCTOR', 'ROLE_SUPER_ADMIN']
       },
+      // {
+      //   path: '/financial',
+      //   label: 'Financial Dashboard',
+      //   icon: 'fas fa-chart-line',
+      //   roles: ['ROLE_SUPER_ADMIN']
+      // },
       {
-        path: '/financial',
-        label: 'Financial Dashboard',
-        icon: 'fas fa-chart-line',
+        path: '/payments/dashboard',
+        label: 'Payments Dashboard',
+        icon: 'fas fa-credit-card',
         roles: ['ROLE_SUPER_ADMIN']
       },
       
@@ -429,6 +440,23 @@ export default {
       );
     });
 
+    const isMenuItemActive = (item) => {
+      const currentPath = route.path;
+      
+      // Special handling for consultation-related routes
+      if (item.path === '/consultations/ongoing') {
+        return currentPath.startsWith('/consultations');
+      }
+      
+      // Special handling for registration routes
+      if (item.path === '/registration') {
+        return currentPath === '/registration';
+      }
+      
+      // Default exact match or starts with match for most menu items
+      return currentPath === item.path || currentPath.startsWith(item.path + '/');
+    };
+
     // Watch for route changes to refresh authentication state
     watch(() => route.path, (newPath) => {
       loadUserData();
@@ -475,7 +503,8 @@ export default {
       updateCurrentUser,
       handleLoginSuccess,
       handleDataChange,
-      filteredMenu
+      filteredMenu,
+      isMenuItemActive
     };
   }
 };

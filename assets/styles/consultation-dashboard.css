@@ -1,0 +1,655 @@
+/* ===== CONSULTATION DASHBOARD STYLES ===== */
+
+/* Dashboard Layout */
+.consultation-dashboard {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* Patient Header Bar */
+.patient-header-bar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+.patient-header-bar .patient-avatar i {
+  color: rgba(255,255,255,0.9);
+  font-size: 2.5rem;
+}
+
+.patient-header-bar h4 {
+  color: white;
+  margin: 0;
+  font-weight: 600;
+}
+
+.patient-header-bar .badge {
+  background: rgba(255,255,255,0.2) !important;
+  color: white !important;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+.patient-header-bar .patient-meta {
+  color: rgba(255,255,255,0.8);
+}
+
+.patient-header-bar .quick-actions .btn {
+  border-color: rgba(255,255,255,0.3);
+  color: white;
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.patient-header-bar .quick-actions .btn:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+/* Patient Selector Dropdown */
+.patient-selector .dropdown-toggle {
+  background: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255,255,255,0.3) !important;
+  color: white !important;
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.patient-selector .dropdown-toggle:hover {
+  background: rgba(255,255,255,0.2) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.patient-selector .dropdown-menu {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  padding: 0.5rem 0;
+  min-width: 280px;
+}
+
+.patient-selector .dropdown-item {
+  padding: 0.75rem 1rem;
+  border-radius: 0;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.patient-selector .dropdown-item:hover {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  color: #495057;
+}
+
+.patient-selector .dropdown-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.patient-selector .dropdown-item .fa-user {
+  color: #667eea;
+}
+
+.patient-selector .dropdown-item.active .fa-user {
+  color: white;
+}
+
+/* Dashboard Cards */
+.dashboard-card {
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+  transition: all 0.3s ease;
+  background: white;
+  overflow: hidden;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+}
+
+.dashboard-card .card-header {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding: 1rem 1.5rem;
+}
+
+.dashboard-card .card-header h5,
+.dashboard-card .card-header h6 {
+  margin: 0;
+  font-weight: 600;
+  color: #495057;
+}
+
+.dashboard-card .card-body {
+  padding: 1.5rem;
+}
+
+/* Alert Enhancements */
+.alert-sm {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  color: #856404;
+  border-left: 4px solid #f39c12;
+}
+
+/* Form Enhancements - SCOPED to consultation dashboard only */
+.consultation-dashboard .form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+.consultation-dashboard .form-floating > label {
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.consultation-dashboard .input-group .input-group-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+/* Medications Section - SCOPED to consultation dashboard only */
+.consultation-dashboard .medications-list .medication-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.consultation-dashboard .medications-list .medication-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 5px 15px rgba(102, 126, 234, 0.1);
+}
+
+.consultation-dashboard .medication-card h6 {
+  color: #495057;
+  font-weight: 600;
+}
+
+.consultation-dashboard .medication-card .badge {
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  color: white;
+  border: none;
+}
+
+/* Medical History - SCOPED to consultation dashboard only */
+.consultation-dashboard .visit-item {
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  padding: 0.75rem !important;
+  margin-bottom: 0.75rem !important;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.consultation-dashboard .visit-item:hover {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  transform: translateX(5px);
+  cursor: pointer;
+}
+
+.consultation-dashboard .visit-item .badge {
+  background: #28a745 !important;
+  color: white;
+}
+
+/* Buttons - SCOPED to consultation dashboard only */
+.consultation-dashboard .btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.consultation-dashboard .btn-primary:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+.consultation-dashboard .btn-success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.consultation-dashboard .btn-success:hover {
+  background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+}
+
+.consultation-dashboard .btn-outline-danger:hover {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  border-color: #dc3545;
+  transform: scale(1.05);
+}
+
+.consultation-dashboard .btn-sm {
+  border-radius: 6px;
+  font-size: 0.875rem;
+  padding: 0.375rem 0.75rem;
+}
+
+/* Action Buttons Area */
+.border-top {
+  border-color: rgba(0,0,0,0.1) !important;
+}
+
+/* Medical Certificate Section */
+.mc-details {
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+  border-radius: 10px;
+  padding: 1rem;
+  border-left: 4px solid #f39c12;
+}
+
+/* Loading States */
+.fa-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .patient-header-bar .patient-summary h4 {
+    font-size: 1.25rem;
+  }
+  
+  .patient-header-bar .patient-meta {
+    flex-direction: column;
+    gap: 0.5rem !important;
+  }
+  
+  .quick-actions {
+    flex-direction: column;
+    gap: 0.5rem !important;
+  }
+  
+  .dashboard-card {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Scrollbar styling removed to prevent affecting the entire system */
+
+/* Utility Classes */
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+.opacity-25 {
+  opacity: 0.25 !important;
+}
+
+.opacity-50 {
+  opacity: 0.5 !important;
+}
+
+/* Enhanced Section Cards */
+.section-card {
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  background: white;
+  overflow: hidden;
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  color: #495057;
+  font-weight: 600;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Enhanced Table Styling - SCOPED to consultation dashboard only */
+.consultation-dashboard .table {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+.consultation-dashboard .table thead th {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+  padding: 1rem;
+}
+
+.consultation-dashboard .table tbody tr {
+  transition: all 0.3s ease;
+}
+
+.consultation-dashboard .table tbody tr:hover {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  transform: scale(1.01);
+}
+
+/* Status Badges - SCOPED to consultation dashboard only */
+.consultation-dashboard .badge.bg-success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+}
+
+.consultation-dashboard .badge.bg-warning {
+  background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%) !important;
+}
+
+.consultation-dashboard .badge.bg-info {
+  background: linear-gradient(135deg, #17a2b8 0%, #6f42c1 100%) !important;
+}
+
+/* Animation Classes */
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in-left {
+  animation: slideInLeft 0.5s ease-out;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+/* Focus States - removed duplicate, already defined above */
+
+/* Medication Suggestions Dropdown - IMPROVED READABILITY */
+.consultation-dashboard .medication-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 2px solid #007bff;
+  border-radius: 12px;
+  box-shadow: 0 8px 25px rgba(0, 123, 255, 0.15);
+  z-index: 2000;
+  max-height: 350px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+
+.consultation-dashboard .suggestions-header {
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 1px solid #dee2e6;
+  border-radius: 10px 10px 0 0;
+  font-weight: 600;
+  color: #495057;
+}
+
+.consultation-dashboard .suggestion-item {
+  padding: 1rem;
+  border-bottom: 1px solid #f1f3f4;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: white;
+  color: #333;
+}
+
+.consultation-dashboard .suggestion-item:hover {
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  color: #1565c0;
+  transform: translateX(3px);
+  border-left: 4px solid #007bff;
+}
+
+.consultation-dashboard .suggestion-item.active {
+  background: linear-gradient(135deg, #bbdefb 0%, #e1bee7 100%);
+  color: #0d47a1;
+  border-left: 4px solid #1976d2;
+}
+
+.consultation-dashboard .suggestion-item .suggestion-main {
+  margin-bottom: 0.25rem;
+}
+
+.consultation-dashboard .suggestion-item .suggestion-main strong {
+  font-size: 1.05rem;
+  color: #2c3e50;
+}
+
+.consultation-dashboard .suggestion-item:hover .suggestion-main strong,
+.consultation-dashboard .suggestion-item.active .suggestion-main strong {
+  color: #1565c0;
+}
+
+.consultation-dashboard .suggestion-item .badge {
+  background: #6c757d !important;
+  color: white !important;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.consultation-dashboard .suggestion-item:hover .badge,
+.consultation-dashboard .suggestion-item.active .badge {
+  background: #007bff !important;
+  color: white !important;
+}
+
+.consultation-dashboard .suggestion-item .suggestion-details {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+}
+
+.consultation-dashboard .suggestion-item:hover .suggestion-details,
+.consultation-dashboard .suggestion-item.active .suggestion-details {
+  color: #1565c0;
+}
+
+.consultation-dashboard .suggestion-item .text-success {
+  color: #28a745 !important;
+  font-weight: 600;
+}
+
+.consultation-dashboard .suggestion-item:hover .text-success,
+.consultation-dashboard .suggestion-item.active .text-success {
+  color: #155724 !important;
+}
+
+.consultation-dashboard .suggestion-create-new {
+  background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+  border-top: 2px solid #28a745;
+  color: #155724;
+}
+
+.consultation-dashboard .suggestion-create-new:hover {
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  color: #155724;
+  border-left: 4px solid #28a745;
+}
+
+.consultation-dashboard .suggestions-pagination {
+  background: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+  border-radius: 0 0 10px 10px;
+}
+
+.consultation-dashboard .suggestions-pagination .btn-outline-secondary {
+  border-color: #6c757d;
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.consultation-dashboard .suggestions-pagination .btn-outline-secondary:hover {
+  background: #6c757d;
+  border-color: #6c757d;
+  color: white;
+}
+
+/* Ensure dropdown container has relative positioning */
+.consultation-dashboard .form-floating {
+  position: relative;
+}
+
+/* Print Styles */
+@media print {
+  .patient-header-bar,
+  .quick-actions,
+  .btn {
+    display: none !important;
+  }
+  
+  .dashboard-card {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+  
+  .medication-suggestions {
+    display: none !important;
+  }
+}
+
+/* Visit Details Modal Styling */
+.visit-details-modal {
+  border-radius: 16px;
+  border: none;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+}
+.visit-details-modal .modal-header {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 1px solid #dee2e6;
+  border-radius: 16px 16px 0 0;
+  padding: 1.5rem;
+}
+.visit-details-modal .modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #222;
+}
+.visit-details-modal .modal-body {
+  padding: 2rem;
+}
+.visit-info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+.info-card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.info-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #f8f9fa;
+}
+.info-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.info-item.full-width {
+  grid-column: 1 / -1;
+}
+.info-item label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.info-item span {
+  font-size: 1rem;
+  color: #222;
+  word-wrap: break-word;
+}
+
+/* Payment Information Styling */
+.payment-summary {
+  width: 100%;
+}
+.payment-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #dee2e6;
+}
+.payment-item.total {
+  background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%);
+  border-left-color: #28a745;
+}
+.payment-item label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.payment-item .amount {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #222;
+}
+.payment-item .total-amount {
+  font-size: 1.3rem;
+  color: #28a745;
+  font-weight: 700;
+}
+
+/* Medications Table Styling */
+.medications-table .table {
+  margin-bottom: 0;
+}
+.medications-table .table th {
+  background: #f8f9fa;
+  border-top: none;
+  color: #495057;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.medications-table .table td {
+  vertical-align: middle;
+  font-size: 0.9rem;
+}
+.medications-table .table tbody tr:hover {
+  background-color: #f8f9fa;
+} 

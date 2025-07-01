@@ -1,78 +1,135 @@
 <template>
-  <div class="consultation-form">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <div>
-        <h2 class="mb-0">Consultation</h2>
-        <small v-if="$route.query.queueNumber" class="text-muted">
-                      <i class="fas fa-link me-1"></i>Started from Queue #{{ $route.query.queueNumber ? ($route.query.queueNumber.toString().length === 4 ? $route.query.queueNumber : $route.query.queueNumber.toString().length === 3 ? '0' + $route.query.queueNumber : $route.query.queueNumber.toString().padStart(4, '0')) : '' }}
-        </small>
-      </div>
-      <div class="d-flex gap-2">
-
-      </div>
-    </div>
-
-    <form @submit.prevent="saveConsultation" class="row g-4">
-      <!-- Group Consultation Toggle and Patient Selector -->
-      <div v-if="isGroupConsultation" class="col-12">
-        <div class="card border-info mb-4">
-          <div class="card-header bg-info text-white">
-            <h5 class="mb-0">
-              <i class="fas fa-users me-2"></i>
-              Group Consultation - Queue #{{ queueNumber }}
-            </h5>
-          </div>
-          <div class="card-body">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label fw-bold">Select Patient for Consultation:</label>
-                <select 
-                  class="form-select" 
-                  v-model="consultation.patientId" 
-                  @change="fetchPatientDetails"
-                  required
-                >
-                  <option value="">Choose patient to consult...</option>
-                  <option 
-                    v-for="patient in groupPatients" 
-                    :key="patient?.id || 'option-' + Math.random()" 
-                    :value="patient?.id"
-                    v-if="patient && patient.id"
-                  >
-                    {{ patient.name }} ({{ patient.relationship || 'N/A' }})
-                  </option>
-                </select>
-              </div>
-              <div class="col-md-6">
-                <div class="group-members-info">
-                  <label class="form-label fw-bold">Group Members ({{ groupPatients.length }}):</label>
-                  <div class="members-list">
-                    <span 
-                      v-for="(member, index) in groupPatients" 
-                      :key="member?.id || 'member-' + index"
-                      class="badge me-2 mb-1"
-                      :class="member && member.id === consultation.patientId ? 'bg-primary' : 'bg-secondary'"
-                      v-if="member && member.id"
-                    >
-                      {{ member.name }}
-                      <small v-if="member.relationship" class="ms-1">({{ member.relationship }})</small>
+  <div>
+    <!-- Sticky Patient Header Bar -->
+    <div class="patient-header-bar sticky-patient-topbar shadow-lg">
+      <div class="container-fluid">
+        <div class="row align-items-center py-3">
+          <div class="col-md-12">
+            <div class="d-flex align-items-center justify-content-between">
+              <!-- Patient Info Section -->
+              <div class="d-flex align-items-center flex-grow-1">
+                <div class="patient-avatar me-3">
+                  <i class="fas fa-user-circle fa-3x text-white"></i>
+                </div>
+                <div class="patient-summary flex-grow-1">
+                  <div class="d-flex align-items-center gap-3 mb-1">
+                    <h4 class="mb-0 patient-name text-white fw-bold">{{ getPatientName(consultation.patientId) }}</h4>
+                    <span class="badge bg-light text-dark fw-bold">{{ selectedPatient?.gender || 'N/A' }}, {{ calculatePatientAge() }} years</span>
+                    <span class="badge bg-warning text-dark fw-bold">{{ selectedPatient?.nric || selectedPatient?.ic || 'No IC' }}</span>
+                  </div>
+                  <div class="patient-meta text-white small d-flex gap-4">
+                    <span v-if="$route.query.queueNumber">
+                      <i class="fas fa-list-ol me-1"></i>Queue #{{ formatQueueNumber($route.query.queueNumber) }}
+                    </span>
+                    <span>
+                      <i class="fas fa-phone me-1"></i>{{ selectedPatient?.phone || selectedPatient?.phoneNumber || 'No phone' }}
+                    </span>
+                    <span>
+                      <i class="fas fa-map-marker-alt me-1"></i>{{ selectedPatient?.address || 'No address' }}
                     </span>
                   </div>
+                </div>
+              </div>
+              
+              <!-- Enhanced Group Patient Selector -->
+              <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="patient-selector ms-3">
+                <div class="dropdown">
+                  <button class="btn btn-warning btn-lg dropdown-toggle shadow-sm fw-bold patient-select-btn" 
+                          type="button" 
+                          data-bs-toggle="dropdown"
+                          style="border-radius: 25px; padding: 0.75rem 1.5rem; animation: pulse 2s infinite;">
+                    <i class="fas fa-user-friends me-2"></i>
+                    <span class="d-none d-sm-inline">🔄 Switch Patient </span>
+                    <span class="badge bg-white text-warning ms-2 px-2 py-1">
+                      {{ groupPatients.findIndex(p => p.id === selectedPatient?.id) + 1 }}/{{ groupPatients.length }}
+                    </span>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 patient-dropdown" style="min-width: 350px; border-radius: 15px; max-height: 400px; overflow-y: auto; z-index: 1050;">
+                    <li class="px-3 py-2 bg-light border-bottom">
+                      <div class="text-center">
+                        <small class="text-muted fw-bold">
+                          <i class="fas fa-users me-1"></i>
+                          GROUP CONSULTATION - SELECT PATIENT
+                        </small>
+                      </div>
+                    </li>
+                    <li v-for="(patient, index) in groupPatients" :key="patient.id" class="patient-option">
+                      <a class="dropdown-item patient-item py-3" 
+                         href="#" 
+                         @click.prevent.stop="handlePatientSwitch(patient)" 
+                         :class="{ 'active': patient.id === selectedPatient?.id }">
+                        <div class="d-flex align-items-center">
+                          <div class="patient-avatar me-3">
+                            <i class="fas fa-user-circle fa-2x" 
+                               :class="patient.id === selectedPatient?.id ? 'text-warning' : 'text-primary'"></i>
+                          </div>
+                          <div class="patient-info flex-grow-1">
+                            <div class="patient-name fw-bold mb-1">
+                              {{ patient.name || patient.displayName }}
+                              <i v-if="patient.id === selectedPatient?.id" class="fas fa-check-circle text-success ms-2"></i>
+                            </div>
+                            <div class="patient-details">
+                              <small class="text-muted">
+                                <span class="badge bg-info me-1">{{ patient.relationship || 'N/A' }}</span>
+                                <span class="me-2">{{ patient.gender }}, {{ calculateAge(patient.dateOfBirth) }} years</span>
+                                <br>
+                                <i class="fas fa-id-card me-1"></i>{{ patient.nric || 'No IC' }}
+                              </small>
+                            </div>
+                          </div>
+                          <div class="patient-status">
+                            <span v-if="patient.id === selectedPatient?.id" 
+                                  class="badge bg-success">
+                              Current
+                            </span>
+                            <span v-else class="badge bg-secondary">
+                              Switch
+                            </span>
+                          </div>
+                        </div>
+                      </a>
+                    </li>
+                    <li class="border-top">
+                      <div class="px-3 py-2 text-center">
+                        <small class="text-muted">
+                          <i class="fas fa-info-circle me-1"></i>
+                          Click on any patient to switch consultation
+                        </small>
+                      </div>
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="consultation-form consultation-dashboard glass-card shadow p-4 mt-4 mb-4">
+
+      <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h2 class="mb-0">Consultation</h2>
+        <small v-if="$route.query.queueNumber" class="text-muted">
+          <i class="fas fa-link me-1"></i>Started from Queue #{{ $route.query.queueNumber ? ($route.query.queueNumber.toString().length === 4 ? $route.query.queueNumber : $route.query.queueNumber.toString().length === 3 ? '0' + $route.query.queueNumber : $route.query.queueNumber.toString().padStart(4, '0')) : '' }}
+        </small>
+      </div>
+    </div>
+
+    <form @submit.prevent="saveConsultation" class="row g-4">
+
 
       <!-- Pre-Informed Illness - First Row (Full Width) -->
       <div class="col-12">
-        <div class="card section-card mb-4">
-          <div class="card-body">
-            <h5 class="section-title mb-4">
-              <i class="fas fa-clipboard-check text-primary me-2"></i>
+        <div class="card section-card dashboard-card mb-4">
+          <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
+            <h5 class="mb-0 d-flex align-items-center">
+              <i class="fas fa-clipboard-check text-warning me-2"></i>
               Pre-Informed Illness
             </h5>
+          </div>
+          <div class="card-body">
             <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
               <div class="pre-illness-content p-3 bg-light rounded">
                 <div class="d-flex align-items-start gap-3">
@@ -80,7 +137,6 @@
                     <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
                   </div>
                   <div class="flex-grow-1">
-                    <h6 class="fw-bold text-dark mb-2">Patient's Initial Symptoms/Complaint</h6>
                     <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
                   </div>
                 </div>
@@ -95,78 +151,19 @@
         </div>
       </div>
 
-      <!-- Patient Information - Second Row (Full Width) -->
-      <div class="col-12">
-        <div class="card section-card mb-4">
-          <div class="card-body">
-            <h5 class="section-title mb-4">
-              <i class="fas fa-user-injured text-primary me-2"></i>
-              Patient Information
-              <span v-if="isGroupConsultation && selectedPatient" class="badge bg-info ms-2">
-                {{ selectedPatient.relationship || 'Group Member' }}
-              </span>
-            </h5>
-            <div class="row g-3">
-              <div class="col-12" v-if="selectedPatient">
-                <div class="patient-details p-3 bg-light rounded w-100 d-flex align-items-start gap-3">
-                  <div>
-                    <i class="fas fa-user-circle fa-3x text-secondary"></i>
-                  </div>
-                  <div class="flex-grow-1">
-                    <div class="row g-2">
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Name</small>
-                        <span class="fw-bold">{{ selectedPatient?.name || selectedPatient?.displayName || 'N/A' }}</span>
-                      </div>
 
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">IC/Passport</small>
-                        <span>{{ selectedPatient?.nric || selectedPatient?.ic || 'N/A' }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Age</small>
-                        <span>{{ selectedPatient && selectedPatient.dateOfBirth ? calculateAge(selectedPatient.dateOfBirth) + ' years' : 'N/A' }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Date of Birth</small>
-                        <span>{{ formatDateOfBirth(selectedPatient?.dateOfBirth) }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Gender</small>
-                        <span>{{ getFullGender(selectedPatient?.gender) }}</span>
-                      </div>
-                      <div class="col-md-6">
-                        <small class="text-muted d-block">Phone Number</small>
-                        <span>{{ selectedPatient?.phoneNumber || selectedPatient?.phone || 'N/A' }}</span>
-                      </div>
-                      <div class="col-12">
-                        <small class="text-muted d-block">Address</small>
-                        <span>{{ selectedPatient?.address || 'N/A' }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="col-12" v-else>
-                <div class="patient-details p-3 bg-light rounded w-100 text-center text-muted">
-                  <i class="fas fa-user-circle fa-2x mb-2"></i>
-                  <div>No patient selected. Please search and select a patient.</div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Medical History Section - Third Row (Full Width) -->
       <div class="col-12">
-        <div class="card section-card mb-4">
-          <div class="card-body">
-            <h5 class="section-title mb-4">
-              <i class="fas fa-history text-primary me-2"></i>
+        <div class="card section-card dashboard-card mb-4">
+          <div class="card-header bg-secondary bg-opacity-10 border-0 py-3">
+            <h5 class="mb-0 d-flex align-items-center">
+              <i class="fas fa-history text-secondary me-2"></i>
               Medical History
+              <span v-if="visitHistories?.length" class="badge bg-secondary ms-2">{{ visitHistories.length }} visits</span>
             </h5>
+          </div>
+          <div class="card-body">
             <div v-if="visitHistories && visitHistories.length > 0" class="history-list">
               <table class="table table-hover">
                 <thead>
@@ -348,21 +345,10 @@
                       </button>
                     </div>
 
-                    <div class="col-md-1">
-                      <button class="btn btn-success me-2" @click="printMedicationLabel(medItem)" title="Print Medication Label">
-                        <i class="fas fa-print"></i> Print Label
-                      </button>
-                    </div>
+
                   </div>
                 </div>
-                
-                <!-- Legacy text area for backward compatibility -->
-                <div class="mt-3">
-                  <div class="form-floating">
-                    <textarea class="form-control" id="medications-legacy" v-model="consultation.medications" style="height: 100px"></textarea>
-                    <label for="medications-legacy">Additional Notes (Legacy)</label>
-                  </div>
-                </div>
+
               </div>
             </div>
           </div>
@@ -370,7 +356,7 @@
       </div>
 
       <!-- MC Checkbox and Dates: visible for doctor, after remarks/diagnosis -->
-      <div class="col-12 col-md-6">
+      <div class="col-12">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
@@ -389,29 +375,6 @@
               </button>
             </div>
             <div v-if="consultation.hasMedicalCertificate">
-              <!-- If group consultation, show checkboxes for each patient -->
-              <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="mb-3">
-                <label class="form-label fw-bold">Select patients to print MC for:</label>
-                <div v-for="patient in groupPatients" :key="patient?.id || 'patient-' + Math.random()" class="form-check" v-if="patient && patient.id">
-                  <input class="form-check-input" type="checkbox" :id="'mc-patient-' + patient.id" :value="patient.id" v-model="mcSelectedPatientIds">
-                  <label class="form-check-label" :for="'mc-patient-' + patient.id">
-                    {{ patient.name || patient.displayName || 'Unknown' }}
-                    <small v-if="patient.relationship" class="text-muted">({{ patient.relationship }})</small>
-                  </label>
-                </div>
-                <small class="text-muted d-block mt-2">
-                  <i class="fas fa-info-circle me-1"></i>
-                  Each selected patient will get a separate MC with the same dates
-                </small>
-              </div>
-              
-              <!-- Single patient MC (default behavior) -->
-              <div v-else-if="!isGroupConsultation && selectedPatient" class="mb-3">
-                <div class="alert alert-info">
-                  <i class="fas fa-user me-2"></i>
-                  MC will be issued for: <strong>{{ selectedPatient.name }}</strong>
-                </div>
-              </div>
               <div class="row g-3">
                 <div class="col-md-6">
                   <label class="form-label">Start Date</label>
@@ -457,7 +420,7 @@
               
               <p>Beliau didapati tidak sihat dan tidak dapat menjalankan tugas selama</p>
               <p style="margin-left: 15px; margin-bottom: 15px;">
-                <strong>{{ calculateMCDays() }}</strong> hari mulai <strong>{{ formatDate(consultation.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(consultation.mcEndDate) }}</strong>
+                <strong>{{ calculateMCDaysForPatient(patient.id) }}</strong> hari mulai <strong>{{ formatDate(patientConsultationData[patient.id]?.mcStartDate) }}</strong> sehingga <strong>{{ formatDate(patientConsultationData[patient.id]?.mcEndDate) }}</strong>
               </p>
               
               <div style="display: flex; justify-content: flex-end; margin-top: 40px;">
@@ -511,38 +474,25 @@
         </div>
       </div>
 
-      <!-- Medication Label -->
-      <div class="col-12 col-md-6" v-if="selectedPatient">
-        <div class="card section-card mb-4">
-          <div class="card-body">
-            <h5 class="section-title mb-4">
-              <i class="fas fa-tags text-primary me-2"></i>
-              Medication Label
-            </h5>
-            <p class="text-muted mb-3">
-              Print medication label to stick on medication bags/bottles
-            </p>
-            <MedicationLabel :patient-name="selectedPatient.name || selectedPatient.displayName" />
-          </div>
-        </div>
-      </div>
 
-      <!-- Payment Information -->
+
+      <!-- Total Payment -->
       <div class="col-12 col-md-6">
         <div class="card section-card mb-4">
           <div class="card-body">
             <h5 class="section-title mb-4">
               <i class="fas fa-money-bill text-primary me-2"></i>
-              Payment Information
+              Total Payment
+              <small v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="badge bg-info ms-2">Group Consultation</small>
             </h5>
+            
             <div class="row g-4">
-              <div class="col-md-4">
-                <div class="form-floating">
-                  <input type="number" class="form-control" id="totalAmount" v-model="consultation.totalAmount" step="0.10" min="0" required>
-                  <label for="totalAmount">Total Amount (RM)</label>
+              <div class="col-md-8">
+                <div class="input-group">
+                  <span class="input-group-text">RM</span>
+                  <input type="number" class="form-control" id="totalAmount" v-model="consultation.totalAmount" step="0.10" min="0" placeholder="0.00" required>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
@@ -554,6 +504,19 @@
           <i class="fas fa-times me-2"></i>
           Cancel
         </button>
+        
+        <!-- Save Current Patient Button (for group consultations) -->
+        <button v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" 
+                type="button" 
+                class="btn btn-success btn-lg shadow-sm save-patient-btn" 
+                @click="saveCurrentPatient" 
+                :disabled="isLoading || !currentPatientId"
+                style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border: none; font-weight: 600; padding: 0.75rem 2rem;">
+          <i v-if="!isLoading" class="fas fa-user-check me-2"></i>
+          <i v-if="isLoading" class="fas fa-spinner fa-spin me-2"></i>
+          {{ isLoading ? 'Saving...' : `💾 Save ${getPatientName(currentPatientId)}` }}
+        </button>
+        
         <button type="submit" class="btn btn-primary" :disabled="isLoading">
           <i v-if="!isLoading" class="fas fa-check me-2"></i>
           <i v-if="isLoading" class="fas fa-spinner fa-spin me-2"></i>
@@ -610,8 +573,8 @@
             <h5 class="modal-title" id="mcPreviewModalLabel">Medical Certificate Preview</h5>
             <button type="button" class="btn-close" @click="hideMCPreview"></button>
           </div>
-          <div class="modal-body">
-            <!-- MC Preview Content -->
+                    <div class="modal-body">
+            <!-- MC Preview Content (works for both single and group consultations) -->
             <div class="mc-preview" style="background-color: #e8e5b0; padding: 20px; border: 1px solid #000;">
               <!-- Clinic Header -->
               <div class="text-center mb-3">
@@ -680,8 +643,16 @@
                 </div>
                 <div class="info-content">
                   <div class="info-item">
+                    <label>Patient:</label>
+                    <span class="fw-bold">{{ selectedVisit.patient?.name || selectedVisit.patientName || 'N/A' }}</span>
+                  </div>
+                  <div class="info-item">
                     <label>Date:</label>
                     <span>{{ new Date(selectedVisit.consultationDate).toLocaleDateString() }}</span>
+                  </div>
+                  <div class="info-item">
+                    <label>Time:</label>
+                    <span>{{ new Date(selectedVisit.consultationDate).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true }) }}</span>
                   </div>
                   <div class="info-item">
                     <label>Doctor:</label>
@@ -711,29 +682,123 @@
                 </div>
               </div>
 
-              <div class="info-card" v-if="selectedVisit.medications">
+              <div class="info-card" v-if="selectedVisit.medications || selectedVisit.prescribedMedications">
                 <div class="info-header">
                   <i class="fas fa-pills text-primary"></i>
-                  <span>Medications</span>
+                  <span>Prescribed Medications</span>
                 </div>
                 <div class="info-content">
                   <div class="medications-table">
-                    <table class="table table-sm">
-                      <thead>
+                    <table class="table table-sm table-striped">
+                      <thead class="table-light">
                         <tr>
                           <th>Medication</th>
+                          <th>Quantity</th>
                           <th>Dosage</th>
                           <th>Frequency</th>
+                          <th>Price (RM)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="(med, index) in JSON.parse(selectedVisit.medications || '[]')" :key="index">
-                          <td>{{ med.name || 'N/A' }}</td>
+                        <tr v-for="(med, index) in getMedicationsList(selectedVisit)" :key="index">
+                          <td>
+                            <strong>{{ med.name || 'N/A' }}</strong>
+                            <br>
+                            <small class="text-muted">{{ med.category || 'General' }}</small>
+                          </td>
+                          <td>{{ med.quantity || 'N/A' }} {{ med.unitType || 'pcs' }}</td>
                           <td>{{ med.dosage || 'N/A' }}</td>
                           <td>{{ med.frequency || 'N/A' }}</td>
+                          <td class="text-end">{{ med.actualPrice ? parseFloat(med.actualPrice).toFixed(2) : '0.00' }}</td>
                         </tr>
                       </tbody>
+                      <tfoot v-if="getMedicationTotal(selectedVisit) > 0" class="table-light">
+                        <tr>
+                          <th colspan="4" class="text-end">Medications Total:</th>
+                          <th class="text-end text-success">RM {{ getMedicationTotal(selectedVisit).toFixed(2) }}</th>
+                        </tr>
+                      </tfoot>
                     </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Financial Information -->
+              <div class="info-card">
+                <div class="info-header">
+                  <i class="fas fa-dollar-sign text-success"></i>
+                  <span>Payment Information</span>
+                </div>
+                <div class="info-content">
+                  <div class="payment-summary">
+                    <div class="row g-3">
+                      <div class="col-12">
+                        <div class="payment-item total">
+                          <label>Total Amount Paid:</label>
+                          <span class="amount total-amount text-success fs-4">RM {{ selectedVisit.totalAmount ? parseFloat(selectedVisit.totalAmount).toFixed(2) : (parseFloat(selectedVisit.consultationFee || 0) + getMedicationTotal(selectedVisit)).toFixed(2) }}</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.paymentMethod">
+                        <div class="payment-item">
+                          <label>Payment Method:</label>
+                          <span class="badge bg-info">{{ selectedVisit.paymentMethod }}</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.paidAt">
+                        <div class="payment-item">
+                          <label>Payment Date:</label>
+                          <span>{{ formatDateOfBirth(selectedVisit.paidAt) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Medical Certificate Information -->
+              <div class="info-card">
+                <div class="info-header">
+                  <i class="fas fa-certificate text-warning"></i>
+                  <span>Medical Certificate Status</span>
+                </div>
+                <div class="info-content">
+                  <div v-if="selectedVisit.hasMedicalCertificate || selectedVisit.mcStartDate">
+                    <div class="alert alert-success mb-3">
+                      <i class="fas fa-check-circle me-2"></i>
+                      <strong>Medical Certificate Issued</strong>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-md-6" v-if="selectedVisit.mcStartDate">
+                        <div class="info-item">
+                          <label>Start Date:</label>
+                          <span class="fw-bold">{{ formatDateOfBirth(selectedVisit.mcStartDate) }}</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcEndDate">
+                        <div class="info-item">
+                          <label>End Date:</label>
+                          <span class="fw-bold">{{ formatDateOfBirth(selectedVisit.mcEndDate) }}</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcStartDate && selectedVisit.mcEndDate">
+                        <div class="info-item">
+                          <label>Duration:</label>
+                          <span class="badge bg-info">{{ calculateMCDays(selectedVisit.mcStartDate, selectedVisit.mcEndDate) }} day(s)</span>
+                        </div>
+                      </div>
+                      <div class="col-md-6" v-if="selectedVisit.mcRunningNumber">
+                        <div class="info-item">
+                          <label>MC Number:</label>
+                          <span class="badge bg-warning text-dark">{{ selectedVisit.mcRunningNumber }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else>
+                    <div class="alert alert-light mb-0">
+                      <i class="fas fa-times-circle me-2 text-muted"></i>
+                      <strong>No Medical Certificate issued for this visit</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -871,11 +936,7 @@
                         <span v-if="medication.actualPrice" class="price">RM {{ parseFloat(medication.actualPrice).toFixed(2) }}</span>
                       </div>
                     </div>
-                    <div class="medication-actions">
-                      <button type="button" class="btn btn-sm btn-outline-primary" @click="printSingleMedicationLabel(medication)">
-                        <i class="fas fa-print me-1"></i>Print Label
-                      </button>
-                    </div>
+
                   </div>
                 </div>
               </div>
@@ -897,10 +958,7 @@
                     <i class="fas fa-pills text-info me-2"></i>
                     <span>Dispense prescribed medications</span>
                   </div>
-                  <div class="step-item" v-if="consultationSummary.hasMedications">
-                    <i class="fas fa-tags text-warning me-2"></i>
-                    <span>Print and attach medication labels</span>
-                  </div>
+
                   <div class="step-item" v-if="consultationSummary.hasMedicalCertificate">
                     <i class="fas fa-file-medical text-primary me-2"></i>
                     <span>Print and provide Medical Certificate</span>
@@ -1030,7 +1088,6 @@ import { Modal } from 'bootstrap';
 import axios from 'axios';
 import MedicalCertificateForm from '../certificates/MedicalCertificateForm.vue';
 import PrescriptionForm from '../prescriptions/PrescriptionForm.vue';
-import MedicationLabel from '../../components/MedicationLabel.vue';
 import * as bootstrap from 'bootstrap';
 import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
 import searchDebouncer from '../../utils/searchDebouncer';
@@ -1040,8 +1097,7 @@ export default {
   name: 'ConsultationForm',
   components: {
     MedicalCertificateForm,
-    PrescriptionForm,
-    MedicationLabel
+    PrescriptionForm
   },
   data() {
     return {
@@ -1052,11 +1108,12 @@ export default {
         diagnosis: '',
         notes: '',
         consultationFee: 0,
-        hasMedicalCertificate: true,
+        hasMedicalCertificate: false,
         medicalCertificateDays: 1,
         mcStartDate: getTodayDate(),
         mcEndDate: getTodayDate(),
         medications: [],
+        totalAmount: 0,
         status: 'completed'
       },
       isEditing: !!this.$route.params.id,
@@ -1065,6 +1122,8 @@ export default {
       groupPatients: [],
       mcSelectedPatientIds: [],
       isGroupConsultation: false,
+      patientConsultationData: {}, // Store individual consultation data for each patient
+      currentPatientId: null, // Track which patient's data is currently being viewed/edited
       queueNumber: null,
       queueId: null,
       groupId: null,
@@ -1101,16 +1160,20 @@ export default {
   },
   computed: {
     selectedPatient() {
+      // For group consultations, always use groupPatients data (it's already complete)
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
+        const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
+        if (groupPatient) {
+          return groupPatient;
+        }
+      }
+      
+      // For single consultations, prefer fullPatientDetails if available
       if (this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
         return this.fullPatientDetails;
       }
       
-      // For group consultations, check group patients first
-      if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
-        return this.groupPatients.find(p => p.id === this.consultation.patientId);
-      }
-      
-      // Ensure patients is an array before calling find
+      // Fallback to patients array
       if (Array.isArray(this.patients)) {
         return this.patients.find(p => p.id === this.consultation.patientId) || null;
       }
@@ -1120,15 +1183,56 @@ export default {
   },
   methods: {
     calculateAge(dateOfBirth) {
-      if (!dateOfBirth) return '';
-      const today = new Date();
-      const birthDate = new Date(dateOfBirth);
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const m = today.getMonth() - birthDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
+      if (!dateOfBirth) return 'N/A';
+      try {
+        const today = new Date();
+        const birthDate = new Date(dateOfBirth);
+        if (isNaN(birthDate.getTime())) {
+          return 'N/A';
+        }
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        return age > 0 ? age : 'N/A';
+      } catch (error) {
+        console.error('Error calculating age:', error);
+        return 'N/A';
       }
-      return age;
+    },
+    
+    selectPatient(patient) {
+      if (!patient || !patient.id) return;
+      
+      if (this.isGroupConsultation) {
+        // For group consultations, switch to patient with data management
+        this.switchToPatient(patient.id);
+      } else {
+        // For single consultations, simple selection
+        this.consultation.patientId = patient.id;
+        this.fetchPatientDetails();
+      }
+      
+      // Add visual feedback
+      this.$toast?.success?.(`Selected patient: ${patient.name || patient.displayName}`);
+    },
+    
+    calculatePatientAge() {
+      if (!this.selectedPatient?.dateOfBirth) return 'N/A';
+      try {
+        const today = new Date();
+        const birthDate = new Date(this.selectedPatient.dateOfBirth);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        return age > 0 ? age : 0;
+      } catch (error) {
+        console.error('Error calculating patient age:', error);
+        return 'N/A';
+      }
     },
     getFullGender(gender) {
       if (!gender) return 'N/A';
@@ -1147,6 +1251,21 @@ export default {
       } catch (error) {
         console.error('Error formatting date:', error);
         return 'Invalid Date';
+      }
+    },
+    formatTime(dateString) {
+      if (!dateString) return 'N/A';
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (error) {
+        console.error('Error formatting time:', error);
+        return 'Invalid Time';
       }
     },
     isEditing() {
@@ -1172,6 +1291,24 @@ export default {
       }, 300);
     },
     showMCPreview() {
+      // For group consultations, check current patient has MC enabled and dates set
+      if (this.isGroupConsultation) {
+        if (!this.consultation.hasMedicalCertificate) {
+          alert('Please enable Medical Certificate for preview.');
+          return;
+        }
+        if (!this.consultation.mcStartDate || !this.consultation.mcEndDate) {
+          alert('Please set MC start and end dates for preview.');
+          return;
+        }
+      }
+      
+      // For single consultations, check the basic requirements
+      if (!this.isGroupConsultation && (!this.consultation.mcStartDate || !this.consultation.mcEndDate)) {
+        alert('Please set MC start and end dates for preview.');
+        return;
+      }
+      
       if (!this.mcPreviewModal) {
         this.mcPreviewModal = new Modal(document.getElementById('mcPreviewModal'));
       }
@@ -1193,6 +1330,67 @@ export default {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
       
       return diffDays.toString();
+    },
+    
+    calculateMCDaysForPatient(patientId) {
+      const patientData = this.patientConsultationData[patientId];
+      if (!patientData || !patientData.mcStartDate || !patientData.mcEndDate) {
+        return '0';
+      }
+      
+      const start = new Date(patientData.mcStartDate);
+      const end = new Date(patientData.mcEndDate);
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
+      
+      return diffDays.toString();
+    },
+    
+    getPatientById(patientId) {
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
+        return this.groupPatients.find(p => p.id === patientId);
+      }
+      return this.selectedPatient;
+    },
+    
+    getPatientName(patientId) {
+      if (!patientId) return 'No Patient Selected';
+      
+      // For group consultations, try groupPatients first
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
+        const patient = this.groupPatients.find(p => p.id === patientId);
+        if (patient) {
+          return patient.name || patient.displayName || 'Unnamed Patient';
+        }
+      }
+      
+      // Try selectedPatient
+      if (this.selectedPatient && this.selectedPatient.id === patientId) {
+        return this.selectedPatient.name || this.selectedPatient.displayName || 'Unnamed Patient';
+      }
+      
+      // Try fullPatientDetails
+      if (this.fullPatientDetails && this.fullPatientDetails.id === patientId) {
+        return this.fullPatientDetails.name || this.fullPatientDetails.displayName || 'Unnamed Patient';
+      }
+      
+      // Fallback to patients array
+      if (Array.isArray(this.patients)) {
+        const patient = this.patients.find(p => p.id === patientId);
+        if (patient) {
+          return patient.name || patient.displayName || 'Unnamed Patient';
+        }
+      }
+      
+      return 'Patient';
+    },
+    
+    getMainPatient() {
+      if (!this.isGroupConsultation || !this.groupPatients || this.groupPatients.length === 0) {
+        return this.selectedPatient;
+      }
+      // Find the main patient (relationship === 'self') or fallback to first patient
+      return this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
     },
     formatDate(dateString) {
       if (!dateString) return '';
@@ -1221,6 +1419,166 @@ export default {
     async onMCCheckboxChange() {
       if (this.consultation.hasMedicalCertificate && !this.consultation.mcRunningNumber) {
         await this.generateMCNumber();
+      }
+    },
+    
+    initializePatientData(patientId) {
+      if (!this.patientConsultationData[patientId]) {
+        // Use direct assignment instead of $set for Vue 3 compatibility
+        this.patientConsultationData[patientId] = {
+          diagnosis: '',
+          notes: '',
+          medications: [],
+          hasMedicalCertificate: true,
+          mcStartDate: getTodayDate(),
+          mcEndDate: getTodayDate(),
+          saved: false // Track if this patient's data has been saved
+          // Note: totalAmount is shared for the group, not individual per patient
+        };
+      }
+    },
+    
+    async switchToPatient(patientId) {
+      console.log('🔄 SWITCH PATIENT CALLED - Patient ID:', patientId);
+      console.log('🔄 Current patient ID:', this.currentPatientId);
+      console.log('🔄 Is group consultation:', this.isGroupConsultation);
+      console.log('🔄 Group patients:', this.groupPatients);
+      
+      try {
+        // Save current form data to the previous patient
+        if (this.currentPatientId && this.currentPatientId !== patientId) {
+          console.log('💾 Saving data for previous patient:', this.currentPatientId);
+          this.saveFormDataToPatient(this.currentPatientId);
+        }
+        
+        // For group consultations, immediately set the patient details BEFORE changing IDs
+        // This prevents the "Loading..." state
+        if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
+          const groupPatient = this.groupPatients.find(p => p.id === patientId);
+          if (groupPatient) {
+            this.fullPatientDetails = groupPatient;
+            console.log('👤 Set patient details from group data:', groupPatient.name);
+          } else {
+            console.warn('⚠️ Patient not found in groupPatients:', patientId);
+            return;
+          }
+        }
+        
+        // Now switch to new patient
+        this.currentPatientId = patientId;
+        this.consultation.patientId = patientId;
+        
+        // Initialize data for this patient if needed
+        this.initializePatientData(patientId);
+        
+        // Load this patient's data into the form
+        console.log('📋 Loading data for patient:', patientId);
+        this.loadPatientDataToForm(patientId);
+        
+        // For non-group consultations, fetch patient details
+        if (!this.isGroupConsultation) {
+          await this.fetchPatientDetails();
+        }
+        
+        console.log('✅ Successfully switched to patient:', patientId);
+      } catch (error) {
+        console.error('❌ Error switching patients:', error);
+      }
+    },
+    
+    handlePatientSwitch(patient) {
+      console.log('🔧 Handle patient switch called for:', patient);
+      
+      // Close the Bootstrap dropdown manually using multiple methods
+      try {
+        const dropdownElement = document.querySelector('.patient-selector .dropdown-toggle');
+        if (dropdownElement) {
+          // Method 1: Try Bootstrap 5 instance
+          const dropdown = window.bootstrap?.Dropdown?.getInstance(dropdownElement);
+          if (dropdown) {
+            dropdown.hide();
+          } else {
+            // Method 2: Use data-bs attributes
+            dropdownElement.setAttribute('aria-expanded', 'false');
+            const dropdownMenu = dropdownElement.nextElementSibling;
+            if (dropdownMenu) {
+              dropdownMenu.classList.remove('show');
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Note: Could not close dropdown, continuing anyway:', error);
+      }
+      
+      // Call the actual switch method
+      this.switchToPatient(patient.id);
+    },
+    
+    saveFormDataToPatient(patientId) {
+      if (!this.patientConsultationData[patientId]) {
+        this.initializePatientData(patientId);
+      }
+      
+      // Save current form state to patient data
+      const existingData = this.patientConsultationData[patientId];
+      this.patientConsultationData[patientId] = {
+        ...existingData,
+        diagnosis: this.consultation.diagnosis,
+        notes: this.consultation.notes,
+        medications: [...(this.consultation.medications || [])],
+        hasMedicalCertificate: this.consultation.hasMedicalCertificate,
+        mcStartDate: this.consultation.mcStartDate,
+        mcEndDate: this.consultation.mcEndDate
+        // Note: totalAmount is NOT saved per patient - it's shared for the group
+      };
+    },
+    
+    loadPatientDataToForm(patientId) {
+      const patientData = this.patientConsultationData[patientId];
+      if (patientData) {
+        this.consultation.diagnosis = patientData.diagnosis || '';
+        this.consultation.notes = patientData.notes || '';
+        this.consultation.medications = [...(patientData.medications || [])];
+        this.consultation.hasMedicalCertificate = patientData.hasMedicalCertificate !== undefined ? patientData.hasMedicalCertificate : false;
+        this.consultation.mcStartDate = patientData.mcStartDate || getTodayDate();
+        this.consultation.mcEndDate = patientData.mcEndDate || getTodayDate();
+        // Note: totalAmount remains shared for the group consultation
+      } else {
+        // Initialize with defaults if no data exists
+        this.consultation.diagnosis = '';
+        this.consultation.notes = '';
+        this.consultation.medications = [];
+        this.consultation.hasMedicalCertificate = false;
+        this.consultation.mcStartDate = getTodayDate();
+        this.consultation.mcEndDate = getTodayDate();
+        // Note: totalAmount remains unchanged when switching patients
+      }
+    },
+    
+    async saveCurrentPatient() {
+      if (!this.currentPatientId) {
+        alert('No patient selected');
+        return;
+      }
+      
+      try {
+        this.isLoading = true;
+        
+        // Save current form data to patient data structure
+        this.saveFormDataToPatient(this.currentPatientId);
+        
+        // Mark as saved
+        this.patientConsultationData[this.currentPatientId].saved = true;
+        
+        // Show success message
+        const patientName = this.selectedPatient?.name || this.selectedPatient?.displayName || 'Patient';
+        alert(`Successfully saved data for ${patientName}!`);
+        
+      } catch (error) {
+        console.error('Error saving patient data:', error);
+        alert('Error saving patient data: ' + error.message);
+      } finally {
+        this.isLoading = false;
       }
     },
     showVisitHistoryModal() {
@@ -1280,6 +1638,18 @@ export default {
         this.visitHistories = [];
         return;
       }
+      
+      // For group consultations, don't fetch from API - use existing groupPatients data
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
+        const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
+        if (groupPatient) {
+          this.fullPatientDetails = groupPatient;
+          await this.loadVisitHistories();
+          return;
+        }
+      }
+      
+      // For single consultations, fetch from API
       try {
         const response = await axios.get(`/api/patients/${this.consultation.patientId}`);
         this.fullPatientDetails = response.data;
@@ -1308,61 +1678,12 @@ export default {
       this.isLoading = true;
       
       try {
-        // Validate required fields
-        if (!this.consultation.patientId) {
-          throw new Error('Patient is required');
-        }
-        if (!this.consultation.doctorId) {
-          throw new Error('Doctor is required');
-        }
-        if (!this.consultation.notes) {
-          throw new Error('Notes are required');
-        }
-
-        // Prepare consultation data
-        const consultationData = {
-          patientId: this.consultation.patientId,
-          doctorId: this.consultation.doctorId,
-          notes: this.consultation.notes,
-          diagnosis: this.consultation.notes || '', // Use notes as diagnosis
-          status: this.consultation.status || 'pending',
-          consultationFee: parseFloat(this.consultation.consultationFee) || 0,
-          medications: JSON.stringify(this.consultation.medications || []), // Convert array to JSON string
-          prescribedMedications: this.prescribedMedications.filter(med => med.name && med.quantity), // Send structured medications
-          mcStartDate: this.consultation.mcStartDate || null,
-          mcEndDate: this.consultation.mcEndDate || null,
-          mcNotes: this.consultation.mcNotes || '',
-          queueNumber: this.queueNumber,
-          groupId: this.isGroupConsultation ? this.groupId : null,
-          isGroupConsultation: this.isGroupConsultation
-        };
-
-        console.log('Sending consultation data:', consultationData);
-        console.log('Prescribed medications details:', this.prescribedMedications.map(med => ({
-          name: med.name,
-          medicationId: med.medicationId,
-          quantity: med.quantity,
-          actualPrice: med.actualPrice,
-          unitType: med.unitType
-        })));
-
-        const response = await axios.post('/api/consultations', consultationData);
-        console.log('Consultation saved successfully:', response.data);
-
-        // Show success message
-        alert('✅ Consultation saved successfully!');
-        
-        // Clear loading state before redirect
-        this.isLoading = false;
-        
-        // Redirect based on user role instead of showing modal
-        const currentUser = AuthService.getCurrentUser();
-        if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
-          // Doctors should go back to ongoing consultations
-          this.$router.push('/consultations/ongoing');
+        if (this.isGroupConsultation && this.groupPatients && this.groupPatients.length > 1) {
+          // Group consultation - save all patients
+          await this.saveAllGroupPatients();
         } else {
-          // Others go to consultations list for payment processing
-          this.$router.push('/consultations');
+          // Single consultation - normal save
+          await this.saveSingleConsultation();
         }
       } catch (error) {
         console.error('Error saving consultation:', error);
@@ -1376,6 +1697,121 @@ export default {
       } finally {
         // Ensure loading state is always cleared
         this.isLoading = false;
+      }
+    },
+    
+    async saveSingleConsultation() {
+      // Validate required fields
+      if (!this.consultation.patientId) {
+        throw new Error('Patient is required');
+      }
+      if (!this.consultation.doctorId) {
+        throw new Error('Doctor is required');
+      }
+      if (!this.consultation.notes) {
+        throw new Error('Notes are required');
+      }
+
+      // Prepare consultation data
+      const consultationData = {
+        patientId: this.consultation.patientId,
+        doctorId: this.consultation.doctorId,
+        notes: this.consultation.notes,
+        diagnosis: this.consultation.notes || '', // Use notes as diagnosis
+        status: this.consultation.status || 'pending',
+        consultationFee: parseFloat(this.consultation.consultationFee) || 0,
+        medications: JSON.stringify(this.consultation.medications || []), // Convert array to JSON string
+        prescribedMedications: this.prescribedMedications.filter(med => med.name && med.quantity), // Send structured medications
+        mcStartDate: this.consultation.mcStartDate || null,
+        mcEndDate: this.consultation.mcEndDate || null,
+        mcNotes: this.consultation.mcNotes || '',
+        queueNumber: this.queueNumber,
+        groupId: null,
+        isGroupConsultation: false
+      };
+
+      console.log('Sending consultation data:', consultationData);
+
+      const response = await axios.post('/api/consultations', consultationData);
+      console.log('Consultation saved successfully:', response.data);
+
+      // Show success message
+      alert('✅ Consultation saved successfully!');
+      
+      // Clear loading state before redirect
+      this.isLoading = false;
+      
+      // Redirect based on user role
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
+        this.$router.push('/consultations/ongoing');
+      } else {
+        this.$router.push('/consultations');
+      }
+    },
+    
+    async saveAllGroupPatients() {
+      // Save current patient's form data first
+      if (this.currentPatientId) {
+        this.saveFormDataToPatient(this.currentPatientId);
+      }
+      
+      const savedConsultations = [];
+      const mainPatient = this.getMainPatient();
+      
+      // Save consultation for each patient in the group
+      for (const patient of this.groupPatients) {
+        if (!patient || !patient.id) continue;
+        
+        const patientData = this.patientConsultationData[patient.id];
+        if (!patientData) {
+          console.warn(`No data found for patient ${patient.name}, skipping...`);
+          continue;
+        }
+        
+        // Only the main patient gets the total payment amount, others get 0
+        const isMainPatient = patient.id === mainPatient?.id;
+        
+        const consultationData = {
+          patientId: patient.id,
+          doctorId: this.consultation.doctorId,
+          notes: patientData.notes || '',
+          diagnosis: patientData.diagnosis || patientData.notes || '',
+          status: 'completed',
+          consultationFee: parseFloat(this.consultation.consultationFee) || 0,
+          medications: JSON.stringify(patientData.medications || []),
+          prescribedMedications: patientData.medications?.filter(med => med.name && med.quantity) || [],
+          mcStartDate: patientData.hasMedicalCertificate ? patientData.mcStartDate : null,
+          mcEndDate: patientData.hasMedicalCertificate ? patientData.mcEndDate : null,
+          mcNotes: '',
+          queueNumber: this.queueNumber,
+          groupId: this.groupId,
+          isGroupConsultation: true,
+          totalAmount: isMainPatient ? (parseFloat(this.consultation.totalAmount) || 0) : 0,
+          isMainPatient: isMainPatient // Flag to identify who is paying
+        };
+        
+        const response = await axios.post('/api/consultations', consultationData);
+        
+        savedConsultations.push({
+          patient: patient,
+          consultation: response.data
+        });
+      }
+      
+      // Show success message
+      const mainPatientName = mainPatient?.name || mainPatient?.displayName || 'Main Patient';
+      alert(`✅ Successfully saved consultations for ${savedConsultations.length} patients!\n💰 Payment (RM${this.consultation.totalAmount || 0}) will be charged to: ${mainPatientName}`);
+      
+      // Clear loading state before redirect
+      this.isLoading = false;
+      
+      // Redirect based on user role
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
+        this.$router.push('/consultations/ongoing');
+      } else {
+        this.$router.push('/consultations');
       }
     },
     // Enhanced Medication Methods
@@ -1612,9 +2048,69 @@ export default {
       this.consultation.patientId = patient.id;
       this.fetchPatientDetails();
     },
-    showVisitDetails(visit) {
-      this.selectedVisit = visit;
-      this.visitDetailsModal.show();
+    async showVisitDetails(visit) {
+      try {
+        // Fetch comprehensive visit details
+        const response = await axios.get(`/api/consultations/${visit.id}`);
+        this.selectedVisit = {
+          ...visit,
+          ...response.data,
+          // Add any additional computed fields
+          formattedDate: this.formatDateOfBirth(visit.consultationDate),
+          formattedTime: this.formatTime(visit.consultationDate)
+        };
+        this.visitDetailsModal.show();
+      } catch (error) {
+        console.error('Error loading visit details:', error);
+        // Fallback to basic visit data
+        this.selectedVisit = visit;
+        this.visitDetailsModal.show();
+      }
+    },
+    getMedicationsList(visit) {
+      if (!visit) return [];
+      
+      let medications = [];
+      
+      // Try to get from prescribedMedications first (structured data)
+      if (visit.prescribedMedications && Array.isArray(visit.prescribedMedications)) {
+        medications = visit.prescribedMedications;
+      }
+      // Fallback to medications field (JSON string)
+      else if (visit.medications) {
+        try {
+          const parsed = typeof visit.medications === 'string' 
+            ? JSON.parse(visit.medications) 
+            : visit.medications;
+          medications = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          console.warn('Error parsing medications:', e);
+          medications = [];
+        }
+      }
+      
+      return medications;
+    },
+    getMedicationTotal(visit) {
+      const medications = this.getMedicationsList(visit);
+      return medications.reduce((total, med) => {
+        const price = parseFloat(med.actualPrice || med.price || 0);
+        return total + price;
+      }, 0);
+    },
+    calculateMCDays(startDate, endDate) {
+      if (!startDate || !endDate) return 0;
+      
+      try {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
+        return diffDays;
+      } catch (error) {
+        console.error('Error calculating MC days:', error);
+        return 0;
+      }
     },
     getStatusClass(status) {
       const statusMap = {
@@ -1648,37 +2144,22 @@ export default {
       return queueNumber;
     },
     
-    async loadGroupPatients() {
-      if (!this.groupId) return;
-      
-      try {
-        const response = await axios.get(`/api/queue/group/${this.groupId}`);
-        const queueEntry = response.data;
-        
-        if (queueEntry && queueEntry.metadata && queueEntry.metadata.patients) {
-          this.groupPatients = queueEntry.metadata.patients.map(patient => ({
-            id: patient.id,
-            name: patient.name,
-            displayName: patient.name,
-            nric: patient.nric,
-            age: patient.age,
-            gender: patient.gender,
-            phone: patient.phone,
-            relationship: patient.relationship,
-            symptoms: patient.symptoms || ''
-          }));
-          
-          // Set the currently selected patient to the primary patient if not already set
-          if (!this.consultation.patientId && this.groupPatients.length > 0) {
-            const primaryPatient = this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
-            this.consultation.patientId = primaryPatient.id;
-          }
-        }
-      } catch (error) {
-        console.error('Error loading group patients:', error);
-        this.groupPatients = [];
+    // Removed duplicate switchToPatient method - using the async version above
+    
+    calculateAge(dateOfBirth) {
+      if (!dateOfBirth) return 'N/A';
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
       }
+      return age;
     },
+    
+    // loadGroupPatients() method removed - group patients are now loaded directly 
+    // from the /api/queue/{id} response in the mounted() method
     printMedicationLabel(medItem) {
       // Use the exact format from your clinic's medication label
       const patientName = this.selectedPatient?.name || this.selectedPatient?.displayName || 'N/A';
@@ -2051,10 +2532,8 @@ export default {
           await this.fetchPatientDetails();
         }
         
-        // Load group patients if applicable
-        if (this.isGroupConsultation) {
-          await this.loadGroupPatients();
-        }
+        // Group patients are now loaded directly from queue API response in mounted()
+        // No need for separate loadGroupPatients() call
         
       } catch (error) {
         console.error('❌ Error loading initial data:', error);
@@ -2093,7 +2572,7 @@ export default {
         }),
         doctorName: doctor?.name || 'Unknown Doctor',
         totalAmount: parseFloat(this.consultation.totalAmount || 0).toFixed(2),
-        hasMedicalCertificate: this.consultation.hasMedicalCertificate || false,
+        hasMedicalCertificate: this.consultation.hasMedicalCertificate !== undefined ? this.consultation.hasMedicalCertificate : false,
         mcDays: mcDays,
         mcStartDate: this.consultation.mcStartDate ? new Date(this.consultation.mcStartDate).toLocaleDateString('en-MY') : '',
         mcEndDate: this.consultation.mcEndDate ? new Date(this.consultation.mcEndDate).toLocaleDateString('en-MY') : '',
@@ -2222,7 +2701,43 @@ export default {
         if (response.data.isGroupConsultation) {
           console.log('👥 Setting group consultation mode');
           this.isGroupConsultation = true;
-          await this.loadGroupPatients();
+          this.groupId = response.data.groupId;
+          
+          // Use the groupPatients data directly from the API response
+          if (response.data.groupPatients && Array.isArray(response.data.groupPatients)) {
+            console.log('👥 Loading group patients from API response:', response.data.groupPatients);
+            this.groupPatients = response.data.groupPatients.map(patient => ({
+              id: patient.id,
+              name: patient.name || patient.displayName,
+              displayName: patient.displayName || patient.name,
+              nric: patient.nric,
+              dateOfBirth: patient.dateOfBirth,
+              gender: patient.gender,
+              phone: patient.phone,
+              address: patient.address,
+              relationship: patient.relationship || 'N/A',
+              preInformedIllness: patient.preInformedIllness || ''
+            }));
+            
+            // Set the currently selected patient to the primary patient if not already set
+            if (!this.consultation.patientId && this.groupPatients.length > 0) {
+              const primaryPatient = this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
+              this.consultation.patientId = primaryPatient.id;
+              this.currentPatientId = primaryPatient.id;
+              console.log('👤 Auto-selected primary patient:', primaryPatient.name);
+              
+              // Initialize data for all group patients
+              for (const patient of this.groupPatients) {
+                this.initializePatientData(patient.id);
+              }
+              
+              // Load the primary patient's data into the form
+              this.loadPatientDataToForm(primaryPatient.id);
+            }
+                     } else {
+             console.warn('⚠️ No groupPatients data in API response for group consultation');
+             this.groupPatients = [];
+           }
         }
         
       } catch (error) {
@@ -2236,9 +2751,92 @@ export default {
     
     // Initialize modals
     this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
-  }
-};
-</script>
+    this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
+     }
+     </div>
+   </div>
+ </template>
+
+ <script>
+ import axios from 'axios';
+ import { ref, reactive } from 'vue';
+ import AuthService from '../services/AuthService.js';
+
+ export default {
+   name: 'ConsultationForm',
+   data() {
+     return {
+       consultation: {
+         patientId: null,
+         patientName: '',
+         doctorId: null,
+         diagnosis: '',
+         notes: '',
+         medicationId: null,
+         medicationName: '',
+         medicationQuantity: 1,
+         medicationDosage: '',
+         medicationFrequency: '',
+         medicationCategory: 'Tablet',
+         duration: 1,
+         medicine: [],
+         medicineTotal: 0,
+         consultationFee: 30.00,
+         totalAmount: 30.00,
+         isCompleted: false,
+         hasMedicalCertificate: false,
+         mcStartDate: null,
+         mcEndDate: null
+       },
+       isEditing: false,
+       patients: [],
+       doctors: [],
+       medications: [],
+       medicationSuggestions: [],
+       showSuggestions: false,
+       medicationInputValue: '',
+       loading: false,
+       saving: false,
+       medicationSearchLoading: false,
+       showCustomMedicationModal: false,
+       customMedication: {
+         name: '',
+         category: 'Tablet',
+         price: 0,
+         unitType: 'pcs'
+       },
+       prescribedMedications: [],
+       selectedPatient: null,
+       visitHistories: [],
+       loadingHistory: false,
+       selectedVisit: null,
+       showCreateModal: false,
+       isGroupConsultation: false,
+       groupPatients: [],
+       createMedicationModal: null,
+       consultationSummaryModal: null,
+       visitDetailsModal: null,
+       highlightedSuggestionIndex: -1,
+       suggestionPages: {},
+       currentSuggestionPage: 1,
+       totalSuggestionPages: 1,
+       suggestionsPerPage: 10,
+       activeMedicationIndex: null,
+       medicationSearchTimeout: null
+     };
+   },
+   async mounted() {
+     console.log('🎯 ConsultationForm mounted with route:', this.$route.query);
+     
+     // Load initial data
+     await this.loadInitialData();
+     
+     // Initialize modals
+     this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
+     this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
+   }
+ };
+ </script>
 
 <style scoped>
 .consultation-form {
@@ -2324,6 +2922,90 @@ export default {
   line-height: 1.25;
 }
 
+/* Patient Dropdown Styling */
+.patient-dropdown .dropdown-item {
+  border: none !important;
+  padding: 0.75rem 1rem !important;
+  transition: all 0.2s ease;
+  color: #333 !important;
+}
+
+.patient-dropdown .dropdown-item:hover {
+  background-color: #f8f9fa !important;
+  color: #000 !important;
+}
+
+.patient-dropdown .dropdown-item.active {
+  background-color: #fff3cd !important;
+  color: #856404 !important;
+  border-left: 4px solid #ffc107 !important;
+}
+
+.patient-dropdown .patient-name {
+  color: #333 !important;
+  font-size: 1rem;
+}
+
+.patient-dropdown .patient-details small {
+  color: #666 !important;
+}
+
+.patient-dropdown .badge {
+  font-size: 0.7rem;
+}
+
+.patient-select-btn {
+  font-size: 0.9rem !important;
+  white-space: nowrap;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+}
+
+/* Ensure dropdown shows above everything */
+.dropdown-menu {
+  z-index: 1055 !important;
+}
+
+/* Enhanced Save Current Patient Button */
+.save-patient-btn {
+  position: relative;
+  overflow: hidden;
+  animation: saveButtonGlow 2s ease-in-out infinite alternate;
+}
+
+.save-patient-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4) !important;
+}
+
+.save-patient-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s;
+}
+
+.save-patient-btn:hover::before {
+  left: 100%;
+}
+
+@keyframes saveButtonGlow {
+  0% { 
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+  }
+  100% { 
+    box-shadow: 0 4px 25px rgba(40, 167, 69, 0.6);
+  }
+}
+
 .form-floating > textarea.form-control {
   height: 100px;
 }
@@ -2348,6 +3030,91 @@ export default {
   box-sizing: border-box;
   max-width: 700px;
   margin: 0 auto;
+}
+
+/* Professional Sticky Patient Topbar */
+.sticky-patient-topbar {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1040;
+  background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #3498db 100%) !important;
+  border-bottom: 3px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(15px);
+}
+
+.sticky-patient-topbar:hover {
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+}
+
+.sticky-patient-topbar .patient-name {
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+  font-size: 1.5rem;
+}
+
+.sticky-patient-topbar .badge {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+}
+
+.sticky-patient-topbar .patient-meta i {
+  opacity: 0.9;
+}
+
+/* Enhanced Patient Avatar */
+.sticky-patient-topbar .patient-avatar {
+  position: relative;
+}
+
+.sticky-patient-topbar .patient-avatar::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  right: -5px;
+  bottom: -5px;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
+  border-radius: 50%;
+  z-index: -1;
+}
+
+/* Professional Animation */
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sticky-patient-topbar {
+  animation: fadeInDown 0.5s ease-out;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sticky-patient-topbar .patient-name {
+    font-size: 1.2rem;
+  }
+  
+  .sticky-patient-topbar .patient-meta {
+    flex-direction: column;
+    gap: 0.5rem !important;
+  }
+  
+  .sticky-patient-topbar .badge {
+    font-size: 0.75rem;
+  }
+}
+
+.patient-details {
   background: #f8f9fa;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -2565,4 +3332,1003 @@ export default {
     padding: 1rem;
   }
 }
+
+
+
+/* Enhanced Patient Selector in Header */
+.patient-select-btn {
+  position: relative;
+  overflow: hidden;
+  border: 3px solid #fff !important;
+  box-shadow: 0 4px 15px rgba(255,193,7,0.4) !important;
+}
+
+.patient-select-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s;
+}
+
+.patient-select-btn:hover::before {
+  left: 100%;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.patient-dropdown {
+  border: 3px solid #ffc107 !important;
+  backdrop-filter: blur(10px);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.patient-item {
+  transition: all 0.3s ease;
+  border-left: 4px solid transparent;
+}
+
+.patient-item:hover {
+  background: linear-gradient(135deg, #ffc107 0%, #ffcd39 100%) !important;
+  color: #000 !important;
+  border-left-color: #fff;
+  transform: translateX(5px);
+}
+
+.patient-item.active {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+  color: #fff !important;
+  border-left-color: #fff;
+}
+
+.patient-item.active:hover {
+  background: linear-gradient(135deg, #20c997 0%, #28a745 100%) !important;
+}
+
+.patient-avatar i {
+  transition: all 0.3s ease;
+}
+
+.patient-item:hover .patient-avatar i {
+  transform: scale(1.1);
+}
+
+.patient-option {
+  position: relative;
+}
+
+.patient-option::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #dee2e6, transparent);
+}
+
+.patient-option:last-of-type::after {
+  display: none;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .patient-select-btn {
+    padding: 0.5rem 1rem !important;
+  }
+  
+  .patient-dropdown {
+    min-width: 300px !important;
+  }
+  
+  .patient-select-btn .d-none.d-sm-inline {
+    display: none !important;
+  }
+}
 </style>
+
+<script>
+import axios from 'axios';
+import { ref, reactive } from 'vue';
+import AuthService from '../services/AuthService.js';
+
+export default {
+  name: 'ConsultationForm',
+  data() {
+    return {
+      consultation: {
+        patientId: null,
+        patientName: '',
+        doctorId: null,
+        diagnosis: '',
+        notes: '',
+        medicationId: null,
+        medicationName: '',
+        medicationQuantity: 1,
+        medicationDosage: '',
+        medicationFrequency: '',
+        medicationCategory: 'Tablet',
+        duration: 1,
+        medicine: [],
+        medicineTotal: 0,
+        consultationFee: 30.00,
+        totalAmount: 30.00,
+        isCompleted: false,
+        hasMedicalCertificate: false,
+        mcStartDate: null,
+        mcEndDate: null
+      },
+      isEditing: false,
+      patients: [],
+      doctors: [],
+      medications: [],
+      medicationSuggestions: [],
+      showSuggestions: false,
+      medicationInputValue: '',
+      loading: false,
+      saving: false,
+      medicationSearchLoading: false,
+      showCustomMedicationModal: false,
+      customMedication: {
+        name: '',
+        category: 'Tablet',
+        price: 0,
+        unitType: 'pcs'
+      },
+      prescribedMedications: [],
+      selectedPatient: null,
+      visitHistories: [],
+      loadingHistory: false,
+      selectedVisit: null,
+      showCreateModal: false,
+      isGroupConsultation: false,
+      groupPatients: [],
+      createMedicationModal: null,
+      consultationSummaryModal: null,
+      visitDetailsModal: null,
+      highlightedSuggestionIndex: -1,
+      suggestionPages: {},
+      currentSuggestionPage: 1,
+      totalSuggestionPages: 1,
+      suggestionsPerPage: 10,
+      activeMedicationIndex: null,
+      medicationSearchTimeout: null
+    };
+  },
+  computed: {
+    selectedDoctor() {
+      return this.doctors.find(doctor => doctor.id == this.$route.query.doctorId);
+    },
+    isDoctorSelected() {
+      return this.selectedDoctor !== undefined;
+    },
+    totalMedicinesCost() {
+      return this.prescribedMedications.reduce((total, med) => {
+        return total + (parseFloat(med.actualPrice || med.price || 0) * parseInt(med.quantity || 1));
+      }, 0);
+    },
+    formattedTotalCost() {
+      const consultationFee = parseFloat(this.consultation.consultationFee || 0);
+      const medicinesCost = this.totalMedicinesCost;
+      const total = consultationFee + medicinesCost;
+      return total.toFixed(2);
+    }
+  },
+  watch: {
+    '$route'(to, from) {
+      if (to.query.queueId !== from.query.queueId || to.query.patientId !== from.query.patientId) {
+        this.initializeFromRoute();
+      }
+    },
+    consultation: {
+      handler() {
+        this.updateTotalAmount();
+      },
+      deep: true
+    },
+    prescribedMedications: {
+      handler() {
+        this.updateTotalAmount();
+      },
+      deep: true
+    }
+  },
+  methods: {
+    async initializeFromRoute() {
+      console.log('🚀 INITIALIZING from route params:', this.$route.query);
+      
+      if (this.$route.query.queueId) {
+        await this.loadFromQueue(this.$route.query.queueId);
+      } else if (this.$route.query.patientId) {
+        await this.loadPatientData(this.$route.query.patientId);
+      }
+    },
+    
+    updateTotalAmount() {
+      const consultationFee = parseFloat(this.consultation.consultationFee || 0);
+      const medicinesCost = this.totalMedicinesCost;
+      this.consultation.totalAmount = consultationFee + medicinesCost;
+    },
+    
+    async loadFromQueue(queueId) {
+      try {
+        console.log('Loading queue data for ID:', queueId);
+        const response = await axios.get(`/api/queue/${queueId}`, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        const queueData = response.data;
+        console.log('Queue data loaded:', queueData);
+        
+        if (queueData.patients && queueData.patients.length > 1) {
+          this.isGroupConsultation = true;
+          this.groupPatients = queueData.patients;
+          this.selectedPatient = queueData.patients[0];
+          console.log('🧑‍🧑‍🧒‍🧒 GROUP CONSULTATION detected with', queueData.patients.length, 'patients');
+        } else if (queueData.patients && queueData.patients.length === 1) {
+          this.selectedPatient = queueData.patients[0];
+          this.isGroupConsultation = false;
+        } else if (queueData.patient) {
+          this.selectedPatient = queueData.patient;
+          this.isGroupConsultation = false;
+        }
+        
+        if (this.selectedPatient) {
+          this.consultation.patientId = this.selectedPatient.id;
+          this.consultation.patientName = this.selectedPatient.name || this.selectedPatient.displayName;
+          await this.loadPatientVisitHistory(this.selectedPatient.id);
+        }
+        
+        this.consultation.doctorId = queueData.doctorId || this.$route.query.doctorId;
+        
+      } catch (error) {
+        console.error('Error loading queue data:', error);
+        if (this.$route.query.patientId) {
+          await this.loadPatientData(this.$route.query.patientId);
+        }
+      }
+    },
+    
+    async loadPatientData(patientId) {
+      try {
+        console.log('Loading patient data for ID:', patientId);
+        const response = await axios.get(`/api/patients/${patientId}`, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        this.selectedPatient = response.data;
+        this.consultation.patientId = this.selectedPatient.id;
+        this.consultation.patientName = this.selectedPatient.name;
+        this.isGroupConsultation = false;
+        
+        await this.loadPatientVisitHistory(patientId);
+        
+      } catch (error) {
+        console.error('Error loading patient data:', error);
+      }
+    },
+    
+    async loadPatientVisitHistory(patientId) {
+      if (!patientId) return;
+      
+      try {
+        this.loadingHistory = true;
+        const response = await axios.get(`/api/patients/${patientId}/visit-history`, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        this.visitHistories = response.data || [];
+        console.log('📋 Visit history loaded:', this.visitHistories.length, 'visits');
+        
+      } catch (error) {
+        console.error('Error loading visit history:', error);
+        this.visitHistories = [];
+      } finally {
+        this.loadingHistory = false;
+      }
+    },
+    
+    getPatientName(patientId) {
+      if (this.selectedPatient) {
+        return this.selectedPatient.name || this.selectedPatient.displayName || 'Unknown Patient';
+      }
+      return 'Unknown Patient';
+    },
+    
+    calculatePatientAge() {
+      if (!this.selectedPatient?.dateOfBirth) return 'N/A';
+      
+      const today = new Date();
+      const birthDate = new Date(this.selectedPatient.dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      return age;
+    },
+    
+    async handlePatientSwitch(patient) {
+      console.log('🔄 SWITCH PATIENT CALLED - Patient ID:', patient.id);
+      try {
+        this.selectedPatient = patient;
+        this.consultation.patientId = patient.id;
+        this.consultation.patientName = patient.name || patient.displayName;
+        
+        await this.loadPatientVisitHistory(patient.id);
+        
+        console.log('✅ Successfully switched to patient:', patient.name);
+        
+      } catch (error) {
+        console.error('❌ Error switching patient:', error);
+      }
+    },
+    
+    async loadDoctors() {
+      try {
+        const response = await axios.get('/api/doctors', {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        this.doctors = response.data;
+      } catch (error) {
+        console.error('Error loading doctors:', error);
+        this.doctors = [];
+      }
+    },
+    
+    async loadMedications() {
+      try {
+        const response = await axios.get('/api/medications');
+        this.medications = response.data;
+      } catch (error) {
+        console.error('Error loading medications:', error);
+        this.medications = [];
+      }
+    },
+    
+    async searchMedications(query, targetIndex = null) {
+      if (!query || query.length < 2) {
+        this.medicationSuggestions = [];
+        this.showSuggestions = false;
+        return;
+      }
+      
+      this.activeMedicationIndex = targetIndex;
+      
+      if (this.medicationSearchTimeout) {
+        clearTimeout(this.medicationSearchTimeout);
+      }
+      
+      this.medicationSearchTimeout = setTimeout(async () => {
+        try {
+          this.medicationSearchLoading = true;
+          const response = await axios.get(`/api/medications/search`, {
+            params: { 
+              query: query,
+              page: this.currentSuggestionPage,
+              limit: this.suggestionsPerPage
+            },
+            headers: {
+              'Authorization': `Bearer ${AuthService.getToken()}`
+            }
+          });
+          
+          const data = response.data;
+          this.medicationSuggestions = data.medications || data.data || data;
+          
+          if (data.pagination) {
+            this.totalSuggestionPages = data.pagination.totalPages || 1;
+            this.currentSuggestionPage = data.pagination.currentPage || 1;
+          } else {
+            this.totalSuggestionPages = 1;
+            this.currentSuggestionPage = 1;
+          }
+          
+          this.showSuggestions = this.medicationSuggestions.length > 0;
+          this.highlightedSuggestionIndex = -1;
+          
+        } catch (error) {
+          console.error('Error searching medications:', error);
+          this.medicationSuggestions = [];
+          this.showSuggestions = false;
+        } finally {
+          this.medicationSearchLoading = false;
+        }
+      }, 300);
+    },
+    
+    selectMedication(medication, targetIndex = null) {
+      const targetMedication = targetIndex !== null ? this.prescribedMedications[targetIndex] : this.prescribedMedications[this.prescribedMedications.length - 1];
+      
+      if (targetMedication) {
+        targetMedication.name = medication.name;
+        targetMedication.category = medication.category;
+        targetMedication.price = medication.price;
+        targetMedication.actualPrice = medication.price;
+        targetMedication.unitType = medication.unitType || 'pcs';
+        targetMedication.medicationId = medication.id;
+      }
+      
+      this.hideSuggestions();
+    },
+    
+    async changeSuggestionPage(page) {
+      if (page < 1 || page > this.totalSuggestionPages) return;
+      
+      this.currentSuggestionPage = page;
+      const query = this.activeMedicationIndex !== null 
+        ? this.prescribedMedications[this.activeMedicationIndex]?.name || ''
+        : this.medicationInputValue;
+      
+      await this.searchMedications(query, this.activeMedicationIndex);
+    },
+    
+    hideSuggestions() {
+      this.showSuggestions = false;
+      this.medicationSuggestions = [];
+      this.activeMedicationIndex = null;
+      this.highlightedSuggestionIndex = -1;
+    },
+    
+    handleMedicationKeydown(event, index) {
+      if (!this.showSuggestions || this.medicationSuggestions.length === 0) return;
+      
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault();
+          this.highlightedSuggestionIndex = Math.min(
+            this.highlightedSuggestionIndex + 1,
+            this.medicationSuggestions.length - 1
+          );
+          break;
+          
+        case 'ArrowUp':
+          event.preventDefault();
+          this.highlightedSuggestionIndex = Math.max(this.highlightedSuggestionIndex - 1, -1);
+          break;
+          
+        case 'Enter':
+          event.preventDefault();
+          if (this.highlightedSuggestionIndex >= 0 && this.highlightedSuggestionIndex < this.medicationSuggestions.length) {
+            this.selectMedication(this.medicationSuggestions[this.highlightedSuggestionIndex], index);
+          }
+          break;
+          
+        case 'Escape':
+          this.hideSuggestions();
+          break;
+      }
+    },
+    
+    addMedication() {
+      this.prescribedMedications.push({
+        name: '',
+        quantity: 1,
+        dosage: '',
+        frequency: '',
+        duration: '1',
+        category: 'Tablet',
+        price: 0,
+        actualPrice: 0,
+        unitType: 'pcs',
+        medicationId: null
+      });
+    },
+    
+    removeMedication(index) {
+      this.prescribedMedications.splice(index, 1);
+      this.updateTotalAmount();
+    },
+    
+    openCreateMedicationModal() {
+      this.customMedication = {
+        name: '',
+        category: 'Tablet',
+        price: 0,
+        unitType: 'pcs'
+      };
+      this.createMedicationModal.show();
+    },
+    
+    async saveCustomMedication() {
+      try {
+        const response = await axios.post('/api/medications', this.customMedication, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        this.medications.push(response.data);
+        this.createMedicationModal.hide();
+        
+        // Auto-select the newly created medication if we were adding one
+        if (this.activeMedicationIndex !== null) {
+          this.selectMedication(response.data, this.activeMedicationIndex);
+        }
+        
+      } catch (error) {
+        console.error('Error creating medication:', error);
+        alert('Error creating medication. Please try again.');
+      }
+    },
+    
+    async showVisitDetails(visit) {
+      try {
+        // Load detailed visit information
+        const response = await axios.get(`/api/consultations/${visit.id}/details`, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        this.selectedVisit = {
+          ...visit,
+          ...response.data,
+          formattedDate: this.formatDateOfBirth(visit.consultationDate),
+          formattedTime: this.formatTime(visit.consultationDate)
+        };
+        this.visitDetailsModal.show();
+      } catch (error) {
+        console.error('Error loading visit details:', error);
+        // Fallback to basic visit data
+        this.selectedVisit = visit;
+        this.visitDetailsModal.show();
+      }
+    },
+    getMedicationsList(visit) {
+      if (!visit) return [];
+      
+      let medications = [];
+      
+      // Try to get from prescribedMedications first (structured data)
+      if (visit.prescribedMedications && Array.isArray(visit.prescribedMedications)) {
+        medications = visit.prescribedMedications;
+      }
+      // Fallback to medications field (JSON string)
+      else if (visit.medications) {
+        try {
+          const parsed = typeof visit.medications === 'string' 
+            ? JSON.parse(visit.medications) 
+            : visit.medications;
+          medications = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          console.warn('Error parsing medications:', e);
+          medications = [];
+        }
+      }
+      
+      return medications;
+    },
+    getMedicationTotal(visit) {
+      const medications = this.getMedicationsList(visit);
+      return medications.reduce((total, med) => {
+        const price = parseFloat(med.actualPrice || med.price || 0);
+        return total + price;
+      }, 0);
+    },
+    calculateMCDays(startDate, endDate) {
+      if (!startDate || !endDate) return 0;
+      
+      try {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end days
+        return diffDays;
+      } catch (error) {
+        console.error('Error calculating MC days:', error);
+        return 0;
+      }
+    },
+    getStatusClass(status) {
+      const statusMap = {
+        'Completed': 'badge bg-success',
+        'In Progress': 'badge bg-warning',
+        'Cancelled': 'badge bg-danger',
+        'Pending': 'badge bg-info'
+      };
+      return statusMap[status] || 'badge bg-secondary';
+    },
+    reviewMC() {
+      // Show MC modal or perform MC review logic
+      // Placeholder: you can implement your modal logic here
+      alert('Review MC clicked!');
+    },
+    formatQueueNumber(queueNumber) {
+      if (!queueNumber) return '';
+      queueNumber = queueNumber.toString();
+      if (queueNumber.length === 4) return queueNumber;
+      if (queueNumber.length === 3) return '0' + queueNumber;
+      if (queueNumber.length < 3) return queueNumber.padStart(4, '0');
+      return queueNumber;
+    },
+    
+    calculateAge(dateOfBirth) {
+      if (!dateOfBirth) return 'N/A';
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    },
+    
+    printMedicationLabel(medItem) {
+      // Use the exact format from your clinic's medication label
+      const patientName = this.selectedPatient?.name || this.selectedPatient?.displayName || 'N/A';
+      const today = new Date();
+      const formattedDate = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
+      
+      const labelContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Medication Label - ${patientName}</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            body {
+              font-family: Arial, sans-serif;
+              margin: 10mm;
+            }
+            
+            .medication-label {
+              width: 85mm;
+              height: 55mm;
+              border: 2px solid #000;
+              padding: 3mm;
+              background: white;
+              font-size: 9pt;
+              line-height: 1.1;
+            }
+            
+            .label-border {
+              height: 100%;
+              border: 1px solid #000;
+              padding: 2mm;
+            }
+            
+            .label-header {
+              text-align: center;
+              border-bottom: 1px solid #000;
+              padding-bottom: 2mm;
+              margin-bottom: 2mm;
+            }
+            
+            .clinic-name {
+              font-size: 12pt;
+              font-weight: bold;
+              margin-bottom: 1mm;
+              letter-spacing: 0.5px;
+            }
+            
+            .clinic-details {
+              font-size: 7pt;
+              line-height: 1.2;
+            }
+            
+            .label-content {
+              height: calc(100% - 15mm);
+            }
+            
+            .row-item {
+              display: flex;
+              align-items: center;
+              margin-bottom: 1.5mm;
+              height: 4.5mm;
+            }
+            
+            .label-text {
+              font-size: 8pt;
+              font-weight: bold;
+              width: 15mm;
+              flex-shrink: 0;
+            }
+            
+            .field-box {
+              flex: 1;
+              height: 4mm;
+              border: 1px solid #000;
+              margin-left: 2mm;
+              padding: 0 1mm;
+              display: flex;
+              align-items: center;
+              font-size: 8pt;
+            }
+            
+            .field-box.filled {
+              background-color: transparent;
+              font-weight: bold;
+            }
+            
+            .checkbox-section {
+              margin-top: 2mm;
+              display: flex;
+              align-items: center;
+              gap: 5mm;
+            }
+            
+            .checkbox-group {
+              display: flex;
+              align-items: center;
+              gap: 1mm;
+            }
+            
+            .checkbox {
+              width: 3mm;
+              height: 3mm;
+              border: 1px solid #000;
+              position: relative;
+            }
+            
+            .checkbox.checked::after {
+              content: '✓';
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              font-size: 6pt;
+              font-weight: bold;
+            }
+            
+            .checkbox-label {
+              font-size: 7pt;
+              font-weight: bold;
+            }
+            
+            .dosage-section {
+              margin-top: 2mm;
+              border-top: 1px solid #000;
+              padding-top: 2mm;
+            }
+            
+            .dosage-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 2mm;
+              font-size: 7pt;
+            }
+            
+            .dosage-item {
+              display: flex;
+              align-items: center;
+              gap: 1mm;
+            }
+            
+            .dosage-box {
+              width: 8mm;
+              height: 3mm;
+              border: 1px solid #000;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body onload="window.print(); window.close();">
+          <div class="medication-label">
+            <div class="label-border">
+              <div class="label-header">
+                <div class="clinic-name">KLINIK HIDUP SIHAT</div>
+                <div class="clinic-details">
+                  No. 123, Jalan Kesihatan,<br>
+                  Kuala Lumpur, Malaysia<br>
+                  Tel: 03-1234 5678
+                </div>
+              </div>
+              
+              <div class="label-content">
+                <div class="row-item">
+                  <span class="label-text">Name:</span>
+                  <div class="field-box filled">${patientName}</div>
+                </div>
+                
+                <div class="row-item">
+                  <span class="label-text">IC:</span>
+                  <div class="field-box filled">${this.selectedPatient?.nric || this.selectedPatient?.ic || 'N/A'}</div>
+                </div>
+                
+                <div class="row-item">
+                  <span class="label-text">Date:</span>
+                  <div class="field-box filled">${formattedDate}</div>
+                </div>
+                
+                <div class="row-item">
+                  <span class="label-text">Med:</span>
+                  <div class="field-box filled">${medItem.name}</div>
+                </div>
+                
+                <div class="row-item">
+                  <span class="label-text">Qty:</span>
+                  <div class="field-box filled">${medItem.quantity} ${medItem.unitType || 'pcs'}</div>
+                </div>
+                
+                <div class="checkbox-section">
+                  <div class="checkbox-group">
+                    <div class="checkbox ${medItem.category === 'Tablet' ? 'checked' : ''}"></div>
+                    <span class="checkbox-label">Tab</span>
+                  </div>
+                  <div class="checkbox-group">
+                    <div class="checkbox ${medItem.category === 'Syrup' ? 'checked' : ''}"></div>
+                    <span class="checkbox-label">Syr</span>
+                  </div>
+                  <div class="checkbox-group">
+                    <div class="checkbox ${medItem.category === 'Capsule' ? 'checked' : ''}"></div>
+                    <span class="checkbox-label">Cap</span>
+                  </div>
+                  <div class="checkbox-group">
+                    <div class="checkbox ${medItem.category === 'Injection' ? 'checked' : ''}"></div>
+                    <span class="checkbox-label">Inj</span>
+                  </div>
+                </div>
+                
+                <div class="dosage-section">
+                  <div class="dosage-grid">
+                    <div class="dosage-item">
+                      <span>Morning:</span>
+                      <div class="dosage-box">${medItem.dosage || ''}</div>
+                    </div>
+                    <div class="dosage-item">
+                      <span>Afternoon:</span>
+                      <div class="dosage-box">${medItem.dosage || ''}</div>
+                    </div>
+                    <div class="dosage-item">
+                      <span>Evening:</span>
+                      <div class="dosage-box">${medItem.dosage || ''}</div>
+                    </div>
+                    <div class="dosage-item">
+                      <span>Night:</span>
+                      <div class="dosage-box">${medItem.dosage || ''}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const printWindow = window.open('', '_blank', 'width=400,height=300');
+      printWindow.document.write(labelContent);
+      printWindow.document.close();
+    },
+    
+    async saveConsultation() {
+      if (!this.selectedPatient) {
+        alert('Please select a patient first.');
+        return;
+      }
+      
+      if (!this.consultation.diagnosis && !this.consultation.notes) {
+        alert('Please enter either a diagnosis or notes for the consultation.');
+        return;
+      }
+      
+      try {
+        this.saving = true;
+        
+        const formData = {
+          patientId: this.consultation.patientId,
+          doctorId: this.consultation.doctorId || this.$route.query.doctorId,
+          queueId: this.$route.query.queueId,
+          diagnosis: this.consultation.diagnosis,
+          notes: this.consultation.notes,
+          consultationFee: this.consultation.consultationFee,
+          totalAmount: this.consultation.totalAmount,
+          prescribedMedications: this.prescribedMedications.filter(med => med.name),
+          hasMedicalCertificate: this.consultation.hasMedicalCertificate,
+          mcStartDate: this.consultation.mcStartDate,
+          mcEndDate: this.consultation.mcEndDate
+        };
+        
+        console.log('💾 Saving consultation:', formData);
+        
+        const response = await axios.post('/api/consultations', formData, {
+          headers: {
+            'Authorization': `Bearer ${AuthService.getToken()}`
+          }
+        });
+        
+        console.log('✅ Consultation saved:', response.data);
+        
+        // Show success summary
+        this.consultationSummary = {
+          ...response.data,
+          patient: this.selectedPatient,
+          doctor: this.selectedDoctor,
+          medications: this.prescribedMedications.filter(med => med.name)
+        };
+        
+        this.consultationSummaryModal.show();
+        
+      } catch (error) {
+        console.error('❌ Error saving consultation:', error);
+        alert('Error saving consultation. Please try again.');
+      } finally {
+        this.saving = false;
+      }
+    },
+    
+    formatDateOfBirth(dateStr) {
+      if (!dateStr) return 'N/A';
+      try {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+      } catch (error) {
+        return 'Invalid Date';
+      }
+    },
+    
+    formatTime(dateStr) {
+      if (!dateStr) return 'N/A';
+      try {
+        const date = new Date(dateStr);
+        return date.toLocaleTimeString('en-MY', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+      } catch (error) {
+        return 'Invalid Time';
+      }
+    },
+    
+    async loadInitialData() {
+      await Promise.all([
+        this.loadDoctors(),
+        this.loadMedications()
+      ]);
+      
+      await this.initializeFromRoute();
+      
+      // Add initial medication row
+      if (this.prescribedMedications.length === 0) {
+        this.addMedication();
+      }
+    }
+  },
+  
+  async mounted() {
+    console.log('🎯 ConsultationForm mounted with route:', this.$route.query);
+    
+    // Load initial data after setting up parameters
+    await this.loadInitialData();
+    
+    // Initialize modals
+    this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
+    this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
+  }
+};
+</script>

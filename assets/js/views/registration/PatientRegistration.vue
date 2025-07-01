@@ -24,8 +24,8 @@
               <div class="col-md-12">
                 <form @submit.prevent="searchPatients">
                   <div class="input-group">
-                    <input type="text" class="form-control" placeholder="Enter Registration Number, NRIC, or Name" v-model="searchQuery">
-                    <button class="btn btn-primary" type="submit">Search</button>
+                    <input type="text" class="form-control" placeholder="Enter Registration Number, NRIC, or Name" v-model="searchQuery" @keyup.enter="searchPatients">
+                    <button class="btn btn-primary" type="submit" @click="searchPatients">Search</button>
                   </div>
                 </form>
               </div>
@@ -261,21 +261,20 @@
               <div class="col-md-12">
                 <label class="form-label">NRIC</label>
                 <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 123456-12-1234)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
-                <div class="form-check-container mt-2">
+                <div class="form-check-container mt-2" style="font-size: 0.75rem;">
                   <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="nricFormat" id="newNric" value="new" v-model="nricFormatType" @change="handleNRICFormatChange">
-                    <label class="form-check-label" for="newNric">
+                    <input class="form-check-input" type="radio" name="nricFormat" id="newNric" value="new" v-model="nricFormatType" @change="handleNRICFormatChange" style="transform: scale(0.85);">
+                    <label class="form-check-label" for="newNric" style="font-size: 0.75rem;">
                       New NRIC (with dashes)
                     </label>
                   </div>
                   <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="nricFormat" id="armyPolice" value="army" v-model="nricFormatType" @change="handleNRICFormatChange">
-                    <label class="form-check-label" for="armyPolice">
+                    <input class="form-check-input" type="radio" name="nricFormat" id="armyPolice" value="army" v-model="nricFormatType" @change="handleNRICFormatChange" style="transform: scale(0.85);">
+                    <label class="form-check-label" for="armyPolice" style="font-size: 0.75rem;">
                       Army/Police (no dashes)
                     </label>
                   </div>
                 </div>
-                <small class="text-muted">{{ nricFormatType === 'new' ? '12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)' : 'Army/Police format: no dashes (e.g., 640611015064)' }}</small>
               </div>
             </div>
 
@@ -283,21 +282,20 @@
               <div class="col-md-6">
                 <label class="form-label">Phone</label>
                 <input type="tel" v-model="patient.phone" class="form-control" required @input="handlePhoneInput">
-                <div class="form-check-container mt-2">
+                <div class="form-check-container mt-2" style="font-size: 0.75rem;">
                   <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="phoneFormat" id="mobile" value="mobile" v-model="phoneFormatType" @change="handlePhoneFormatChange">
-                    <label class="form-check-label" for="mobile">
+                    <input class="form-check-input" type="radio" name="phoneFormat" id="mobile" value="mobile" v-model="phoneFormatType" @change="handlePhoneFormatChange" style="transform: scale(0.85);">
+                    <label class="form-check-label" for="mobile" style="font-size: 0.75rem;">
                       Mobile phone
                     </label>
                   </div>
                   <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="radio" name="phoneFormat" id="fixedLine" value="fixed" v-model="phoneFormatType" @change="handlePhoneFormatChange">
-                    <label class="form-check-label" for="fixedLine">
+                    <input class="form-check-input" type="radio" name="phoneFormat" id="fixedLine" value="fixed" v-model="phoneFormatType" @change="handlePhoneFormatChange" style="transform: scale(0.85);">
+                    <label class="form-check-label" for="fixedLine" style="font-size: 0.75rem;">
                       Fixed line
                     </label>
                   </div>
                 </div>
-                <small class="text-muted">{{ phoneFormatType === 'mobile' ? 'Mobile format: 011-39954423' : 'Fixed line format: 01-139954423' }}</small>
               </div>
               <div class="col-md-6">
                 <label class="form-label">Date of Birth</label>
@@ -384,6 +382,7 @@
 <script>
 import axios from 'axios';
 import { formatNRIC, cleanNRIC, isValidNRIC } from '../../utils/nricFormatter.js';
+import AuthService from '../../services/AuthService.js';
 
 export default {
   watch: {
@@ -586,13 +585,77 @@ export default {
       }
     },
     async searchPatients() {
+      console.log('🔍 Search button clicked! Query:', this.searchQuery);
+      
+      if (!this.searchQuery || this.searchQuery.trim() === '') {
+        alert('Please enter a search term');
+        return;
+      }
+      
       try {
         this.searchPerformed = true;
-        const response = await axios.get(`/api/patients/search?query=${this.searchQuery}`);
-        this.searchResults = response.data;
+        
+        // Ensure authentication headers are set
+        const user = AuthService.getCurrentUser();
+        const token = user ? user.token : null;
+        if (!token) {
+          alert('Authentication required. Please log in again.');
+          this.$router.push('/login');
+          return;
+        }
+        
+        // Set authentication headers
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+        
+        console.log('📡 Making API call to:', `/api/patients/search?query=${this.searchQuery}`);
+        console.log('🔑 Using auth token:', token.substring(0, 20) + '...');
+        
+        const response = await axios.get(`/api/patients/search?query=${encodeURIComponent(this.searchQuery)}`, {
+          headers: headers
+        });
+        
+        console.log('✅ Search response:', response.data);
+        
+        // Handle both array response and paginated response
+        if (response.data.data && Array.isArray(response.data.data)) {
+          this.searchResults = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          this.searchResults = response.data;
+        } else {
+          console.error('Unexpected response format:', response.data);
+          this.searchResults = [];
+        }
+        
+        if (this.searchResults.length === 0) {
+          console.log('📭 No results found for query:', this.searchQuery);
+        } else {
+          console.log('📄 Found', this.searchResults.length, 'results');
+        }
+        
       } catch (error) {
-        console.error('Error searching patients:', error);
+        console.error('❌ Error searching patients:', error);
+        console.error('❌ Error details:', error.response?.data || error.message);
+        console.error('❌ Error status:', error.response?.status);
+        console.error('❌ Full error object:', error);
+        
         this.searchResults = [];
+        
+        // Show user-friendly error message
+        if (error.response?.status === 401) {
+          alert('Authentication expired. Please log in again.');
+          this.$router.push('/login');
+        } else if (error.response?.status === 403) {
+          alert('You do not have permission to search for patients.');
+        } else if (error.response?.status === 500) {
+          alert('Server error. Please try again later.');
+        } else if (error.code === 'NETWORK_ERROR' || !error.response) {
+          alert('Network error. Please check your connection and try again.');
+        } else {
+          alert(`Error searching for patients: ${error.response?.data?.message || error.message || 'Unknown error'}`);
+        }
       }
     },
 

@@ -55,8 +55,8 @@ Encore
         loaderOptions.sassOptions = {
             // Do *not* print warnings that originate in files under node_modules
             quietDeps: true,
-            // (optional) hide our own warnings too; comment out if you still want them
-            // quiet: true,
+            // Suppress specific deprecation warnings for @import rules
+            silenceDeprecations: ['import'],
         };
     })
 

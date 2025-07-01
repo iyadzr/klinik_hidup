@@ -79,42 +79,124 @@ class FinancialController extends AbstractController
     public function payments(Request $request): JsonResponse
     {
         $page = (int) $request->query->get('page', 1);
-        $limit = (int) $request->query->get('limit', 20);
+        $limit = (int) $request->query->get('limit', 50);
         $startDate = $request->query->get('start_date');
         $endDate = $request->query->get('end_date');
+        $paymentMethod = $request->query->get('payment_method');
 
-        $criteria = [];
+        // Build query with all payment details including who processed it and medicines
+        $qb = $this->paymentRepository->createQueryBuilder('p')
+            ->leftJoin('p.consultation', 'c')
+            ->leftJoin('c.patient', 'patient')
+            ->leftJoin('c.doctor', 'doctor')
+            ->leftJoin('p.processedBy', 'staff')
+            ->leftJoin('p.queue', 'q')
+            ->leftJoin('c.prescribedMedications', 'pm')
+            ->leftJoin('pm.medication', 'm')
+            ->orderBy('p.paymentDate', 'DESC');
+
+        // Apply filters
         if ($startDate) {
-            $criteria['start_date'] = new \DateTime($startDate);
+            $qb->andWhere('DATE(p.paymentDate) >= :startDate')
+               ->setParameter('startDate', $startDate);
         }
         if ($endDate) {
-            $criteria['end_date'] = new \DateTime($endDate);
+            $qb->andWhere('DATE(p.paymentDate) <= :endDate')
+               ->setParameter('endDate', $endDate);
+        }
+        if ($paymentMethod) {
+            $qb->andWhere('p.paymentMethod = :paymentMethod')
+               ->setParameter('paymentMethod', $paymentMethod);
         }
 
-        $payments = $this->paymentRepository->findPaginated($page, $limit, $criteria);
-        $total = $this->paymentRepository->countFiltered($criteria);
+        // Default to today if no date filter
+        if (!$startDate && !$endDate) {
+            $today = (new \DateTime())->format('Y-m-d');
+            $qb->andWhere('DATE(p.paymentDate) = :today')
+               ->setParameter('today', $today);
+        }
+
+        // Get total count
+        $totalQb = clone $qb;
+        $total = $totalQb->select('COUNT(DISTINCT p.id)')->getQuery()->getSingleScalarResult();
+
+        // Apply pagination
+        $qb->setFirstResult(($page - 1) * $limit)
+           ->setMaxResults($limit);
+
+        $payments = $qb->getQuery()->getResult();
 
         $data = array_map(function ($payment) {
+            $consultation = $payment->getConsultation();
+            $queue = $payment->getQueue();
+            $processedBy = $payment->getProcessedBy();
+            
+            // Get medicines information
+            $medicines = [];
+            if ($consultation) {
+                $prescribedMeds = $consultation->getPrescribedMedications();
+                foreach ($prescribedMeds as $pm) {
+                    $medication = $pm->getMedication();
+                    if ($medication) {
+                        $medicines[] = [
+                            'name' => $medication->getName(),
+                            'dosage' => $pm->getDosage() ?? 'N/A',
+                            'frequency' => $pm->getFrequency() ?? 'N/A',
+                            'duration' => $pm->getDuration() ?? 'N/A'
+                        ];
+                    }
+                }
+            }
+
             return [
                 'id' => $payment->getId(),
                 'amount' => $payment->getAmount(),
                 'payment_method' => $payment->getPaymentMethod(),
                 'payment_date' => $payment->getPaymentDate()->format('Y-m-d H:i:s'),
+                'payment_time' => $payment->getPaymentDate()->format('h:i A'),
                 'reference' => $payment->getReference(),
-                'consultation' => [
-                    'id' => $payment->getConsultation()->getId(),
-                    'patient_name' => $payment->getConsultation()->getPatient()->getName(),
-                    'doctor_name' => $payment->getConsultation()->getDoctor()->getName(),
+                'notes' => $payment->getNotes(),
+                'queue_number' => $payment->getQueueNumber(),
+                'processed_by' => [
+                    'id' => $processedBy ? $processedBy->getId() : null,
+                    'name' => $processedBy ? $processedBy->getName() : 'System',
+                    'email' => $processedBy ? $processedBy->getEmail() : null,
                 ],
+                'patient' => $consultation ? [
+                    'id' => $consultation->getPatient()->getId(),
+                    'name' => $consultation->getPatient()->getName(),
+                    'nric' => $consultation->getPatient()->getNric(),
+                    'phone' => $consultation->getPatient()->getPhone(),
+                ] : null,
+                'doctor' => $consultation ? [
+                    'id' => $consultation->getDoctor()->getId(),
+                    'name' => $consultation->getDoctor()->getName(),
+                ] : null,
+                'consultation' => $consultation ? [
+                    'id' => $consultation->getId(),
+                    'consultation_fee' => $consultation->getConsultationFee(),
+                    'medicines_fee' => $consultation->getMedicinesFee(),
+                ] : null,
+                'medicines' => $medicines,
+                'medicines_count' => count($medicines),
+                'medicines_summary' => count($medicines) > 0 
+                    ? implode(', ', array_slice(array_column($medicines, 'name'), 0, 3)) 
+                    . (count($medicines) > 3 ? ' (+' . (count($medicines) - 3) . ' more)' : '')
+                    : 'No medicines'
             ];
         }, $payments);
 
         return new JsonResponse([
             'data' => $data,
-            'total' => $total,
+            'total' => (int)$total,
             'page' => $page,
             'limit' => $limit,
             'total_pages' => ceil($total / $limit),
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'payment_method' => $paymentMethod,
+            ]
         ]);
     }
 

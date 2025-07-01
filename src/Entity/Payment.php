@@ -32,6 +32,17 @@ class Payment
     #[ORM\Column(length: 1000, nullable: true)]
     private ?string $notes = null;
 
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: false)]
+    private ?User $processedBy = null;
+
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?Queue $queue = null;
+
+    #[ORM\Column(length: 10, nullable: true)]
+    private ?string $queueNumber = null;
+
     public function __construct()
     {
         $this->paymentDate = new \DateTimeImmutable();
@@ -105,6 +116,39 @@ class Payment
     public function setNotes(?string $notes): self
     {
         $this->notes = $notes;
+        return $this;
+    }
+
+    public function getProcessedBy(): ?User
+    {
+        return $this->processedBy;
+    }
+
+    public function setProcessedBy(?User $processedBy): self
+    {
+        $this->processedBy = $processedBy;
+        return $this;
+    }
+
+    public function getQueue(): ?Queue
+    {
+        return $this->queue;
+    }
+
+    public function setQueue(?Queue $queue): self
+    {
+        $this->queue = $queue;
+        return $this;
+    }
+
+    public function getQueueNumber(): ?string
+    {
+        return $this->queueNumber;
+    }
+
+    public function setQueueNumber(?string $queueNumber): self
+    {
+        $this->queueNumber = $queueNumber;
         return $this;
     }
 }

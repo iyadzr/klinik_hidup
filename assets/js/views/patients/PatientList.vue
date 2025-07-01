@@ -259,7 +259,7 @@
                         <button 
                           type="button" 
                           class="btn btn-outline-primary btn-sm" 
-                          @click="showVisitDetails(visit)"
+                          @click="viewVisitDetails(visit)"
                         >
                           <i class="fas fa-eye"></i>
                         </button>

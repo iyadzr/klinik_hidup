@@ -26,6 +26,15 @@ class PrescribedMedication
     #[Assert\Positive]
     private ?int $quantity = null;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $dosage = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $frequency = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $duration = null;
+
     #[ORM\Column(length: 500, nullable: true)]
     private ?string $instructions = null;
 
@@ -97,6 +106,39 @@ class PrescribedMedication
     public function setActualPrice(?string $actualPrice): static
     {
         $this->actualPrice = $actualPrice;
+        return $this;
+    }
+
+    public function getDosage(): ?string
+    {
+        return $this->dosage;
+    }
+
+    public function setDosage(?string $dosage): static
+    {
+        $this->dosage = $dosage;
+        return $this;
+    }
+
+    public function getFrequency(): ?string
+    {
+        return $this->frequency;
+    }
+
+    public function setFrequency(?string $frequency): static
+    {
+        $this->frequency = $frequency;
+        return $this;
+    }
+
+    public function getDuration(): ?string
+    {
+        return $this->duration;
+    }
+
+    public function setDuration(?string $duration): static
+    {
+        $this->duration = $duration;
         return $this;
     }
 

@@ -5,7 +5,7 @@ import PatientList from '../views/patients/PatientList.vue';
 import DoctorList from '../views/doctors/DoctorList.vue';
 import QueueManagement from '../views/queue/QueueManagement.vue';
 import QueueDisplay from '../views/queue/QueueDisplay.vue';
-import ConsultationForm from '../views/consultations/ConsultationForm.vue';
+import ConsultationForm from '../views/consultations/ConsultationFormNew.vue';
 import ConsultationList from '../views/consultations/ConsultationList.vue';
 import OngoingConsultations from '../views/consultations/OngoingConsultations.vue';
 import PatientRegistration from '../views/registration/PatientRegistration.vue';
@@ -13,6 +13,7 @@ import ClinicAssistantList from '../views/clinic-assistants/ClinicAssistantList.
 import Login from '../views/auth/Login.vue';
 import Register from '../views/auth/Register.vue';
 import PaymentList from '../views/payments/PaymentList.vue';
+import PaymentsDashboard from '../views/finance/PaymentsDashboard.vue';
 import PrescriptionForm from '../views/prescriptions/PrescriptionForm.vue';
 import UserProfile from '../views/UserProfile.vue';
 import FinancialDashboard from '../views/finance/FinancialDashboard.vue';
@@ -135,6 +136,12 @@ const routes = [
     path: '/payments',
     name: 'payments',
     component: PaymentList,
+    meta: { requiresAuth: true, roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
+  },
+  {
+    path: '/payments/dashboard',
+    name: 'PaymentsDashboard',
+    component: PaymentsDashboard,
     meta: { requiresAuth: true, roles: ['ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {

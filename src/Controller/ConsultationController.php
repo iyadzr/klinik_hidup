@@ -642,7 +642,7 @@ class ConsultationController extends AbstractController
         // Get queue entries that are waiting for consultation
         $queueQb = $this->entityManager->getRepository(Queue::class)
             ->createQueryBuilder('q')
-            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId', 'p.preInformedIllness as symptoms', 'q.metadata')
+            ->select('q', 'p', 'd') // Select full objects to access entity methods
             ->join('q.patient', 'p')
             ->join('q.doctor', 'd')
             ->where('q.status IN (:statuses)')
@@ -664,53 +664,74 @@ class ConsultationController extends AbstractController
         // Add queue entries to the data
         $groupedQueues = [];
         foreach ($queueEntries as $queue) {
-            // Check if this is a group consultation
-            $groupId = null;
-            if (isset($queue['metadata']) && $queue['metadata']) {
-                $meta = json_decode($queue['metadata'], true);
-                if (isset($meta['groupId'])) {
-                    $groupId = $meta['groupId'];
-                }
+            $patient = $queue->getPatient();
+            $doctor = $queue->getDoctor();
+            
+            if (!$patient || !$doctor) {
+                continue; // Skip incomplete records
             }
-            if ($groupId) {
+            
+            // Check if this is a group consultation using Queue entity methods
+            $groupId = $queue->getGroupId();
+            $isGroupConsultation = $queue->isGroupConsultation();
+            
+            if ($groupId && $isGroupConsultation) {
                 // Group consultation: group by groupId
                 if (!isset($groupedQueues[$groupId])) {
+                    // Fetch all patients in this group
+                    $allGroupQueues = $this->entityManager->getRepository(Queue::class)
+                        ->createQueryBuilder('gq')
+                        ->select('gq', 'gp') // Select queue and patient
+                        ->join('gq.patient', 'gp')
+                        ->where('gq.metadata LIKE :groupId')
+                        ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
+                        ->getQuery()
+                        ->getResult();
+                    
+                    $groupPatients = [];
+                    foreach ($allGroupQueues as $groupQueue) {
+                        $groupPatient = $groupQueue->getPatient();
+                        if ($groupPatient) {
+                            $groupPatients[] = [
+                                'patientName' => $groupPatient->getName(),
+                                'patientId' => $groupPatient->getId(),
+                                'symptoms' => $groupPatient->getPreInformedIllness()
+                            ];
+                        }
+                    }
+                    
                     $groupedQueues[$groupId] = [
                         'id' => null,
-                        'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface
-                            ? $queue['queueDateTime']->format('Y-m-d H:i:s')
-                            : $queue['queueDateTime'],
-                        'doctorName' => $queue['doctorName'],
-                        'doctorId' => $queue['doctorId'],
-                        'status' => $queue['status'],
+                        'consultationDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                        'doctorName' => $doctor->getName(),
+                        'doctorId' => $doctor->getId(),
+                        'status' => $queue->getStatus(),
                         'isQueueEntry' => true,
-                        'queueId' => $queue['queueId'],
-                        'queueNumber' => $queue['queueNumber'],
+                        'queueId' => $queue->getId(),
+                        'queueNumber' => $queue->getQueueNumber(),
                         'isGroupConsultation' => true,
-                        'patients' => []
+                        'patients' => $groupPatients
                     ];
+                    $this->logger->info("Created new group consultation entry", [
+                        'groupId' => $groupId,
+                        'queueNumber' => $queue->getQueueNumber(),
+                        'patientCount' => count($groupPatients)
+                    ]);
                 }
-                $groupedQueues[$groupId]['patients'][] = [
-                    'patientName' => $queue['patientName'],
-                    'patientId' => $queue['patientId'],
-                    'symptoms' => $queue['symptoms']
-                ];
             } else {
                 // Single patient queue
                 $ongoingData[] = [
                     'id' => null,
-                    'consultationDate' => $queue['queueDateTime'] instanceof \DateTimeInterface
-                        ? $queue['queueDateTime']->format('Y-m-d H:i:s')
-                        : $queue['queueDateTime'],
-                    'patientName' => $queue['patientName'],
-                    'patientId' => $queue['patientId'],
-                    'doctorName' => $queue['doctorName'],
-                    'doctorId' => $queue['doctorId'],
-                    'status' => $queue['status'],
-                    'symptoms' => $queue['symptoms'],
+                    'consultationDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                    'patientName' => $patient->getName(),
+                    'patientId' => $patient->getId(),
+                    'doctorName' => $doctor->getName(),
+                    'doctorId' => $doctor->getId(),
+                    'status' => $queue->getStatus(),
+                    'symptoms' => $patient->getPreInformedIllness(),
                     'isQueueEntry' => true,
-                    'queueId' => $queue['queueId'],
-                    'queueNumber' => $queue['queueNumber'],
+                    'queueId' => $queue->getId(),
+                    'queueNumber' => $queue->getQueueNumber(),
                     'isGroupConsultation' => false
                 ];
             }
@@ -808,10 +829,21 @@ class ConsultationController extends AbstractController
 
         // Add consultations to the data
         foreach ($consultations as $consultation) {
+            // Properly format the consultation date/time
+            $consultationTime = null;
+            if ($consultation['consultationDate'] instanceof \DateTimeInterface) {
+                $consultationTime = $consultation['consultationDate']->format('Y-m-d H:i:s');
+            } elseif ($consultation['consultationDate']) {
+                $consultationTime = $consultation['consultationDate'];
+            } elseif ($consultation['createdAt'] instanceof \DateTimeInterface) {
+                // Fallback to createdAt if consultationDate is null
+                $consultationTime = $consultation['createdAt']->format('Y-m-d H:i:s');
+            }
+
             $allPatients[] = [
                 'id' => $consultation['id'],
                 'type' => 'consultation',
-                'time' => $consultation['consultationDate'],
+                'time' => $consultationTime,
                 'patientName' => $consultation['patientName'],
                 'patientId' => $consultation['patientId'],
                 'doctorName' => $consultation['doctorName'],
@@ -843,10 +875,18 @@ class ConsultationController extends AbstractController
 
         // Add queue entries to the data
         foreach ($queueEntries as $queue) {
+            // Properly format the queue date/time
+            $queueTime = null;
+            if ($queue['queueDateTime'] instanceof \DateTimeInterface) {
+                $queueTime = $queue['queueDateTime']->format('Y-m-d H:i:s');
+            } elseif ($queue['queueDateTime']) {
+                $queueTime = $queue['queueDateTime'];
+            }
+
             $allPatients[] = [
                 'id' => $queue['queueId'],
                 'type' => 'queue',
-                'time' => $queue['queueDateTime'],
+                'time' => $queueTime,
                 'patientName' => $queue['patientName'],
                 'patientId' => $queue['patientId'],
                 'doctorName' => $queue['doctorName'],
@@ -966,6 +1006,79 @@ class ConsultationController extends AbstractController
         } catch (\Exception $e) {
             $this->logger->error('Error updating payment status: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Error updating payment status'], 500);
+        }
+    }
+
+    #[Route('/{id}/medications', name: 'app_consultation_medications', methods: ['GET'])]
+    public function getConsultationMedications(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $consultation = $this->entityManager->getRepository(Consultation::class)->find($id);
+            
+            if (!$consultation) {
+                return new JsonResponse(['message' => 'Consultation not found'], 404);
+            }
+            
+            // Get prescribed medications from PrescribedMedication entities
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->createQueryBuilder('pm')
+                ->leftJoin('pm.medication', 'm')
+                ->where('pm.consultation = :consultationId')
+                ->setParameter('consultationId', $id)
+                ->orderBy('pm.prescribedAt', 'ASC')
+                ->getQuery()
+                ->getResult();
+            
+            $medicationsData = [];
+            
+            if (!empty($prescribedMeds)) {
+                // Use prescribed medications entities
+                foreach ($prescribedMeds as $prescribedMed) {
+                    $medication = $prescribedMed->getMedication();
+                    $medicationsData[] = [
+                        'name' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                        'medicationName' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                        'dosage' => $prescribedMed->getDosage(),
+                        'frequency' => $prescribedMed->getFrequency(),
+                        'duration' => $prescribedMed->getDuration(),
+                        'instructions' => $prescribedMed->getInstructions(),
+                        'quantity' => $prescribedMed->getQuantity(),
+                        'unitType' => $medication ? $medication->getUnitType() : 'pieces',
+                        'actualPrice' => $prescribedMed->getActualPrice()
+                    ];
+                }
+            } else {
+                // Fallback to medications JSON field
+                if ($consultation->getMedications()) {
+                    $medications = json_decode($consultation->getMedications(), true);
+                    if (is_array($medications)) {
+                        foreach ($medications as $med) {
+                            $medicationsData[] = [
+                                'name' => $med['name'] ?? 'Unknown Medicine',
+                                'medicationName' => $med['name'] ?? 'Unknown Medicine',
+                                'dosage' => $med['dosage'] ?? '-',
+                                'frequency' => $med['frequency'] ?? '-',
+                                'duration' => $med['duration'] ?? '-',
+                                'instructions' => $med['instructions'] ?? '-',
+                                'quantity' => $med['quantity'] ?? 1,
+                                'unitType' => $med['unitType'] ?? 'pieces',
+                                'actualPrice' => $med['actualPrice'] ?? 0
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            return new JsonResponse($medicationsData);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching consultation medications: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch medications'], 500);
         }
     }
 }

@@ -83,17 +83,44 @@
                       <i class="fas fa-calendar me-2"></i>{{ formatDate(consultation.consultationDate) }}
                     </p>
                     <p v-if="consultation.queueNumber" class="card-text text-muted mb-2">
-                      <i class="fas fa-list-ol me-2"></i>Queue #{{ consultation.queueNumber }}
+                      <i class="fas fa-list-ol me-2"></i>Queue #{{ formatQueueNumber(consultation.queueNumber) }}
                     </p>
                     <template v-if="consultation.isGroupConsultation">
-                      <div class="mb-2">
-                        <label class="form-label">Group Members:</label>
-                        <ul class="list-group mb-2">
-                          <li v-for="patient in consultation.patients" :key="patient.patientId" class="list-group-item">
-                            <div class="fw-bold">{{ patient.patientName }}</div>
-                            <div><strong>Symptoms:</strong> <span class="text-muted">{{ truncateText(patient.symptoms, 80) }}</span></div>
-                          </li>
-                        </ul>
+                      <div class="mb-3">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                          <h6 class="mb-0">
+                            <i class="fas fa-users me-2 text-primary"></i>
+                            Group Members ({{ consultation.patients?.length || 0 }})
+                          </h6>
+                          <span class="badge bg-primary">{{ consultation.patients?.length || 0 }} {{ (consultation.patients?.length || 0) === 1 ? 'patient' : 'patients' }}</span>
+                        </div>
+                        
+                        <!-- Debug Info (remove in production) -->
+                        <div v-if="consultation.patients?.length === 0" class="alert alert-warning small mb-2">
+                          <i class="fas fa-exclamation-triangle me-1"></i>
+                          No patients found in group. Queue: {{ consultation.queueNumber }}
+                        </div>
+                        
+                        <!-- Simple Patient Name List -->
+                        <div class="mb-3">
+                          <div v-for="(patient, index) in consultation.patients?.slice(0, 6)" 
+                               :key="patient.patientId || index" 
+                               class="d-flex align-items-center justify-content-between py-2 px-3 mb-2 bg-light rounded">
+                            <div class="d-flex align-items-center">
+                              <span class="badge bg-info text-white me-2">{{ index + 1 }}</span>
+                              <span class="fw-medium">{{ patient.patientName }}</span>
+                            </div>
+                            <i class="fas fa-user-circle text-muted"></i>
+                          </div>
+                        </div>
+                        
+                        <!-- Show "and X more" if too many patients -->
+                        <div v-if="consultation.patients?.length > 6" class="text-center mb-2">
+                          <small class="text-muted">
+                            <i class="fas fa-ellipsis-h me-1"></i>
+                            Showing first 6 of {{ consultation.patients.length }} {{ consultation.patients.length === 1 ? 'patient' : 'patients' }}
+                          </small>
+                        </div>
                         <button
                           v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
                           @click="startConsultation(consultation)"
@@ -245,7 +272,7 @@
                           </div>
                           <div>
                             <div class="fw-medium">{{ patient.patientName }}</div>
-                            <small class="text-muted">{{ patient.type === 'queue' ? 'Queue #' + patient.queueNumber : 'Consultation' }}</small>
+                            <small class="text-muted">{{ patient.type === 'queue' ? 'Queue #' + formatQueueNumber(patient.queueNumber) : 'Consultation' }}</small>
                           </div>
                         </div>
                       </td>
@@ -296,7 +323,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
-import { getTodayInMYT } from '../../utils/dateUtils';
+import { getTodayInMYT, formatQueueNumber } from '../../utils/dateUtils';
 import AuthService from '../../services/AuthService';
 
 export default {
@@ -514,29 +541,42 @@ export default {
     
     const formatTime = (dateInput) => {
       try {
-        if (!dateInput) return 'N/A';
+        // Handle null, undefined, or empty values
+        if (!dateInput || dateInput === null || dateInput === undefined || dateInput === '') {
+          return 'N/A';
+        }
         
         let date;
         if (dateInput instanceof Date) {
           date = dateInput;
         } else if (typeof dateInput === 'string') {
+          // Clean the string and try to parse it
+          const cleanInput = dateInput.trim();
+          if (cleanInput === '') return 'N/A';
+          date = new Date(cleanInput);
+        } else if (typeof dateInput === 'number') {
+          // Handle timestamp
           date = new Date(dateInput);
         } else {
+          console.warn('Unexpected time input type:', typeof dateInput, dateInput);
           return 'Invalid Time';
         }
         
+        // Validate the parsed date
         if (isNaN(date.getTime())) {
+          console.warn('Invalid date parsed from:', dateInput);
           return 'Invalid Time';
         }
         
+        // Format the time for Malaysia timezone
         return date.toLocaleTimeString('en-MY', {
           timeZone: 'Asia/Kuala_Lumpur',
           hour: '2-digit',
           minute: '2-digit',
-          second: '2-digit'
+          hour12: true
         });
       } catch (error) {
-        console.error('Error formatting time:', error, 'Input:', dateInput);
+        console.error('Error formatting time:', error, 'Input:', dateInput, 'Type:', typeof dateInput);
         return 'Invalid Time';
       }
     };
@@ -662,6 +702,22 @@ export default {
         router.push(`/consultations/${patient.id}`);
       }
     };
+    
+    const getPatientCardClasses = (patientCount) => {
+      // Responsive classes based on number of patients
+      if (patientCount === 1) {
+        return 'col-12'; // Full width for single patient
+      } else if (patientCount === 2) {
+        return 'col-md-6 col-12'; // 2 cards per row on medium screens+
+      } else if (patientCount === 3) {
+        return 'col-lg-4 col-md-6 col-12'; // 3 cards per row on large screens+
+      } else if (patientCount === 4) {
+        return 'col-xl-3 col-lg-4 col-md-6 col-12'; // 4 cards per row on xl screens+
+      } else {
+        // For 5+ patients, show max 4 in responsive grid
+        return 'col-xl-3 col-lg-4 col-md-6 col-12';
+      }
+    };
 
     // This is the fix: reload data when navigating back to the component
     watch(
@@ -692,6 +748,7 @@ export default {
       formatDate,
       formatTime,
       truncateText,
+      formatQueueNumber,
       // Today's Patients Modal
       todayPatients,
       loadingTodayPatients,
@@ -700,6 +757,7 @@ export default {
       formatTodayPatientStatus,
       startPatientConsultation,
       continuePatientConsultation,
+      getPatientCardClasses,
     };
   }
 };
@@ -791,5 +849,69 @@ export default {
 .avatar-sm {
   width: 32px;
   height: 32px;
+}
+
+/* Group Consultation Styles */
+.symptoms-text {
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.text-xs {
+  font-size: 0.65rem !important;
+}
+
+.group-member-card {
+  transition: all 0.2s ease;
+  border-radius: 8px !important;
+}
+
+.group-member-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+
+.card-body.p-2 {
+  padding: 0.75rem !important;
+}
+
+/* Responsive text sizing */
+@media (max-width: 768px) {
+  .symptoms-text {
+    font-size: 0.7rem;
+  }
+  
+  .card-title {
+    font-size: 0.9rem !important;
+  }
+}
+
+/* Ensure cards have consistent height */
+.consultation-card .card {
+  min-height: 120px;
+}
+
+.consultation-card .bg-light {
+  background-color: #f8f9fa !important;
+  border: 1px solid #e9ecef !important;
+}
+
+/* Professional hover effects for patient cards */
+.consultation-card .bg-light:hover {
+  background-color: #e2e6ea !important;
+  border-color: #6c757d !important;
+}
+
+/* Group badge styling */
+.badge.bg-primary {
+  background-color: #0d6efd !important;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.badge.bg-info {
+  background-color: #0dcaf0 !important;
+  color: #000 !important;
+  font-weight: 600;
 }
 </style> 
