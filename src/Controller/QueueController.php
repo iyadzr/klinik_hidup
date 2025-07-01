@@ -76,7 +76,7 @@ class QueueController extends AbstractController
             
             if ($this->cache) {
                 $queueData = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $status, $page, $limit) {
-                    $item->expiresAfter(60); // 1 minute cache for queue data
+                    $item->expiresAfter(5); // 5 seconds cache for near real-time updates
                     return $this->buildQueueList($date, $status, $page, $limit);
                 });
             } else {
@@ -101,15 +101,15 @@ class QueueController extends AbstractController
         
         // Apply date filter
         if ($date) {
-            $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
-            $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $start = \App\Service\TimezoneService::startOfDay($date);
+            $end = \App\Service\TimezoneService::endOfDay($date);
             
             $qb->where('q.queueDateTime BETWEEN :start AND :end')
                ->setParameter('start', $start)
                ->setParameter('end', $end);
         } else {
             // Default to last 7 days for performance
-            $sevenDaysAgo = new \DateTime('-7 days', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $sevenDaysAgo = \App\Service\TimezoneService::createDateTime('-7 days');
             $qb->where('q.queueDateTime >= :sevenDaysAgo')
                ->setParameter('sevenDaysAgo', $sevenDaysAgo);
         }
@@ -179,7 +179,8 @@ class QueueController extends AbstractController
                         'isPaid' => $queue->getIsPaid(),
                         'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                         'paymentMethod' => $queue->getPaymentMethod(),
-                        'amount' => $queue->getAmount(),
+                        'amount' => $this->getQueueTotalAmount($queue),
+                        'totalAmount' => $this->getQueueTotalAmount($queue),
                         'consultationId' => $this->getQueueConsultationId($queue),
                         'hasMedicines' => $this->checkQueueHasMedicines($queue)
                     ];
@@ -208,7 +209,8 @@ class QueueController extends AbstractController
                     'isPaid' => $queue->getIsPaid(),
                     'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                     'paymentMethod' => $queue->getPaymentMethod(),
-                    'amount' => $queue->getAmount(),
+                    'amount' => $this->getQueueTotalAmount($queue),
+                    'totalAmount' => $this->getQueueTotalAmount($queue),
                     'consultationId' => $this->getQueueConsultationId($queue),
                     'hasMedicines' => $this->checkQueueHasMedicines($queue)
                 ];
@@ -218,6 +220,42 @@ class QueueController extends AbstractController
         return $queueData;
     }
     
+    /**
+     * Get total amount for queue - from queue amount or consultation totalAmount
+     */
+    private function getQueueTotalAmount(Queue $queue): ?string
+    {
+        // First try to get amount from queue itself
+        if ($queue->getAmount() !== null && $queue->getAmount() !== '0.00') {
+            return $queue->getAmount();
+        }
+        
+        // If queue amount is missing, get from consultation
+        $consultation = $this->getQueueConsultation($queue);
+        if ($consultation && $consultation->getTotalAmount() !== '0.00') {
+            return $consultation->getTotalAmount();
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get consultation for a queue entry
+     */
+    private function getQueueConsultation(Queue $queue): ?\App\Entity\Consultation
+    {
+        return $this->entityManager->getRepository(\App\Entity\Consultation::class)
+            ->createQueryBuilder('c')
+            ->where('c.patient = :patient')
+            ->andWhere('c.doctor = :doctor')
+            ->setParameter('patient', $queue->getPatient())
+            ->setParameter('doctor', $queue->getDoctor())
+            ->orderBy('c.consultationDate', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     /**
      * Get consultation ID for a queue entry
      */
@@ -310,7 +348,7 @@ class QueueController extends AbstractController
             $queue->setStatus('waiting');
             
             // Assign queue number based on registration time and running number for the hour
-            $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $queueDateTime = \App\Service\TimezoneService::nowImmutable();
             $queue->setQueueDateTime($queueDateTime);
             $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
             
@@ -356,6 +394,9 @@ class QueueController extends AbstractController
                 $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
                 $this->cache->delete('queue_stats');
             }
+            
+            // Broadcast SSE update for new queue entry
+            $this->broadcastQueueUpdate($queue);
             
             $this->logger->info('Queue entry created', [
                 'queueId' => $queue->getId(),
@@ -420,10 +461,9 @@ class QueueController extends AbstractController
             $createdQueues = [];
             
             // Set queue date/time
-            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
             $queueDateTime = isset($data['queueDateTime']) 
-                ? new \DateTimeImmutable($data['queueDateTime'], $myt)
-                : new \DateTimeImmutable('now', $myt);
+                ? \App\Service\TimezoneService::createDateTimeImmutable($data['queueDateTime'])
+                : \App\Service\TimezoneService::nowImmutable();
             
             foreach ($data['patients'] as $patientData) {
                 if (!isset($patientData['id'])) {
@@ -503,6 +543,11 @@ class QueueController extends AbstractController
                 $this->cache->delete('queue_stats');
             }
             
+            // Broadcast SSE updates for all created queue entries
+            foreach ($queues as $queue) {
+                $this->broadcastQueueUpdate($queue);
+            }
+            
             $this->logger->info('Group queue entries created', [
                 'groupId' => $groupId,
                 'patientCount' => count($createdQueues),
@@ -561,9 +606,22 @@ class QueueController extends AbstractController
             
             // Clear relevant caches
             if ($this->cache) {
-                $this->cache->delete('queue_list_' . date('Y-m-d') . '_all_page_1_limit_50');
-                $this->cache->delete('queue_stats');
+                $today = date('Y-m-d');
+                $cacheKeys = [
+                    'queue_list_' . $today . '_all_page_1_limit_50',
+                    'queue_list_' . $today . '_waiting_page_1_limit_50',
+                    'queue_list_' . $today . '_in_consultation_page_1_limit_50',
+                    'queue_list_' . $today . '_completed_page_1_limit_50',
+                    'queue_stats'
+                ];
+                
+                foreach ($cacheKeys as $key) {
+                    $this->cache->delete($key);
+                }
             }
+            
+            // Broadcast SSE update for status change
+            $this->broadcastQueueUpdate($queue);
             
             $this->logger->info('Queue status updated', [
                 'queueId' => $id,
@@ -635,7 +693,7 @@ class QueueController extends AbstractController
             
             // Update queue payment status
             $queue->setIsPaid(true);
-            $queue->setPaidAt(new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur')));
+            $queue->setPaidAt(\App\Service\TimezoneService::nowImmutable());
             $queue->setPaymentMethod($data['paymentMethod']);
             $queue->setAmount($data['amount']);
             
@@ -655,6 +713,9 @@ class QueueController extends AbstractController
                 $this->cache->delete('financial_dashboard');
                 $this->cache->delete('payments_list');
             }
+            
+            // Broadcast SSE update for payment status change
+            $this->broadcastQueueUpdate($queue);
             
             $this->logger->info('Queue payment processed with Payment record', [
                 'queueId' => $id,
@@ -677,15 +738,6 @@ class QueueController extends AbstractController
             $this->logger->error('Error processing queue payment: ' . $e->getMessage());
             return new JsonResponse(['error' => 'Failed to process payment'], 500);
         }
-    }
-    
-    private function getQueueConsultation(Queue $queue): ?\App\Entity\Consultation
-    {
-        $consultationId = $this->getQueueConsultationId($queue);
-        if ($consultationId) {
-            return $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
-        }
-        return null;
     }
     
     private function getQueueMedicinesInfo(Queue $queue): array
@@ -856,7 +908,7 @@ class QueueController extends AbstractController
     
     private function buildQueueStats(): array
     {
-        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $today = \App\Service\TimezoneService::now();
         $todayStr = $today->format('Y-m-d');
         
         $repo = $this->entityManager->getRepository(Queue::class);
@@ -954,7 +1006,8 @@ class QueueController extends AbstractController
                 'isPaid' => $queue->getIsPaid(),
                 'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                 'paymentMethod' => $queue->getPaymentMethod(),
-                'amount' => $queue->getAmount(),
+                'amount' => $this->getQueueTotalAmount($queue),
+                'totalAmount' => $this->getQueueTotalAmount($queue),
                 'metadata' => $queue->getMetadata()
             ];
             
@@ -1123,5 +1176,50 @@ class QueueController extends AbstractController
         }
     }
 
-
+    /**
+     * Broadcast queue update via SSE
+     */
+    private function broadcastQueueUpdate($queue): void
+    {
+        // Store the update in a temporary file for SSE to pick up
+        $updateData = [
+            'type' => 'queue_status_update',
+            'timestamp' => time(),
+            'data' => [
+                'id' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'status' => $queue->getStatus(),
+                'patient' => [
+                    'id' => $queue->getPatient()->getId(),
+                    'name' => $queue->getPatient()->getName(),
+                ],
+                'doctor' => [
+                    'id' => $queue->getDoctor()->getId(),
+                    'name' => $queue->getDoctor()->getName(),
+                ],
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+            ]
+        ];
+        
+        // Write to temporary file that SSE endpoint will read
+        $tempDir = sys_get_temp_dir();
+        $updateFile = $tempDir . '/queue_updates.json';
+        
+        // Read existing updates
+        $updates = [];
+        if (file_exists($updateFile)) {
+            $content = file_get_contents($updateFile);
+            $updates = json_decode($content, true) ?: [];
+        }
+        
+        // Add new update
+        $updates[] = $updateData;
+        
+        // Keep only last 10 updates to prevent file from growing too large
+        $updates = array_slice($updates, -10);
+        
+        // Write back to file
+        file_put_contents($updateFile, json_encode($updates));
+    }
 }

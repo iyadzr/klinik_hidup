@@ -18,10 +18,24 @@ use Psr\Log\LoggerInterface;
 #[Route('/api/patients')]
 class PatientController extends AbstractController
 {
+    private EntityManagerInterface $entityManager;
+    private LoggerInterface $logger;
+    private ?\Symfony\Contracts\Cache\CacheInterface $cache;
+
+    public function __construct(
+        EntityManagerInterface $entityManager,
+        LoggerInterface $logger,
+        ?\Symfony\Contracts\Cache\CacheInterface $cache = null
+    ) {
+        $this->entityManager = $entityManager;
+        $this->logger = $logger;
+        $this->cache = $cache;
+    }
+
     #[Route('/registration/{registrationNumber}', name: 'app_patient_by_registration', methods: ['GET'])]
-    public function getByRegistrationNumber(int $registrationNumber, EntityManagerInterface $entityManager): JsonResponse
+    public function getByRegistrationNumber(int $registrationNumber): JsonResponse
     {
-        $queue = $entityManager->getRepository(\App\Entity\Queue::class)->findOneBy(['registrationNumber' => $registrationNumber]);
+        $queue = $this->entityManager->getRepository(\App\Entity\Queue::class)->findOneBy(['registrationNumber' => $registrationNumber]);
         if (!$queue) {
             return $this->json(['error' => 'Registration number not found'], 404);
         }
@@ -41,13 +55,6 @@ class PatientController extends AbstractController
             'preInformedIllness' => method_exists($patient, 'getPreInformedIllness') ? $patient->getPreInformedIllness() : null,
             'displayName' => $patient->getName(),
         ]);
-    }
-
-    private $logger;
-
-    public function __construct(LoggerInterface $logger)
-    {
-        $this->logger = $logger;
     }
 
     /**
@@ -102,9 +109,9 @@ class PatientController extends AbstractController
     }
 
     #[Route('/count', name: 'app_patient_count', methods: ['GET'])]
-    public function count(EntityManagerInterface $entityManager): JsonResponse
+    public function count(): JsonResponse
     {
-        $repository = $entityManager->getRepository(Patient::class);
+        $repository = $this->entityManager->getRepository(Patient::class);
         $count = $repository->count([]);
         
         $this->logger->info('Patient count requested', [
@@ -181,7 +188,7 @@ class PatientController extends AbstractController
     }
 
     #[Route('', name: 'app_patient_create', methods: ['POST'])]
-    public function create(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    public function create(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->getContent(), true);
@@ -199,7 +206,7 @@ class PatientController extends AbstractController
             }
 
             // Check for duplicate NRIC
-            $existingPatient = $entityManager->getRepository(Patient::class)
+            $existingPatient = $this->entityManager->getRepository(Patient::class)
                 ->findOneBy(['nric' => $data['nric']]);
             
             if ($existingPatient) {
@@ -240,8 +247,8 @@ class PatientController extends AbstractController
                 $patient->setPreInformedIllness($data['preInformedIllness']);
             }
 
-            $entityManager->persist($patient);
-            $entityManager->flush();
+            $this->entityManager->persist($patient);
+            $this->entityManager->flush();
 
             $this->logger->info('Patient created', [
                 'id' => $patient->getId(),
@@ -280,7 +287,7 @@ class PatientController extends AbstractController
     }
 
     #[Route('/register', name: 'app_patient_register', methods: ['POST'])]
-    public function register(Request $request, EntityManagerInterface $entityManager): JsonResponse
+    public function register(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->getContent(), true);
@@ -293,7 +300,7 @@ class PatientController extends AbstractController
 
             // Handle multiple patients (group consultation)
             if (isset($data['patients']) && is_array($data['patients'])) {
-                return $this->registerMultiplePatients($data, $entityManager);
+                return $this->registerMultiplePatients($data);
             }
 
             // Handle single patient registration
@@ -313,18 +320,22 @@ class PatientController extends AbstractController
             }
 
             // Check if doctor exists
-            $doctor = $entityManager->getRepository(Doctor::class)->find($doctorId);
+            $doctor = $this->entityManager->getRepository(Doctor::class)->find($doctorId);
             if (!$doctor) {
                 return $this->json(['error' => 'Doctor not found'], 404);
             }
 
             // Check for duplicate NRIC
-            $existingPatient = $entityManager->getRepository(Patient::class)
+            $existingPatient = $this->entityManager->getRepository(Patient::class)
                 ->findOneBy(['nric' => $patientData['nric']]);
             
             if ($existingPatient) {
                 // Patient exists, just add to queue
-                $queue = $this->createQueueEntry($existingPatient, $doctor, $patientData, $entityManager);
+                $queue = $this->createQueueEntry($existingPatient, $doctor, $patientData);
+                
+                // Clear cache and broadcast update
+                $this->invalidateQueueCache();
+                $this->broadcastQueueUpdate($queue);
                 
                 return $this->json([
                     'message' => 'Existing patient added to queue successfully',
@@ -370,11 +381,11 @@ class PatientController extends AbstractController
                 $patient->setPreInformedIllness($patientData['preInformedIllness']);
             }
 
-            $entityManager->persist($patient);
-            $entityManager->flush();
+            $this->entityManager->persist($patient);
+            $this->entityManager->flush();
 
             // Create queue entry
-            $queue = $this->createQueueEntry($patient, $doctor, $patientData, $entityManager);
+            $queue = $this->createQueueEntry($patient, $doctor, $patientData);
 
             $this->logger->info('Patient registered and queued successfully', [
                 'patientId' => $patient->getId(),
@@ -416,7 +427,7 @@ class PatientController extends AbstractController
         }
     }
 
-    private function createQueueEntry(Patient $patient, Doctor $doctor, array $patientData, EntityManagerInterface $entityManager): Queue
+    private function createQueueEntry(Patient $patient, Doctor $doctor, array $patientData): Queue
     {
         $queue = new Queue();
         $queue->setPatient($patient);
@@ -424,12 +435,12 @@ class PatientController extends AbstractController
         $queue->setStatus('waiting');
         
         // Set queue date/time
-        $queueDateTime = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+                    $queueDateTime = \App\Service\TimezoneService::nowImmutable();
         $queue->setQueueDateTime($queueDateTime);
         $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
         
         // Find the latest queue number for this hour block today
-        $qb = $entityManager->getRepository(Queue::class)->createQueryBuilder('q');
+        $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
         $qb->select('q.queueNumber')
             ->where('q.queueDateTime >= :start')
             ->andWhere('q.queueDateTime < :end')
@@ -448,18 +459,91 @@ class PatientController extends AbstractController
         $queue->setQueueNumber($queueNumber);
         $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
         
-        $entityManager->persist($queue);
-        $entityManager->flush();
+        $this->entityManager->persist($queue);
+        $this->entityManager->flush();
+        
+        // Clear cache and broadcast update after queue creation
+        $this->invalidateQueueCache();
+        $this->broadcastQueueUpdate($queue);
         
         return $queue;
     }
 
-    private function registerMultiplePatients(array $data, EntityManagerInterface $entityManager): JsonResponse
+    private function registerMultiplePatients(array $data): JsonResponse
     {
         // Implementation for multiple patients (group consultation)
         // This would be similar to the single patient logic but in a loop
         // For now, return an error to indicate it's not implemented
         return $this->json(['error' => 'Multiple patient registration not yet implemented'], 501);
+    }
+
+    /**
+     * Invalidate queue-related cache entries
+     */
+    private function invalidateQueueCache(): void
+    {
+        if ($this->cache) {
+            $today = date('Y-m-d');
+            $patterns = [
+                'queue_list_' . $today . '_all_page_1_limit_50',
+                'queue_list_' . $today . '_waiting_page_1_limit_50',
+                'queue_list_' . $today . '_in_consultation_page_1_limit_50',
+                'queue_list_' . $today . '_completed_page_1_limit_50',
+                'queue_stats',
+                'queue_counts'
+            ];
+            
+            foreach ($patterns as $pattern) {
+                $this->cache->delete($pattern);
+            }
+        }
+    }
+
+    /**
+     * Broadcast queue update via SSE
+     */
+    private function broadcastQueueUpdate($queue): void
+    {
+        // Store the update in a temporary file for SSE to pick up
+        $updateData = [
+            'type' => 'queue_status_update',
+            'timestamp' => time(),
+            'data' => [
+                'id' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'registrationNumber' => $queue->getRegistrationNumber(),
+                'status' => $queue->getStatus(),
+                'patient' => [
+                    'id' => $queue->getPatient()->getId(),
+                    'name' => $queue->getPatient()->getName(),
+                ],
+                'doctor' => [
+                    'id' => $queue->getDoctor()->getId(),
+                    'name' => $queue->getDoctor()->getName(),
+                ],
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+            ]
+        ];
+        
+        // Write to temporary file that SSE endpoint will read
+        $tempDir = sys_get_temp_dir();
+        $updateFile = $tempDir . '/queue_updates.json';
+        
+        // Read existing updates
+        $updates = [];
+        if (file_exists($updateFile)) {
+            $content = file_get_contents($updateFile);
+            $updates = json_decode($content, true) ?: [];
+        }
+        
+        // Add new update
+        $updates[] = $updateData;
+        
+        // Keep only last 10 updates to prevent file from growing too large
+        $updates = array_slice($updates, -10);
+        
+        // Write back to file
+        file_put_contents($updateFile, json_encode($updates));
     }
 
     #[Route('/{id}', name: 'app_patient_show', methods: ['GET'])]
@@ -583,7 +667,7 @@ class PatientController extends AbstractController
                 ->where('q.doctor = :doctorId')
                 ->andWhere('q.queueDateTime >= :today')
                 ->setParameter('doctorId', $doctorId)
-                ->setParameter('today', new \DateTime('today', new \DateTimeZone('Asia/Kuala_Lumpur')))
+                ->setParameter('today', \App\Service\TimezoneService::startOfDay())
                 ->getQuery()
                 ->getScalarResult();
             

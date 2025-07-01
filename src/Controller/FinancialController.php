@@ -25,7 +25,7 @@ class FinancialController extends AbstractController
         $period = $request->query->get('period', 'today'); // today, week, month, quarter, year, all
 
         $startDate = $this->getStartDate($period);
-        $endDate = new \DateTime('now');
+        $endDate = \App\Service\TimezoneService::now();
 
         // Current period stats
         $currentStats = $this->getDailyStats($startDate, $endDate);
@@ -84,36 +84,45 @@ class FinancialController extends AbstractController
         $endDate = $request->query->get('end_date');
         $paymentMethod = $request->query->get('payment_method');
 
-        // Build query with all payment details including who processed it and medicines
+        // Build query with all payment details including who processed it
         $qb = $this->paymentRepository->createQueryBuilder('p')
             ->leftJoin('p.consultation', 'c')
             ->leftJoin('c.patient', 'patient')
             ->leftJoin('c.doctor', 'doctor')
             ->leftJoin('p.processedBy', 'staff')
             ->leftJoin('p.queue', 'q')
-            ->leftJoin('c.prescribedMedications', 'pm')
-            ->leftJoin('pm.medication', 'm')
             ->orderBy('p.paymentDate', 'DESC');
 
-        // Apply filters
+        // Apply filters (using date range comparison with timezone handling)
         if ($startDate) {
-            $qb->andWhere('DATE(p.paymentDate) >= :startDate')
-               ->setParameter('startDate', $startDate);
+            // Convert start date to UTC for comparison
+            $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
+            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
+            $qb->andWhere('p.paymentDate >= :startDate')
+               ->setParameter('startDate', $startDateTime);
         }
         if ($endDate) {
-            $qb->andWhere('DATE(p.paymentDate) <= :endDate')
-               ->setParameter('endDate', $endDate);
+            // Convert end date to UTC for comparison
+            $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
+            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
+            $qb->andWhere('p.paymentDate <= :endDate')
+               ->setParameter('endDate', $endDateTime);
         }
         if ($paymentMethod) {
             $qb->andWhere('p.paymentMethod = :paymentMethod')
                ->setParameter('paymentMethod', $paymentMethod);
         }
 
-        // Default to today if no date filter
+        // Default to today if no date filter (using Malaysia timezone)
         if (!$startDate && !$endDate) {
-            $today = (new \DateTime())->format('Y-m-d');
-            $qb->andWhere('DATE(p.paymentDate) = :today')
-               ->setParameter('today', $today);
+            $todayStart = \App\Service\TimezoneService::startOfDay();
+            $todayEnd = \App\Service\TimezoneService::endOfDay();
+            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
+            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
+            
+            $qb->andWhere('p.paymentDate BETWEEN :todayStart AND :todayEnd')
+               ->setParameter('todayStart', $todayStart)
+               ->setParameter('todayEnd', $todayEnd);
         }
 
         // Get total count
@@ -134,7 +143,8 @@ class FinancialController extends AbstractController
             // Get medicines information
             $medicines = [];
             if ($consultation) {
-                $prescribedMeds = $consultation->getPrescribedMedications();
+                // Query prescribed medications separately
+                $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
                 foreach ($prescribedMeds as $pm) {
                     $medication = $pm->getMedication();
                     if ($medication) {
@@ -206,6 +216,44 @@ class FinancialController extends AbstractController
         return new JsonResponse($this->paymentRepository->getSummary());
     }
 
+    #[Route('/debug/payments', name: 'api_financial_debug_payments', methods: ['GET'])]
+    public function debugPayments(): JsonResponse
+    {
+        // Get all payments with raw data for debugging
+        $qb = $this->paymentRepository->createQueryBuilder('p')
+            ->leftJoin('p.consultation', 'c')
+            ->leftJoin('c.patient', 'patient')
+            ->orderBy('p.paymentDate', 'DESC')
+            ->setMaxResults(10);
+
+        $payments = $qb->getQuery()->getResult();
+        
+        $today = \App\Service\TimezoneService::now();
+        
+        $debug = [
+            'current_time_myt' => $today->format('Y-m-d H:i:s T'),
+            'current_date_myt' => $today->format('Y-m-d'),
+            'recent_payments' => array_map(function($payment) {
+                $paymentDateUtc = $payment->getPaymentDate();
+                $paymentDateMyt = \App\Service\TimezoneService::convertToMalaysia($paymentDateUtc);
+                
+                return [
+                    'id' => $payment->getId(),
+                    'amount' => $payment->getAmount(),
+                    'payment_method' => $payment->getPaymentMethod(),
+                    'payment_date_utc' => $paymentDateUtc->format('Y-m-d H:i:s T'),
+                    'payment_date_myt' => $paymentDateMyt->format('Y-m-d H:i:s T'),
+                    'payment_date_only_myt' => $paymentDateMyt->format('Y-m-d'),
+                    'reference' => $payment->getReference(),
+                    'queue_number' => $payment->getQueueNumber(),
+                    'patient_name' => $payment->getConsultation() ? $payment->getConsultation()->getPatient()->getName() : 'No patient'
+                ];
+            }, $payments)
+        ];
+        
+        return new JsonResponse($debug);
+    }
+
     #[Route('/export', name: 'api_financial_export', methods: ['GET'])]
     public function export(Request $request): JsonResponse
     {
@@ -249,13 +297,13 @@ class FinancialController extends AbstractController
     private function getStartDate(string $period): \DateTime
     {
         return match ($period) {
-            'today' => new \DateTime('today'),
-            'week' => new \DateTime('-1 week'),
-            'month' => new \DateTime('-1 month'),
-            'quarter' => new \DateTime('-3 months'),
-            'year' => new \DateTime('-1 year'),
-            'all' => new \DateTime('2020-01-01'), // Start from a reasonable date
-            default => new \DateTime('today'),
+            'today' => \App\Service\TimezoneService::startOfDay(),
+            'week' => \App\Service\TimezoneService::createDateTime('-1 week'),
+            'month' => \App\Service\TimezoneService::createDateTime('-1 month'),
+            'quarter' => \App\Service\TimezoneService::createDateTime('-3 months'),
+            'year' => \App\Service\TimezoneService::createDateTime('-1 year'),
+            'all' => \App\Service\TimezoneService::createDateTime('2020-01-01'), // Start from a reasonable date
+            default => \App\Service\TimezoneService::startOfDay(),
         };
     }
 
@@ -318,12 +366,16 @@ class FinancialController extends AbstractController
 
     private function getDailyStats(\DateTime $startDate, \DateTime $endDate): array
     {
-        // Get payment stats
+        // Convert to UTC timezone for database comparison
+        $startDateUtc = \App\Service\TimezoneService::convertToUtc($startDate);
+        $endDateUtc = \App\Service\TimezoneService::convertToUtc($endDate);
+        
+        // Get payment stats using direct datetime comparison
         $qb = $this->paymentRepository->createQueryBuilder('p')
             ->select('COUNT(p.id) as total_transactions, SUM(p.amount) as total_amount')
             ->where('p.paymentDate BETWEEN :startDate AND :endDate')
-            ->setParameter('startDate', $startDate)
-            ->setParameter('endDate', $endDate);
+            ->setParameter('startDate', $startDateUtc)
+            ->setParameter('endDate', $endDateUtc);
 
         $result = $qb->getQuery()->getSingleResult();
 
@@ -362,11 +414,15 @@ class FinancialController extends AbstractController
 
     private function getPaymentMethodStats(\DateTime $startDate, \DateTime $endDate): array
     {
+        // Convert to UTC timezone for database comparison
+        $startDateUtc = \App\Service\TimezoneService::convertToUtc($startDate);
+        $endDateUtc = \App\Service\TimezoneService::convertToUtc($endDate);
+        
         $qb = $this->paymentRepository->createQueryBuilder('p')
             ->select('p.paymentMethod, COUNT(p.id) as count, SUM(p.amount) as total')
             ->where('p.paymentDate BETWEEN :startDate AND :endDate')
-            ->setParameter('startDate', $startDate)
-            ->setParameter('endDate', $endDate)
+            ->setParameter('startDate', $startDateUtc)
+            ->setParameter('endDate', $endDateUtc)
             ->groupBy('p.paymentMethod')
             ->orderBy('total', 'DESC');
 

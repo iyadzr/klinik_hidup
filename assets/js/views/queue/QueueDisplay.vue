@@ -127,6 +127,7 @@
 
 <script>
 import axios from 'axios';
+import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'QueueDisplay',
@@ -232,7 +233,7 @@ export default {
       try {
         // Always request today's queue
         const now = new Date();
-        const options = { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' };
+        const options = { timeZone: MALAYSIA_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' };
         const todayMYT = now.toLocaleDateString('en-CA', options); // YYYY-MM-DD
         const response = await axios.get(`/api/queue?date=${todayMYT}`);
         console.log('Queue API response:', response);

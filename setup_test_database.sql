@@ -305,7 +305,7 @@ INSERT INTO setting (setting_key, setting_value, description, created_at, update
 ('clinic_address', '123 Test Street', 'Test clinic address', NOW(), NOW()),
 ('clinic_phone', '555-0123', 'Test clinic phone', NOW(), NOW()),
 ('clinic_email', 'test@clinic.com', 'Test clinic email', NOW(), NOW()),
-('timezone', 'Asia/Singapore', 'Test clinic timezone', NOW(), NOW());
+('timezone', 'Asia/Kuala_Lumpur', 'Malaysia clinic timezone', NOW(), NOW());
 
 -- Insert test users (password is '123Qwerty' for all test users)
 INSERT INTO user (username, roles, password, email, first_name, last_name, phone, address, is_active, created_at, updated_at) VALUES

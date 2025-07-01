@@ -111,7 +111,7 @@ class AppointmentController extends AbstractController
             $appointment = new Appointment();
             $appointment->setPatient($patient);
             $appointment->setDoctor($doctor);
-            $appointment->setAppointmentDateTime(new \DateTime($data['appointmentDateTime']));
+            $appointment->setAppointmentDateTime(\App\Service\TimezoneService::createDateTime($data['appointmentDateTime']));
             $appointment->setStatus($data['status'] ?? 'scheduled');
             
             if (isset($data['reason'])) {

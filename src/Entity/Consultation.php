@@ -84,8 +84,7 @@ class Consultation
 
     public function __construct()
     {
-        $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
-        $this->createdAt = new \DateTime('now', $myt);
+        $this->createdAt = \App\Service\TimezoneService::now();
     }
 
     public function getId(): ?int

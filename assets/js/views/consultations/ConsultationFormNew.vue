@@ -600,6 +600,12 @@ export default {
         throw new Error('Notes are required');
       }
 
+      // Prepare medications string for database
+      const medicationsArray = this.prescribedMedications.filter(med => med.name && med.quantity);
+      const medicationsString = medicationsArray.length > 0 
+        ? medicationsArray.map(med => `${med.name} (${med.quantity} ${med.unitDescription || med.unitType || 'pieces'})`).join(', ')
+        : '';
+
       const consultationData = {
         patientId: this.consultation.patientId,
         doctorId: this.consultation.doctorId,
@@ -607,7 +613,9 @@ export default {
         diagnosis: this.consultation.notes || '',
         status: this.consultation.status || 'pending',
         consultationFee: parseFloat(this.consultation.consultationFee) || 0,
-        prescribedMedications: this.prescribedMedications.filter(med => med.name && med.quantity),
+        totalAmount: parseFloat(this.consultation.totalAmount) || 0, // ✅ ADD THIS MISSING FIELD!
+        medications: medicationsString, // For the database medications column
+        prescribedMedications: medicationsArray, // For the prescribed medications relationship
         mcStartDate: this.consultation.mcStartDate || null,
         mcEndDate: this.consultation.mcEndDate || null,
         queueNumber: this.queueNumber,
@@ -620,12 +628,8 @@ export default {
       
       this.isLoading = false;
       
-      const currentUser = AuthService.getCurrentUser();
-      if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
-        this.$router.push('/consultations/ongoing');
-      } else {
-        this.$router.push('/consultations');
-      }
+      // Always redirect to ongoing consultations page after saving
+      this.$router.push('/consultations/ongoing');
     },
     
     async saveAllGroupPatients() {
@@ -644,6 +648,12 @@ export default {
         
         const isMainPatient = patient.id === mainPatient?.id;
         
+        // Prepare medications string for database
+        const medicationsArray = patientData.medications?.filter(med => med.name && med.quantity) || [];
+        const medicationsString = medicationsArray.length > 0 
+          ? medicationsArray.map(med => `${med.name} (${med.quantity} ${med.unitDescription || med.unitType || 'pieces'})`).join(', ')
+          : '';
+
         const consultationData = {
           patientId: patient.id,
           doctorId: this.consultation.doctorId,
@@ -651,7 +661,8 @@ export default {
           diagnosis: patientData.diagnosis || patientData.notes || '',
           status: 'completed',
           consultationFee: parseFloat(this.consultation.consultationFee) || 0,
-          prescribedMedications: patientData.medications?.filter(med => med.name && med.quantity) || [],
+          medications: medicationsString, // For the database medications column
+          prescribedMedications: medicationsArray, // For the prescribed medications relationship
           mcStartDate: patientData.hasMedicalCertificate ? patientData.mcStartDate : null,
           mcEndDate: patientData.hasMedicalCertificate ? patientData.mcEndDate : null,
           queueNumber: this.queueNumber,
@@ -670,12 +681,8 @@ export default {
       
       this.isLoading = false;
       
-      const currentUser = AuthService.getCurrentUser();
-      if (currentUser && currentUser.roles && currentUser.roles.includes('ROLE_DOCTOR')) {
-        this.$router.push('/consultations/ongoing');
-      } else {
-        this.$router.push('/consultations');
-      }
+      // Always redirect to ongoing consultations page after saving
+      this.$router.push('/consultations/ongoing');
     },
     
     async onMCCheckboxChange(hasMC) {

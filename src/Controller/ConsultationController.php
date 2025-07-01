@@ -113,7 +113,11 @@ class ConsultationController extends AbstractController
         
         try {
             $data = json_decode($request->getContent(), true);
-            $this->logger->info('Received consultation data', ['data' => $data]);
+            $this->logger->info('Received consultation data', [
+                'totalAmount' => $data['totalAmount'] ?? 'NOT_SET',
+                'consultationFee' => $data['consultationFee'] ?? 'NOT_SET',
+                'allFields' => array_keys($data)
+            ]);
             
             // Log the specific status value being sent
             if (isset($data['status'])) {
@@ -147,9 +151,8 @@ class ConsultationController extends AbstractController
                 $consultation->setDoctor($doctor);
             }
             
-            // Set consultation date to now in MYT timezone
-            $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
-            $now = new \DateTime('now', $myt);
+            // Set consultation date to now in Malaysia timezone
+            $now = \App\Service\TimezoneService::now();
             $consultation->setConsultationDate($now);
             
             // Ensure createdAt is also set properly (constructor should handle this, but let's be explicit)
@@ -193,6 +196,49 @@ class ConsultationController extends AbstractController
                 $this->entityManager->persist($consultation);
                 $this->entityManager->flush();
                 $this->logger->info('Consultation persisted successfully');
+                
+                // Create Payment record if totalAmount > 0
+                if (isset($data['totalAmount']) && $data['totalAmount'] > 0) {
+                    try {
+                        $this->logger->info('Creating payment record', [
+                            'totalAmount' => $data['totalAmount'],
+                            'consultationId' => $consultation->getId()
+                        ]);
+                        
+                        $payment = new \App\Entity\Payment();
+                        $payment->setConsultation($consultation);
+                        $payment->setAmount((float)$data['totalAmount']);
+                        $payment->setPaymentMethod('cash'); // Default to cash, can be updated later
+                        $payment->setPaymentDate(new \DateTimeImmutable());
+                        $payment->setProcessedBy($this->getUser()); // Current logged-in user
+                        
+                        // Generate payment reference
+                        $reference = 'PAY-' . date('Ymd') . '-' . str_pad($consultation->getId(), 6, '0', STR_PAD_LEFT);
+                        $payment->setReference($reference);
+                        
+                        // Set queue information if available
+                        if (isset($data['queueNumber'])) {
+                            $payment->setQueueNumber($data['queueNumber']);
+                        }
+                        
+                        $this->entityManager->persist($payment);
+                        $this->entityManager->flush();
+                        
+                        $this->logger->info('Payment record created successfully', [
+                            'paymentId' => $payment->getId(),
+                            'amount' => $payment->getAmount(),
+                            'reference' => $payment->getReference(),
+                            'consultationId' => $consultation->getId()
+                        ]);
+                    } catch (\Exception $paymentError) {
+                        $this->logger->error('Failed to create payment record', [
+                            'error' => $paymentError->getMessage(),
+                            'totalAmount' => $data['totalAmount'],
+                            'consultationId' => $consultation->getId()
+                        ]);
+                        // Don't throw - continue with consultation creation
+                    }
+                }
             } catch (\Exception $persistError) {
                 $this->logger->error('Error persisting consultation', [
                     'error' => $persistError->getMessage(),
@@ -271,22 +317,84 @@ class ConsultationController extends AbstractController
             ]);
             
             if ($queue) {
+                $this->logger->info('Updating queue status after consultation completion', [
+                    'queueId' => $queue->getId(),
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'previousStatus' => $queue->getStatus()
+                ]);
+                
                 $queue->setStatus('completed_consultation');
+                
+                // ✅ TRANSFER CONSULTATION TOTAL AMOUNT TO QUEUE FOR PAYMENT MODAL
+                if (isset($data['totalAmount']) && $data['totalAmount'] > 0) {
+                    $queue->setAmount((string)$data['totalAmount']);
+                    $this->logger->info('Updated queue with consultation total amount', [
+                        'queueId' => $queue->getId(),
+                        'totalAmount' => $data['totalAmount']
+                    ]);
+                }
                 
                 // Also update the consultation status
                 $this->logger->info('Setting consultation status to completed_consultation');
                 $consultation->setStatus('completed_consultation');
                 
+                // Update payment record with queue information if payment was created
+                if (isset($data['totalAmount']) && $data['totalAmount'] > 0) {
+                    $paymentRepository = $this->entityManager->getRepository(\App\Entity\Payment::class);
+                    $payment = $paymentRepository->findOneBy(['consultation' => $consultation]);
+                    if ($payment) {
+                        $payment->setQueue($queue);
+                        $payment->setQueueNumber($queue->getQueueNumber());
+                        $this->logger->info('Updated payment with queue information', [
+                            'paymentId' => $payment->getId(),
+                            'queueNumber' => $queue->getQueueNumber()
+                        ]);
+                    }
+                }
+                
                 $this->entityManager->flush();
+                
+                $this->logger->info('Queue status updated successfully', [
+                    'queueId' => $queue->getId(),
+                    'newStatus' => $queue->getStatus()
+                ]);
                 
                 // Trigger real-time update
                 $this->broadcastQueueUpdate($queue);
+            } else {
+                $this->logger->warning('No queue found for patient/doctor combination', [
+                    'patientId' => $patient->getId(),
+                    'doctorId' => $doctor->getId()
+                ]);
             }
             
-            // Clear relevant caches
+            // Clear relevant caches aggressively
             if ($this->cache) {
-                $this->cache->delete('consultations_list_' . date('Y-m-d'));
-                $this->cache->delete('consultations_ongoing');
+                $today = date('Y-m-d');
+                $cacheKeys = [
+                    'consultations_list_' . $today,
+                    'consultations_ongoing',
+                    'consultations_ongoing_doctor_' . $doctor->getId(), // Doctor-specific ongoing cache
+                    'consultations_today_all',
+                    'consultations_today_all_doctor_' . $doctor->getId(), // Doctor-specific today cache
+                    'payments_list_' . $today,
+                    // Clear queue caches for immediate updates
+                    'queue_list_' . $today . '_all_page_1_limit_50',
+                    'queue_list_' . $today . '_waiting_page_1_limit_50',
+                    'queue_list_' . $today . '_in_consultation_page_1_limit_50',
+                    'queue_list_' . $today . '_completed_page_1_limit_50',
+                    'queue_stats'
+                ];
+                
+                foreach ($cacheKeys as $key) {
+                    $this->cache->delete($key);
+                    $this->logger->debug('Cleared cache key: ' . $key);
+                }
+                
+                $this->logger->info('Cache cleared after consultation completion', [
+                    'doctorId' => $doctor->getId(),
+                    'clearedKeys' => count($cacheKeys)
+                ]);
             }
             
             return new JsonResponse([
@@ -444,15 +552,15 @@ class ConsultationController extends AbstractController
         
         if ($date) {
             // Filter by specific date - use both createdAt and consultationDate for broader matching
-            $start = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
-            $end = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $start = \App\Service\TimezoneService::startOfDay($date);
+            $end = \App\Service\TimezoneService::endOfDay($date);
             
             $qb->where('(c.createdAt BETWEEN :start AND :end) OR (c.consultationDate BETWEEN :start AND :end)')
                ->setParameter('start', $start)
                ->setParameter('end', $end);
         } else {
             // Return consultations from the last 30 days if no date filter (performance optimization)
-            $thirtyDaysAgo = new \DateTime('-30 days', new \DateTimeZone('Asia/Kuala_Lumpur'));
+            $thirtyDaysAgo = \App\Service\TimezoneService::createDateTime('-30 days');
             $qb->where('c.createdAt >= :thirtyDaysAgo')
                ->setParameter('thirtyDaysAgo', $thirtyDaysAgo);
         }
@@ -589,7 +697,7 @@ class ConsultationController extends AbstractController
     
     private function buildOngoingData($doctorId = null): array
     {
-        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $today = \App\Service\TimezoneService::now();
         
         // Set time to the beginning of the day for the start of the range
         $startOfDay = (clone $today)->setTime(0, 0, 0);
@@ -798,7 +906,7 @@ class ConsultationController extends AbstractController
 
     private function buildTodayAllData($doctorId = null): array
     {
-        $today = new \DateTime('now', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $today = \App\Service\TimezoneService::now();
         
         // Set time to the beginning of the day for the start of the range
         $startOfDay = (clone $today)->setTime(0, 0, 0);
@@ -899,8 +1007,8 @@ class ConsultationController extends AbstractController
 
         // Sort by time
         usort($allPatients, function($a, $b) {
-            $timeA = $a['time'] instanceof \DateTimeInterface ? $a['time'] : new \DateTime($a['time']);
-            $timeB = $b['time'] instanceof \DateTimeInterface ? $b['time'] : new \DateTime($b['time']);
+            $timeA = $a['time'] instanceof \DateTimeInterface ? $a['time'] : \App\Service\TimezoneService::createDateTime($a['time']);
+            $timeB = $b['time'] instanceof \DateTimeInterface ? $b['time'] : \App\Service\TimezoneService::createDateTime($b['time']);
             return $timeA <=> $timeB;
         });
 
@@ -972,8 +1080,7 @@ class ConsultationController extends AbstractController
             
             // Set payment timestamp if marking as paid
             if ($data['isPaid']) {
-                $myt = new \DateTimeZone('Asia/Kuala_Lumpur');
-                $consultation->setPaidAt(new \DateTime('now', $myt));
+                $consultation->setPaidAt(\App\Service\TimezoneService::now());
             } else {
                 $consultation->setPaidAt(null);
             }
@@ -994,8 +1101,21 @@ class ConsultationController extends AbstractController
             
             // Clear relevant caches
             if ($this->cache) {
-                $this->cache->delete('consultations_list_' . date('Y-m-d'));
-                $this->cache->delete('patient_history_' . $consultation->getPatient()->getId());
+                $today = date('Y-m-d');
+                $cacheKeys = [
+                    'consultations_list_' . $today,
+                    'patient_history_' . $consultation->getPatient()->getId(),
+                    // Clear queue caches for immediate updates
+                    'queue_list_' . $today . '_all_page_1_limit_50',
+                    'queue_list_' . $today . '_waiting_page_1_limit_50',
+                    'queue_list_' . $today . '_in_consultation_page_1_limit_50',
+                    'queue_list_' . $today . '_completed_page_1_limit_50',
+                    'queue_stats'
+                ];
+                
+                foreach ($cacheKeys as $key) {
+                    $this->cache->delete($key);
+                }
             }
             
             return new JsonResponse([

@@ -15,8 +15,8 @@ class QueueRepository extends ServiceEntityRepository
 
     public function findTodayQueue()
     {
-        $today = new \DateTime('today', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $tomorrow = new \DateTime('tomorrow', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $today = \App\Service\TimezoneService::startOfDay();
+        $tomorrow = \App\Service\TimezoneService::startOfDay('tomorrow');
 
         return $this->createQueryBuilder('q')
             ->andWhere('q.queueDateTime >= :today')
@@ -47,8 +47,8 @@ class QueueRepository extends ServiceEntityRepository
 
     public function findByDate(string $date)
     {
-        $startOfDay = new \DateTime($date . ' 00:00:00', new \DateTimeZone('Asia/Kuala_Lumpur'));
-        $endOfDay = new \DateTime($date . ' 23:59:59', new \DateTimeZone('Asia/Kuala_Lumpur'));
+        $startOfDay = \App\Service\TimezoneService::startOfDay($date);
+        $endOfDay = \App\Service\TimezoneService::endOfDay($date);
 
         return $this->createQueryBuilder('q')
             ->leftJoin('q.patient', 'p')

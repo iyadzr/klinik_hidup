@@ -48,6 +48,8 @@
 </template>
 
 <script>
+import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
+
 export default {
   name: 'MedicalHistorySection',
   props: {
@@ -63,7 +65,7 @@ export default {
       try {
         const dateObj = new Date(dateString);
         return dateObj.toLocaleDateString('en-MY', {
-          timeZone: 'Asia/Kuala_Lumpur',
+          timeZone: MALAYSIA_TIMEZONE,
           year: 'numeric',
           month: '2-digit',
           day: '2-digit'

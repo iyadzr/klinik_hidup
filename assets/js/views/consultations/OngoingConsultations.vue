@@ -325,6 +325,7 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 import { getTodayInMYT, formatQueueNumber } from '../../utils/dateUtils';
 import AuthService from '../../services/AuthService';
+import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'PatientConsultation',
@@ -527,7 +528,7 @@ export default {
       try {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-MY', {
-          timeZone: 'Asia/Kuala_Lumpur',
+          timeZone: MALAYSIA_TIMEZONE,
           month: 'short',
           day: '2-digit',
           hour: '2-digit',
@@ -570,7 +571,7 @@ export default {
         
         // Format the time for Malaysia timezone
         return date.toLocaleTimeString('en-MY', {
-          timeZone: 'Asia/Kuala_Lumpur',
+          timeZone: MALAYSIA_TIMEZONE,
           hour: '2-digit',
           minute: '2-digit',
           hour12: true

@@ -261,6 +261,7 @@
 import axios from 'axios';
 import * as bootstrap from 'bootstrap';
 import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
+import timezoneUtils from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'QueueManagement',
@@ -289,7 +290,10 @@ export default {
       showMedicinesModal: false,
       
       // Medicines data
-      medicinesList: []
+      medicinesList: [],
+      
+      // Timezone utilities
+      timezoneUtils: timezoneUtils
     };
   },
   computed: {
@@ -300,6 +304,14 @@ export default {
   created() {
     this.selectedDate = this.getTodayInMYT();
     this.loadData();
+    
+    // Check for refresh parameter in URL to force immediate data refresh
+    if (this.$route.query.refresh) {
+      console.log('🔄 Refresh parameter detected, forcing queue data refresh');
+      setTimeout(() => {
+        this.manualRefresh();
+      }, 500); // Small delay to allow initial load to complete
+    }
   },
   mounted() {
     // Initialize SSE connection with better error handling
@@ -402,51 +414,71 @@ export default {
     },
 
     async loadQueueList() {
+      if (this.isLoading) {
+        console.log('⏩ Queue list loading already in progress');
+        return;
+      }
+
       try {
         this.isLoading = true;
-        
+        this.error = null;
+
+        console.log('📋 Loading queue list for date:', this.selectedDate, 'status:', this.selectedStatus);
+
+        // Add cache-busting timestamp to prevent stale data
         const response = await makeProtectedRequest(
-          `load-queue-${this.selectedDate}`,
+          `queue-list-${this.selectedDate}-${this.selectedStatus}`,
           async (signal) => {
-            return await axios.get(`/api/queue?date=${this.selectedDate}`, { signal });
+            return await axios.get('/api/queue', {
+              params: {
+                date: this.selectedDate,
+                status: this.selectedStatus,
+                page: this.currentPage,
+                limit: this.pageSize,
+                _t: Date.now() // Cache-busting timestamp
+              },
+              signal
+            });
           },
           {
-            throttleMs: 1000,  // Minimum 1 second between queue refreshes
+            throttleMs: 200,
             timeout: 15000,
-            maxRetries: 2
+            maxRetries: 2,
+            skipThrottle: false
           }
         );
+
+        // Filter out completed queues from today to prevent confusion
+        let queueData = Array.isArray(response.data) ? response.data : (response.data.data || []);
         
-        console.log('Queue API response:', response);
-        
-        if (response.data && Array.isArray(response.data)) {
-          this.queueList = response.data;
-          
-          // Show success notification
-          if (response.data.length > 0) {
-            console.log(`✅ Loaded ${response.data.length} queue entries for ${this.selectedDate}`);
-          } else {
-            console.log(`ℹ️ No queue entries found for ${this.selectedDate}`);
-          }
-        } else {
-          console.warn('⚠️ Invalid queue data received:', response.data);
-          this.queueList = [];
+        // Only show truly active queues (waiting, in_consultation)
+        if (this.selectedStatus === 'all') {
+          queueData = queueData.filter(queue => {
+            const isToday = queue.queueDateTime && queue.queueDateTime.startsWith(this.selectedDate);
+            const isActive = ['waiting', 'in_consultation'].includes(queue.status);
+            return isToday && (isActive || queue.status === 'completed_consultation');
+          });
         }
-        
+
+        this.queueList = queueData;
+        this.totalPages = Math.max(1, Math.ceil((response.data.total || queueData.length) / this.pageSize));
+
+        console.log('✅ Queue list loaded successfully:', {
+          count: this.queueList.length,
+          date: this.selectedDate,
+          status: this.selectedStatus,
+          filteredForToday: this.queueList.filter(q => q.queueDateTime?.startsWith(this.selectedDate)).length
+        });
+
       } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Queue loading skipped:', error.message);
+        if (error.message.includes('throttled')) {
+          console.log('⏸️ Queue list request throttled');
           return;
         }
-        
+
         console.error('❌ Error loading queue list:', error);
-        this.$toast?.error?.(`Failed to load queue for ${this.selectedDate}`);
-        
-        // Don't clear existing data on error to maintain UI state
-        if (!this.queueList.length) {
-          this.queueList = [];
-        }
-        
+        this.error = 'Failed to load queue list. Please try again.';
+        this.queueList = [];
       } finally {
         this.isLoading = false;
       }
@@ -655,11 +687,8 @@ export default {
     },
 
     getTodayInMYT() {
-      // Get actual current date in Malaysia timezone
-      const now = new Date();
-      // Convert to MYT by adding 8 hours (MYT is UTC+8)
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const mytTime = new Date(utc + (8 * 3600000)); // Add 8 hours for MYT
+              // Get actual current date in Malaysia timezone
+        const mytTime = this.timezoneUtils.nowInMalaysia();
       
       const year = mytTime.getFullYear();
       const month = String(mytTime.getMonth() + 1).padStart(2, '0');
@@ -684,8 +713,17 @@ export default {
     },
     
     calculateAmount(queue) {
-      // Default consultation fee if not specified
-      return queue.consultationFee || queue.amount || 50;
+      // Always use the total payment set by the doctor (totalAmount or amount)
+      if (!queue) return 0;
+      if (typeof queue.totalAmount !== 'undefined' && queue.totalAmount !== null) {
+        return parseFloat(queue.totalAmount);
+      }
+      if (typeof queue.amount !== 'undefined' && queue.amount !== null) {
+        return parseFloat(queue.amount);
+      }
+      // If missing, show 0 and warn
+      console.warn('No total payment amount found for queue', queue);
+      return 0;
     },
     
 
@@ -725,7 +763,7 @@ export default {
       if (!datetime) return '';
       const date = new Date(datetime);
       return date.toLocaleString('en-MY', {
-        timeZone: 'Asia/Kuala_Lumpur',
+        timeZone: this.timezoneUtils.MALAYSIA_TIMEZONE,
         year: 'numeric',
         month: 'short',
         day: '2-digit',
@@ -763,9 +801,16 @@ export default {
       return 'Unknown Doctor';
     },
     
-    // Fix for SSE error
+    // Enhanced SSE queue update handler for instant updates
     handleQueueUpdate(queueData) {
       console.log('📡 SSE queue update received:', queueData);
+      
+      // Always refresh the list for status changes to ensure immediate updates
+      if (queueData.status && ['completed_consultation', 'completed', 'in_consultation'].includes(queueData.status)) {
+        console.log('🔄 Status change detected, refreshing queue list immediately');
+        this.loadQueueList();
+        return;
+      }
       
       // If this is a group consultation or patientCount is present, always refresh the list
       if (queueData.isGroupConsultation || typeof queueData.patientCount !== 'undefined') {
@@ -940,7 +985,7 @@ export default {
           
           <div class="footer">
             <p>Prepared by: Clinic Assistant</p>
-            <p>Time: ${new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' })}</p>
+                            <p>Time: ${this.timezoneUtils.formatDateMalaysia(new Date())}</p>
           </div>
         </body>
         </html>
