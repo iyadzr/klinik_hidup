@@ -14,12 +14,12 @@ class RequestManager {
     this.performanceMetrics = new Map(); // New: Performance tracking
     
     // Global settings - optimized for better navigation performance
-    this.maxConcurrentRequests = 12; // Reduced from 15 for better stability
+    this.maxConcurrentRequests = 15; // Increased back for complex queries
     this.defaultThrottleMs = 150; // Slightly increased for stability
-    this.maxRetries = 1; // Reduced to 1 for faster failure handling
-    this.circuitBreakerThreshold = 2; // Reduced for faster circuit breaking
-    this.circuitBreakerTimeout = 10000; // Reduced to 10s for faster recovery
-    this.requestTimeoutMs = 8000; // Reduced to 8s for faster timeouts
+    this.maxRetries = 2; // Increased for database-heavy operations
+    this.circuitBreakerThreshold = 3; // Increased for better resilience
+    this.circuitBreakerTimeout = 15000; // Increased for slower backend responses
+    this.requestTimeoutMs = 12000; // Increased for complex queries
     this.deduplicationWindow = 500; // 500ms window for request deduplication
     
     // Memory management
@@ -55,6 +55,13 @@ class RequestManager {
       console.log(`🔄 Duplicate request detected: ${key}, returning existing promise`);
       return this.getExistingRequest(key);
     }
+    
+    // For manual operations, always allow them through even if similar requests exist
+    if (key.includes('manual-refresh') || key.includes('manual-')) {
+      console.log(`🔧 Manual operation detected: ${key}, bypassing all throttling`);
+      config.skipThrottle = true;
+      config.skipDeduplication = true;
+    }
 
     // Check circuit breaker
     if (!config.skipCircuitBreaker && this.isCircuitBreakerOpen(key)) {
@@ -74,8 +81,8 @@ class RequestManager {
       console.log(`⏩ No fresh cached result for ${key}, allowing request despite throttling`);
     }
 
-    // Cancel any existing request with the same key (unless it's high priority)
-    if (config.priority !== 'high') {
+    // Cancel any existing request with the same key (unless it's high priority or skip deduplication)
+    if (config.priority !== 'high' && !config.skipDeduplication) {
       await this.cancelExistingRequest(key);
     }
 
@@ -420,6 +427,12 @@ class RequestManager {
   async cancelExistingRequest(key) {
     const existing = this.pendingRequests.get(key);
     if (existing) {
+      // Don't cancel manual operations or high priority requests
+      if (key.includes('manual-') || existing.priority === 'high') {
+        console.log(`⏩ Skipping cancellation of high priority/manual request: ${key}`);
+        return;
+      }
+      
       console.log(`🔄 Cancelling existing request: ${key} (replacing with new request)`);
       existing.controller.abort();
       clearTimeout(existing.timeoutId);
@@ -636,14 +649,14 @@ class RequestManager {
     const navigationConfig = {
       ...options,
       skipThrottle: true,
-      timeout: options.timeout || 8000, // Faster timeout for navigation
-      maxRetries: options.maxRetries || 1, // Fewer retries for navigation
+      timeout: options.timeout || 15000, // Increased timeout for complex navigation queries
+      maxRetries: options.maxRetries || 2, // More retries for navigation
       priority: 'high'
     };
 
     // For navigation requests, we allow higher concurrency
     const originalLimit = this.maxConcurrentRequests;
-    this.maxConcurrentRequests = Math.max(20, originalLimit);
+    this.maxConcurrentRequests = Math.max(25, originalLimit); // Increased concurrency
 
     try {
       return await this.makeRequest(key, requestFn, navigationConfig);

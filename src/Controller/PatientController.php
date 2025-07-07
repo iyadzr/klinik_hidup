@@ -14,6 +14,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 #[Route('/api/patients')]
 class PatientController extends AbstractController
@@ -79,35 +80,89 @@ class PatientController extends AbstractController
     #[Route('', name: 'app_patient_index', methods: ['GET'])]
     public function index(Request $request, PatientRepository $patientRepository): JsonResponse
     {
-        $page = $request->query->getInt('page', 1);
-        $limit = $request->query->getInt('limit', 10);
+        $page = max(1, $request->query->getInt('page', 1));
+        $limit = min(100, max(10, $request->query->getInt('limit', 25))); // Clamp between 10-100
 
-        $patients = $patientRepository->findPaginated($page, $limit);
-        $total = $patientRepository->count([]);
+        try {
+            // Use caching for performance
+            $cacheKey = "patients_page_{$page}_limit_{$limit}";
+            
+            if ($this->cache) {
+                $result = $this->cache->get($cacheKey, function (ItemInterface $item) use ($patientRepository, $page, $limit) {
+                    $item->expiresAfter(300); // 5 minutes cache
+                    
+                    $patients = $patientRepository->findPaginated($page, $limit);
+                    $total = $patientRepository->countAll();
+                    
+                    $formattedPatients = array_map(function($patient) {
+                        return [
+                            'id' => $patient->getId(),
+                            'name' => $patient->getName(),
+                            'nric' => $patient->getNric(),
+                            'email' => $patient->getEmail(),
+                            'phone' => $patient->getPhone(),
+                            'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                            'gender' => $patient->getGender(),
+                            'address' => $patient->getAddress(),
+                            'company' => $patient->getCompany(),
+                            'remarks' => $patient->getRemarks(),
+                            'medicalHistory' => $patient->getMedicalHistory(),
+                            'displayName' => $patient->getName(),
+                        ];
+                    }, $patients);
 
-        $result = array_map(function($patient) {
-            return [
-                'id' => $patient->getId(),
-                'name' => $patient->getName(),
-                'nric' => $patient->getNric(),
-                'email' => $patient->getEmail(),
-                'phone' => $patient->getPhone(),
-                'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
-                'gender' => $patient->getGender(),
-                'address' => $patient->getAddress(),
-                'company' => $patient->getCompany(),
-                'remarks' => $patient->getRemarks(),
-                'medicalHistory' => $patient->getMedicalHistory(),
-                'displayName' => $patient->getName(),
-            ];
-        }, $patients);
+                    return [
+                        'data' => $formattedPatients,
+                        'total' => $total,
+                        'page' => $page,
+                        'limit' => $limit
+                    ];
+                });
+            } else {
+                // Fallback without cache
+                $patients = $patientRepository->findPaginated($page, $limit);
+                $total = $patientRepository->countAll();
 
-        return $this->json([
-            'data' => $result,
-            'total' => $total,
-            'page' => $page,
-            'limit' => $limit
-        ]);
+                $formattedPatients = array_map(function($patient) {
+                    return [
+                        'id' => $patient->getId(),
+                        'name' => $patient->getName(),
+                        'nric' => $patient->getNric(),
+                        'email' => $patient->getEmail(),
+                        'phone' => $patient->getPhone(),
+                        'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                        'gender' => $patient->getGender(),
+                        'address' => $patient->getAddress(),
+                        'company' => $patient->getCompany(),
+                        'remarks' => $patient->getRemarks(),
+                        'medicalHistory' => $patient->getMedicalHistory(),
+                        'displayName' => $patient->getName(),
+                    ];
+                }, $patients);
+
+                $result = [
+                    'data' => $formattedPatients,
+                    'total' => $total,
+                    'page' => $page,
+                    'limit' => $limit
+                ];
+            }
+
+            return $this->json($result);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error loading patients', [
+                'error' => $e->getMessage(),
+                'page' => $page,
+                'limit' => $limit,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return $this->json([
+                'error' => 'Failed to load patients',
+                'message' => 'Please try again later'
+            ], 500);
+        }
     }
 
     #[Route('/count', name: 'app_patient_count', methods: ['GET'])]
@@ -128,8 +183,8 @@ class PatientController extends AbstractController
     {
         try {
             $query = trim($request->query->get('query', ''));
-            $page = $request->query->getInt('page', 1);
-            $limit = $request->query->getInt('limit', 10);
+            $page = max(1, $request->query->getInt('page', 1));
+            $limit = min(100, max(10, $request->query->getInt('limit', 25))); // Clamp between 10-100
 
             if (empty($query)) {
                 // Return paginated results for empty search, same as index
@@ -146,32 +201,71 @@ class PatientController extends AbstractController
                 ], 400);
             }
 
-            $results = $patientRepository->findBySearchTermPaginated($query, $page, $limit);
-            $total = $patientRepository->countBySearchTerm($query);
+            // Use caching for search results
+            $cacheKey = "patient_search_" . md5($query) . "_page_{$page}_limit_{$limit}";
             
-            $formattedResults = array_map(function($patient) {
-                return [
-                    'id' => $patient->getId(),
-                    'name' => $patient->getName() ?? '',
-                    'nric' => $patient->getNric() ?? '',
-                    'email' => $patient->getEmail() ?? '',
-                    'phone' => $patient->getPhone() ?? '',
-                    'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
-                    'gender' => $patient->getGender() ?? '',
-                    'address' => $patient->getAddress() ?? '',
-                    'company' => $patient->getCompany() ?? '',
-                    'remarks' => $patient->getRemarks() ?? '',
-                    'medicalHistory' => $patient->getMedicalHistory() ?? '',
-                    'registrationNumber' => null
+            if ($this->cache) {
+                $result = $this->cache->get($cacheKey, function (ItemInterface $item) use ($patientRepository, $query, $page, $limit) {
+                    $item->expiresAfter(180); // 3 minutes cache for search results
+                    
+                    $results = $patientRepository->findBySearchTermPaginated($query, $page, $limit);
+                    $total = $patientRepository->countBySearchTerm($query);
+                    
+                    $formattedResults = array_map(function($patient) {
+                        return [
+                            'id' => $patient->getId(),
+                            'name' => $patient->getName() ?? '',
+                            'nric' => $patient->getNric() ?? '',
+                            'email' => $patient->getEmail() ?? '',
+                            'phone' => $patient->getPhone() ?? '',
+                            'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                            'gender' => $patient->getGender() ?? '',
+                            'address' => $patient->getAddress() ?? '',
+                            'company' => $patient->getCompany() ?? '',
+                            'remarks' => $patient->getRemarks() ?? '',
+                            'medicalHistory' => $patient->getMedicalHistory() ?? '',
+                            'registrationNumber' => null
+                        ];
+                    }, $results);
+                    
+                    return [
+                        'data' => $formattedResults,
+                        'total' => $total,
+                        'page' => $page,
+                        'limit' => $limit
+                    ];
+                });
+            } else {
+                // Fallback without cache
+                $results = $patientRepository->findBySearchTermPaginated($query, $page, $limit);
+                $total = $patientRepository->countBySearchTerm($query);
+                
+                $formattedResults = array_map(function($patient) {
+                    return [
+                        'id' => $patient->getId(),
+                        'name' => $patient->getName() ?? '',
+                        'nric' => $patient->getNric() ?? '',
+                        'email' => $patient->getEmail() ?? '',
+                        'phone' => $patient->getPhone() ?? '',
+                        'dateOfBirth' => $patient->getDateOfBirth() ? $patient->getDateOfBirth()->format('Y-m-d') : null,
+                        'gender' => $patient->getGender() ?? '',
+                        'address' => $patient->getAddress() ?? '',
+                        'company' => $patient->getCompany() ?? '',
+                        'remarks' => $patient->getRemarks() ?? '',
+                        'medicalHistory' => $patient->getMedicalHistory() ?? '',
+                        'registrationNumber' => null
+                    ];
+                }, $results);
+                
+                $result = [
+                    'data' => $formattedResults,
+                    'total' => $total,
+                    'page' => $page,
+                    'limit' => $limit
                 ];
-            }, $results);
+            }
             
-            return $this->json([
-                'data' => $formattedResults,
-                'total' => $total,
-                'page' => $page,
-                'limit' => $limit
-            ]);
+            return $this->json($result);
             
         } catch (\Exception $e) {
             $this->logger->error('Patient search error', [

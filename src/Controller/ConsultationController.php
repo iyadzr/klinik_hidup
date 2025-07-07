@@ -418,6 +418,8 @@ class ConsultationController extends AbstractController
         }
         
         try {
+            $this->logger->info('Fetching patient history for patient ID: ' . $id);
+            
             $cacheKey = "patient_history_$id";
             
             if ($this->cache) {
@@ -429,6 +431,8 @@ class ConsultationController extends AbstractController
                 $history = $this->buildPatientHistory($id);
             }
             
+            $this->logger->info('Patient history result count: ' . count($history));
+            
             return new JsonResponse($history);
         } catch (\Exception $e) {
             $this->logger->error('Error fetching patient history: ' . $e->getMessage());
@@ -438,6 +442,8 @@ class ConsultationController extends AbstractController
     
     private function buildPatientHistory(int $patientId): array
     {
+        $this->logger->info('Building patient history for patient ID: ' . $patientId);
+        
         $consultations = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
             ->where('c.patient = :patientId')
@@ -446,6 +452,8 @@ class ConsultationController extends AbstractController
             ->setMaxResults(50) // Limit to last 50 consultations
             ->getQuery()
             ->getResult();
+
+        $this->logger->info('Found ' . count($consultations) . ' consultations for patient ID: ' . $patientId);
 
         $history = [];
         foreach ($consultations as $consultation) {
@@ -459,37 +467,81 @@ class ConsultationController extends AbstractController
                 }
             }
 
-            $history[] = [
-                'id' => $consultation->getId(),
-                'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d\TH:i'),
-                'diagnosis' => $consultation->getDiagnosis(),
-                'medications' => $parsedMedications, // Parsed medications array
-                'notes' => $consultation->getNotes(),
-                'symptoms' => $consultation->getSymptoms(),
-                'treatment' => $consultation->getTreatment(),
-                'followUpPlan' => $consultation->getFollowUpPlan(),
-                'consultationFee' => $consultation->getConsultationFee(),
-                'medicinesFee' => $consultation->getMedicinesFee(),
-                'totalAmount' => $consultation->getTotalAmount(),
-                'isPaid' => $consultation->getIsPaid(),
-                'status' => $consultation->getIsPaid() ? 'Paid' : 'Unpaid',
-                'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
-                'hasMedicalCertificate' => $consultation->getHasMedicalCertificate() ?? false,
-                'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
-                'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
-                'mcNotes' => method_exists($consultation, 'getMcNotes') ? $consultation->getMcNotes() : null,
-                'mcNumber' => method_exists($consultation, 'getMcNumber') ? $consultation->getMcNumber() : null,
-                'queueNumber' => method_exists($consultation, 'getQueueNumber') ? $consultation->getQueueNumber() : null,
-                'doctor' => [
-                    'id' => $consultation->getDoctor()->getId(),
-                    'name' => $consultation->getDoctor()->getName()
-                ],
-                'patient' => [
-                    'id' => $consultation->getPatient()->getId(),
-                    'name' => $consultation->getPatient()->getName()
-                ],
-                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
-            ];
+            // Check for payment records to get accurate payment status
+            $paymentRecords = $this->entityManager->getRepository(\App\Entity\Payment::class)
+                ->findBy(['consultation' => $consultation]);
+            
+            // Convert payment records to simple array to avoid serialization issues
+            $paymentData = [];
+            foreach ($paymentRecords as $payment) {
+                $paymentData[] = [
+                    'id' => $payment->getId(),
+                    'amount' => $payment->getAmount(),
+                    'paymentMethod' => $payment->getPaymentMethod(),
+                    'paymentDate' => $payment->getPaymentDate() ? $payment->getPaymentDate()->format('Y-m-d H:i:s') : null
+                ];
+            }
+            
+            $hasPaymentRecord = count($paymentRecords) > 0;
+            $isActuallyPaid = $hasPaymentRecord || $consultation->getIsPaid();
+
+            try {
+                $doctorData = null;
+                if ($consultation->getDoctor()) {
+                    $doctorData = [
+                        'id' => $consultation->getDoctor()->getId(),
+                        'name' => $consultation->getDoctor()->getName()
+                    ];
+                }
+                
+                $patientData = null;
+                if ($consultation->getPatient()) {
+                    $patientData = [
+                        'id' => $consultation->getPatient()->getId(),
+                        'name' => $consultation->getPatient()->getName()
+                    ];
+                }
+                
+                $history[] = [
+                    'id' => $consultation->getId(),
+                    'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d\TH:i'),
+                    'diagnosis' => $consultation->getDiagnosis(),
+                    'medications' => $parsedMedications, // Parsed medications array
+                    'notes' => $consultation->getNotes(),
+                    'symptoms' => $consultation->getSymptoms(),
+                    'treatment' => $consultation->getTreatment(),
+                    'followUpPlan' => $consultation->getFollowUpPlan(),
+                    'consultationFee' => $consultation->getConsultationFee(),
+                    'medicinesFee' => $consultation->getMedicinesFee(),
+                    'totalAmount' => $consultation->getTotalAmount(),
+                    'isPaid' => $isActuallyPaid, // Use enhanced payment status check
+                    'payments' => $paymentData, // Include payment records for frontend reference
+                    'status' => $isActuallyPaid ? 'Paid' : 'Unpaid',
+                    'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
+                    'hasMedicalCertificate' => $consultation->getHasMedicalCertificate() ?? false,
+                    'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
+                    'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
+                    'mcNotes' => method_exists($consultation, 'getMcNotes') ? $consultation->getMcNotes() : null,
+                    'mcNumber' => method_exists($consultation, 'getMcNumber') ? $consultation->getMcNumber() : null,
+                    'queueNumber' => method_exists($consultation, 'getQueueNumber') ? $consultation->getQueueNumber() : null,
+                    'doctor' => $doctorData,
+                    'patient' => $patientData,
+                    'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
+                ];
+                
+                $this->logger->info('Added consultation to history', [
+                    'consultationId' => $consultation->getId(),
+                    'patientId' => $consultation->getPatient()->getId(),
+                    'doctorId' => $consultation->getDoctor()->getId()
+                ]);
+                
+            } catch (\Exception $e) {
+                $this->logger->error('Error processing consultation for history', [
+                    'consultationId' => $consultation->getId(),
+                    'error' => $e->getMessage()
+                ]);
+                continue; // Skip this consultation if there's an error
+            }
         }
         
         return $history;

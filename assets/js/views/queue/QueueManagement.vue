@@ -32,8 +32,9 @@
           <button @click="setToday" class="btn btn-outline-primary btn-sm">
             <i class="fas fa-calendar-day"></i> Today
           </button>
-          <button @click="manualRefresh" class="btn btn-outline-success btn-sm">
-            <i class="fas fa-sync-alt"></i> Refresh
+          <button @click="manualRefresh" class="btn btn-outline-success btn-sm" :disabled="isLoading || isRefreshing">
+            <i class="fas fa-sync-alt" :class="{ 'fa-spin': isRefreshing }"></i> 
+            {{ isRefreshing ? 'Refreshing...' : 'Refresh' }}
           </button>
         </div>
       </div>
@@ -295,6 +296,7 @@ export default {
       isLoading: false,
       isDoctorLoading: false,
       isPaymentProcessing: false,
+      isRefreshing: false,
       
       // Pagination
       currentPage: 1,
@@ -382,14 +384,19 @@ export default {
         const response = await makeNavigationRequest(
           'load-patients-queue',
           async (signal) => {
-            return await axios.get('/api/patients', { signal });
+            return await axios.get('/api/patients', { 
+              signal,
+              params: {
+                limit: 100 // Limit initial load for performance
+              }
+            });
           },
           {
-            timeout: 8000
+            timeout: 12000 // Increased timeout
           }
         );
         
-        this.patients = response.data;
+        this.patients = response.data.data || response.data;
         console.log('✅ Patients loaded for queue management');
         
       } catch (error) {
@@ -419,7 +426,7 @@ export default {
             return await axios.get('/api/doctors', { signal });
           },
           {
-            timeout: 8000
+            timeout: 10000 // Increased timeout
           }
         );
         
@@ -456,7 +463,7 @@ export default {
 
         console.log('📋 Loading queue list for date:', this.selectedDate, 'status:', this.selectedStatus);
 
-        // Use high priority for user-initiated requests
+        // Use high priority for user-initiated requests with longer timeout
         const response = await makeNavigationRequest(
           `queue-list-${this.selectedDate}-${this.selectedStatus}`,
           async (signal) => {
@@ -469,13 +476,13 @@ export default {
                 _t: Date.now() // Cache-busting timestamp
               },
               signal,
-              timeout: 8000 // Explicit timeout
+              timeout: 15000 // Increased timeout for complex queries
             });
           },
           {
             priority: 'high', // High priority for user interactions
-            timeout: 8000,
-            maxRetries: 1,
+            timeout: 15000, // Increased timeout
+            maxRetries: 2, // Allow more retries
             skipThrottle: false // Allow some throttling even for high priority
           }
         );
@@ -566,27 +573,48 @@ export default {
     },
 
     async manualRefresh() {
+      if (this.isLoading || this.isRefreshing) {
+        console.log('⏩ Manual refresh skipped - already loading');
+        this.$toast?.warning?.('Already refreshing, please wait...');
+        return;
+      }
+      
+      this.isRefreshing = true;
       console.log('🔄 Manual refresh triggered');
       
       // Show user feedback
       this.$toast?.info?.('Refreshing queue data...');
       
       try {
+        // Cancel any existing queue requests to prevent conflicts
+        cancelAllRequests();
+        
+        // Wait a moment for cancellations to process
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Use a unique key with timestamp to avoid conflicts
+        const refreshKey = `manual-refresh-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
         // Force refresh by clearing cache and using high priority
-        await makeProtectedRequest(
-          `manual-refresh-queue-${this.selectedDate}`,
+        await makeNavigationRequest(
+          refreshKey,
           async (signal) => {
-            return await axios.get(`/api/queue?date=${this.selectedDate}&_t=${Date.now()}`, { 
+            return await axios.get('/api/queue', {
+              params: {
+                date: this.selectedDate,
+                status: this.selectedStatus,
+                _refresh: Date.now() // Cache busting
+              },
               signal,
-              timeout: 10000 // Longer timeout for manual refresh
+              timeout: 15000 // Longer timeout for manual refresh
             });
           },
           {
             priority: 'high',
             skipThrottle: true, // Skip throttling for manual refresh
             skipDeduplication: true, // Skip deduplication for manual refresh
-            timeout: 10000,
-            maxRetries: 2
+            timeout: 15000,
+            maxRetries: 1 // Reduced retries for manual actions
           }
         );
         
@@ -597,13 +625,20 @@ export default {
       } catch (error) {
         console.error('❌ Manual refresh failed:', error);
         
-        if (error.circuitBreakerOpen) {
+        if (error.message?.includes('cancelled') || error.message?.includes('canceled')) {
+          console.log('Manual refresh was cancelled, probably due to navigation or duplicate request');
+          this.$toast?.warning?.('Refresh cancelled. Please try again.');
+        } else if (error.circuitBreakerOpen) {
           this.$toast?.warning?.('Service temporarily unavailable. Please try again in a moment.');
         } else if (error.response?.status === 429) {
           this.$toast?.warning?.('Too many requests. Please wait before refreshing again.');
+        } else if (error.name === 'TimeoutError') {
+          this.$toast?.error?.('Refresh timed out. The server may be overloaded. Please try again.');
         } else {
           this.$toast?.error?.('Failed to refresh queue data. Please check your connection.');
         }
+      } finally {
+        this.isRefreshing = false;
       }
     },
 

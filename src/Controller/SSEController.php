@@ -8,15 +8,19 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Psr\Log\LoggerInterface;
+use Doctrine\ORM\EntityManagerInterface;
+use App\Entity\Queue;
 
 #[Route('/api/sse')]
 class SSEController extends AbstractController
 {
     private LoggerInterface $logger;
+    private EntityManagerInterface $entityManager;
     
-    public function __construct(LoggerInterface $logger)
+    public function __construct(LoggerInterface $logger, EntityManagerInterface $entityManager)
     {
         $this->logger = $logger;
+        $this->entityManager = $entityManager;
     }
 
     #[Route('/queue-updates', name: 'app_sse_queue_updates', methods: ['GET'])]
@@ -70,13 +74,16 @@ class SSEController extends AbstractController
             // Log connection start
             $this->logger->info('SSE connection started', ['connection_id' => $connectionId]);
             
-            // Send initial connection message
+            // Send initial connection message with pending actions count
+            $pendingActions = $this->getPendingActionsCount();
+            
             echo "event: connected\n";
             echo "data: " . json_encode([
                 'type' => 'connection_established',
                 'timestamp' => $startTime,
                 'connection_id' => $connectionId,
-                'authenticated' => $isAuthenticated
+                'authenticated' => $isAuthenticated,
+                'pendingActions' => $pendingActions
             ]) . "\n\n";
             
             if (ob_get_level()) {
@@ -212,6 +219,33 @@ class SSEController extends AbstractController
         });
         
         return $response;
+    }
+
+    private function getPendingActionsCount(): int
+    {
+        try {
+            $today = \App\Service\TimezoneService::now();
+            $startOfDay = (clone $today)->setTime(0, 0, 0);
+            $endOfDay = (clone $today)->setTime(23, 59, 59);
+            
+            // Count consultations that are completed but not paid (pending payment processing)
+            $pendingPaymentCount = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('COUNT(q.id)')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->andWhere('q.status = :status')
+                ->andWhere('(q.isPaid = false OR q.isPaid IS NULL)')
+                ->setParameter('start', $startOfDay)
+                ->setParameter('end', $endOfDay)
+                ->setParameter('status', 'completed_consultation')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            return (int) $pendingPaymentCount;
+        } catch (\Exception $e) {
+            $this->logger->error('Error getting pending actions count: ' . $e->getMessage());
+            return 0;
+        }
     }
     
     #[Route('/health', name: 'app_sse_health', methods: ['GET'])]

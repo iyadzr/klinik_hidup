@@ -27,7 +27,13 @@
               @click="handleLinkClick"
               :class="{ 'router-link-active': isMenuItemActive(item) }"
             >
-              <i :class="item.icon"></i> {{ item.label }}
+              <div class="nav-link-content">
+                <i :class="item.icon"></i> {{ item.label }}
+                <NotificationBadge 
+                  v-if="item.path === '/queue' && pendingActionsCount > 0" 
+                  :count="pendingActionsCount" 
+                />
+              </div>
             </router-link>
           </li>
           
@@ -158,6 +164,14 @@
   width: 20px;
   font-size: 1.1rem;
 }
+
+/* Navigation link content wrapper for notification badge positioning */
+.nav-link-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
 .main-content {
   flex: 1 1 0%;
   min-width: 0;
@@ -257,10 +271,14 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import AuthService from './services/AuthService';
 import UserProfileMenu from './components/UserProfileMenu.vue';
+import NotificationBadge from './components/NotificationBadge.vue';
 
 export default {
   name: 'App',
-  components: { UserProfileMenu },
+  components: { 
+    UserProfileMenu,
+    NotificationBadge 
+  },
   setup() {
     const router = useRouter();
     const route = useRoute();
@@ -268,6 +286,8 @@ export default {
     const currentUser = ref(null);
     const isMobile = ref(window.innerWidth < 992);
     const isNavigationLoading = ref(false);
+    const pendingActionsCount = ref(0);
+    const eventSource = ref(null);
 
     // Make computed properties reactive to currentUser changes
     const isAuthenticated = computed(() => !!currentUser.value && !!currentUser.value.token);
@@ -464,8 +484,81 @@ export default {
       if (user) {
         currentUser.value = user;
         AuthService.setAuthHeader(user.token);
+        // Initialize SSE when user is authenticated
+        initializeSSE();
       } else {
         currentUser.value = null;
+        cleanupSSE();
+      }
+    };
+
+    const initializeSSE = () => {
+      if (!isAuthenticated.value || isAuthPage.value) {
+        return;
+      }
+
+      try {
+        console.log('🔌 Initializing SSE for pending actions...');
+        eventSource.value = new EventSource('/api/sse/queue-updates');
+        
+        eventSource.value.onopen = () => {
+          console.log('✅ SSE connection established for pending actions');
+        };
+        
+        eventSource.value.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            // Handle initial connection with pending actions count
+            if (data.type === 'connection_established' && typeof data.pendingActions === 'number') {
+              pendingActionsCount.value = data.pendingActions;
+              console.log('📊 Initial pending actions count:', data.pendingActions);
+            }
+            
+            // Handle pending actions updates
+            if (data.type === 'pending_actions_update' && data.data) {
+              pendingActionsCount.value = data.data.totalPendingActions || 0;
+              console.log('📊 Pending actions count updated:', pendingActionsCount.value);
+            }
+            
+            // Handle queue updates that might affect pending actions
+            if (data.status === 'completed_consultation' || data.status === 'completed') {
+              // Refresh pending actions count when status changes
+              fetchPendingActionsCount();
+            }
+            
+          } catch (error) {
+            console.error('❌ Error parsing SSE data:', error);
+          }
+        };
+        
+        eventSource.value.onerror = (error) => {
+          console.error('❌ SSE connection error:', error);
+        };
+        
+      } catch (error) {
+        console.error('❌ Failed to initialize SSE:', error);
+      }
+    };
+
+    const fetchPendingActionsCount = async () => {
+      try {
+        const response = await fetch('/api/queue/pending-actions');
+        if (response.ok) {
+          const data = await response.json();
+          pendingActionsCount.value = data.totalPendingActions || 0;
+          console.log('📊 Updated pending actions count:', pendingActionsCount.value);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching pending actions count:', error);
+      }
+    };
+
+    const cleanupSSE = () => {
+      if (eventSource.value) {
+        eventSource.value.close();
+        eventSource.value = null;
+        console.log('🧹 SSE connection closed');
       }
     };
 
@@ -563,6 +656,7 @@ export default {
     onUnmounted(() => {
       window.removeEventListener('resize', handleResize);
       stopTokenExpirationMonitoring(); // Clean up token monitoring
+      cleanupSSE(); // Clean up SSE connection
     });
 
     return {
@@ -574,6 +668,7 @@ export default {
       userRoles,
       isAuthPage,
       isNavigationLoading,
+      pendingActionsCount,
       hasRole,
       toggleSidebar,
       closeSidebar,

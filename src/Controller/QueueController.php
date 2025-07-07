@@ -144,22 +144,36 @@ class QueueController extends AbstractController
             $qb = $this->entityManager->getRepository(Queue::class)
                 ->createQueryBuilder('q')
                 ->select('q', 'p', 'd') // Select full objects to access entity methods
-                ->join('q.patient', 'p')
-                ->join('q.doctor', 'd');
+                ->leftJoin('q.patient', 'p') // Use LEFT JOIN instead of JOIN for safety
+                ->leftJoin('q.doctor', 'd')
+                ->addSelect('partial p.{id,name,nric,gender,phone,dateOfBirth,address}') // Only select needed patient fields
+                ->addSelect('partial d.{id,name}'); // Only select needed doctor fields
 
-            // Date filtering with proper timezone handling
+            // Date filtering with proper timezone handling and index usage
             if ($date) {
                 $startOfDay = \App\Service\TimezoneService::createDateTime($date . ' 00:00:00');
                 $endOfDay = \App\Service\TimezoneService::createDateTime($date . ' 23:59:59');
-                $qb->andWhere('q.queueDateTime BETWEEN :startDate AND :endDate')
+                $qb->andWhere('q.queueDateTime >= :startDate AND q.queueDateTime <= :endDate')
+                   ->setParameter('startDate', $startOfDay)
+                   ->setParameter('endDate', $endOfDay);
+            } else {
+                // If no date specified, default to today to use index efficiently
+                $today = \App\Service\TimezoneService::now();
+                $startOfDay = (clone $today)->setTime(0, 0, 0);
+                $endOfDay = (clone $today)->setTime(23, 59, 59);
+                $qb->andWhere('q.queueDateTime >= :startDate AND q.queueDateTime <= :endDate')
                    ->setParameter('startDate', $startOfDay)
                    ->setParameter('endDate', $endOfDay);
             }
 
-            // Status filtering
+            // Status filtering with index usage
             if ($status && $status !== 'all') {
                 $qb->andWhere('q.status = :status')
                    ->setParameter('status', $status);
+            } else {
+                // Filter out cancelled items by default for better performance
+                $qb->andWhere('q.status != :cancelled')
+                   ->setParameter('cancelled', 'cancelled');
             }
 
             // Add pagination to prevent memory issues
@@ -169,9 +183,10 @@ class QueueController extends AbstractController
                ->orderBy('q.queueDateTime', 'DESC')
                ->addOrderBy('q.queueNumber', 'ASC');
 
-            // Set query timeout and hints for performance
+            // Set query hints for performance
             $query = $qb->getQuery();
             $query->setHint(\Doctrine\ORM\Query::HINT_FORCE_PARTIAL_LOAD, true);
+            $query->setHint(\Doctrine\ORM\Query::HINT_READ_ONLY, true);
             
             // Execute with timeout protection
             $startTime = microtime(true);
@@ -208,22 +223,21 @@ class QueueController extends AbstractController
                     // Group consultation: collect all patients in this group with optimized query
                     $groupQb = $this->entityManager->getRepository(Queue::class)
                         ->createQueryBuilder('gq')
-                        ->select('gq', 'gp') // Select queue and patient only
-                        ->join('gq.patient', 'gp')
+                        ->select('gq.id, gq.metadata, gp.id as patientId, gp.name as patientName') // Select minimal fields
+                        ->leftJoin('gq.patient', 'gp')
                         ->where('gq.metadata LIKE :groupId')
                         ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
-                        ->setMaxResults(20); // Prevent runaway group queries
+                        ->setMaxResults(10); // Reduced limit for better performance
                     
-                    $groupQueues = $groupQb->getQuery()->getResult();
+                    $groupData = $groupQb->getQuery()->getScalarResult();
                     
                     $patients = [];
-                    foreach ($groupQueues as $groupQueue) {
-                        $groupPatient = $groupQueue->getPatient();
-                        if ($groupPatient) {
+                    foreach ($groupData as $row) {
+                        if ($row['patientId']) {
                             $patients[] = [
-                                'id' => $groupPatient->getId(),
-                                'name' => $groupPatient->getName(),
-                                'displayName' => method_exists($groupPatient, 'getDisplayName') ? $groupPatient->getDisplayName() : $groupPatient->getName()
+                                'id' => $row['patientId'],
+                                'name' => $row['patientName'],
+                                'displayName' => $row['patientName']
                             ];
                         }
                     }
@@ -748,6 +762,11 @@ class QueueController extends AbstractController
             // Broadcast SSE update for status change
             $this->broadcastQueueUpdate($queue);
             
+            // Broadcast pending actions update when consultation is completed
+            if ($data['status'] === 'completed_consultation') {
+                $this->broadcastPendingActionsUpdate();
+            }
+            
             $this->logger->info('Queue status updated', [
                 'queueId' => $id,
                 'oldStatus' => $oldStatus,
@@ -847,6 +866,9 @@ class QueueController extends AbstractController
             
             // Also broadcast payment-specific update
             $this->broadcastPaymentUpdate($payment, $queue);
+            
+            // Broadcast pending actions update to update notification badge
+            $this->broadcastPendingActionsUpdate();
             
             $this->logger->info('Queue payment processed with Payment record', [
                 'queueId' => $id,
@@ -1419,5 +1441,99 @@ class QueueController extends AbstractController
         
         // Write back to file
         file_put_contents($paymentUpdateFile, json_encode($updates));
+    }
+
+    /**
+     * Broadcast pending actions count update via SSE
+     */
+    private function broadcastPendingActionsUpdate(): void
+    {
+        try {
+            $today = \App\Service\TimezoneService::now();
+            $startOfDay = (clone $today)->setTime(0, 0, 0);
+            $endOfDay = (clone $today)->setTime(23, 59, 59);
+            
+            // Count consultations that are completed but not paid (pending payment processing)
+            $pendingPaymentCount = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('COUNT(q.id)')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->andWhere('q.status = :status')
+                ->andWhere('(q.isPaid = false OR q.isPaid IS NULL)')
+                ->setParameter('start', $startOfDay)
+                ->setParameter('end', $endOfDay)
+                ->setParameter('status', 'completed_consultation')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            $updateData = [
+                'type' => 'pending_actions_update',
+                'timestamp' => time(),
+                'data' => [
+                    'pendingPayments' => (int) $pendingPaymentCount,
+                    'totalPendingActions' => (int) $pendingPaymentCount
+                ]
+            ];
+            
+            // Write to temporary file that SSE endpoint will read
+            $tempDir = sys_get_temp_dir();
+            $updateFile = $tempDir . '/queue_updates.json';
+            
+            // Read existing updates
+            $updates = [];
+            if (file_exists($updateFile)) {
+                $content = file_get_contents($updateFile);
+                $updates = json_decode($content, true) ?: [];
+            }
+            
+            // Add new update
+            $updates[] = $updateData;
+            
+            // Keep only last 10 updates to prevent file from growing too large
+            $updates = array_slice($updates, -10);
+            
+            // Write back to file
+            file_put_contents($updateFile, json_encode($updates));
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error broadcasting pending actions update: ' . $e->getMessage());
+        }
+    }
+
+    #[Route('/pending-actions', name: 'app_queue_pending_actions', methods: ['GET'])]
+    public function getPendingActions(Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $today = \App\Service\TimezoneService::now();
+            $startOfDay = (clone $today)->setTime(0, 0, 0);
+            $endOfDay = (clone $today)->setTime(23, 59, 59);
+            
+            // Count consultations that are completed but not paid (pending payment processing)
+            $pendingPaymentCount = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('COUNT(q.id)')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->andWhere('q.status = :status')
+                ->andWhere('(q.isPaid = false OR q.isPaid IS NULL)')
+                ->setParameter('start', $startOfDay)
+                ->setParameter('end', $endOfDay)
+                ->setParameter('status', 'completed_consultation')
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            return new JsonResponse([
+                'pendingPayments' => (int) $pendingPaymentCount,
+                'totalPendingActions' => (int) $pendingPaymentCount
+            ]);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching pending actions: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to fetch pending actions'], 500);
+        }
     }
 }
