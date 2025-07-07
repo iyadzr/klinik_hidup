@@ -145,9 +145,7 @@ class QueueController extends AbstractController
                 ->createQueryBuilder('q')
                 ->select('q', 'p', 'd') // Select full objects to access entity methods
                 ->leftJoin('q.patient', 'p') // Use LEFT JOIN instead of JOIN for safety
-                ->leftJoin('q.doctor', 'd')
-                ->addSelect('partial p.{id,name,nric,gender,phone,dateOfBirth,address}') // Only select needed patient fields
-                ->addSelect('partial d.{id,name}'); // Only select needed doctor fields
+                ->leftJoin('q.doctor', 'd');
 
             // Date filtering with proper timezone handling and index usage
             if ($date) {
@@ -192,6 +190,8 @@ class QueueController extends AbstractController
             $startTime = microtime(true);
             $queues = $query->getResult();
             $queryTime = microtime(true) - $startTime;
+            
+
             
             // Log slow queries
             if ($queryTime > 2.0) {

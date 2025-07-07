@@ -25,7 +25,6 @@
     <PatientTable
       :patients="patients"
       :loading="loading"
-      :loading-progress="loadingProgress"
       :current-page="currentPage"
       :per-page="perPage"
       :search-query="searchQuery"
@@ -128,7 +127,7 @@
 <script>
 import axios from 'axios';
 import AuthService from '../../services/AuthService';
-import RequestManager from '../../utils/requestManager.js';
+import requestManager from '../../utils/requestManager.js';
 import timezoneUtils from '../../utils/timezoneUtils.js';
 
 // Import components
@@ -161,7 +160,6 @@ export default {
     return {
       patients: [],
       loading: false,
-      loadingProgress: 0,
       error: null,
       searchQuery: '',
       currentPage: 1,
@@ -188,9 +186,11 @@ export default {
       visitHistories: [],
       loadingVisitHistory: false,
       
-      // Request management
-      requestManager: new RequestManager()
     };
+  },
+  created() {
+    // Use the singleton requestManager instance directly
+    this.requestManager = requestManager;
   },
   computed: {
     pages() {
@@ -211,63 +211,81 @@ export default {
     }
   },
   async mounted() {
+    console.log('PatientList mounted - checking authentication...');
+    const user = AuthService.getCurrentUser();
+    console.log('Current user:', user);
+    console.log('Is authenticated:', AuthService.isAuthenticated());
+    console.log('Token exists:', !!user?.token);
+    
+    if (user?.token) {
+      console.log('Token length:', user.token.length);
+      console.log('Token first 20 chars:', user.token.substring(0, 20) + '...');
+    }
+    
+    // Add escape key listener to force close modals
+    document.addEventListener('keydown', this.handleEscapeKey);
+    // Add click listener to force close modals when clicking outside
+    document.addEventListener('click', this.handleOutsideClick);
+    
     await this.loadPatients();
   },
   beforeUnmount() {
     if (this.searchTimeout) {
       clearTimeout(this.searchTimeout);
     }
+    // Remove escape key listener
+    document.removeEventListener('keydown', this.handleEscapeKey);
+    // Remove click listener
+    document.removeEventListener('click', this.handleOutsideClick);
   },
   methods: {
     // Core loading methods
     async loadPatients() {
+      console.log('loadPatients called - starting...');
       this.loading = true;
-      this.loadingProgress = 10;
       this.error = null;
 
-      try {
-        const progressInterval = setInterval(() => {
-          if (this.loadingProgress < 80) {
-            this.loadingProgress += 10;
-          }
-        }, 200);
+      const requestKey = `patient-list-${Date.now()}`;
+      const params = {
+        page: this.currentPage,
+        limit: this.perPage
+      };
 
-        const requestKey = `patient-list-${Date.now()}`;
-        const params = {
-          page: this.currentPage,
-          limit: this.perPage
-        };
-
-        if (this.searchQuery && this.searchQuery.trim().length >= 2) {
-          params.query = this.searchQuery.trim();
-        }
-
-        const response = await this.requestManager.get('/api/patients', {
-          params,
-          timeout: 12000 // Extended timeout for patient loading
-        }, requestKey);
-
-        clearInterval(progressInterval);
-        this.loadingProgress = 100;
-
-        this.patients = response.data.patients || [];
-        this.totalPatients = response.data.total || 0;
-        this.totalPages = Math.ceil(this.totalPatients / this.perPage);
-
-        // If current page is beyond total pages, reset to page 1
-        if (this.currentPage > this.totalPages && this.totalPages > 0) {
-          this.currentPage = 1;
-          await this.loadPatients();
-          return;
-        }
-
-      } catch (error) {
-        console.error('Failed to load patients:', error);
-        this.error = 'Failed to load patients. Please try again.';
-      } finally {
-        this.loading = false;
-        this.loadingProgress = 0;
+      if (this.searchQuery && this.searchQuery.trim().length >= 2) {
+        params.query = this.searchQuery.trim();
       }
+
+      console.log('Making API call with params:', params);
+      console.log('Request key:', requestKey);
+
+      const response = await this.requestManager.makeRequest(requestKey, async (signal) => {
+        return await axios.get('/api/patients', {
+          params,
+          timeout: 12000, // Extended timeout for patient loading
+          signal // Pass the abort signal for cancellation
+        });
+      });
+
+      console.log('API response received:', response);
+      console.log('Response data structure:', Object.keys(response.data));
+      console.log('Response data.data:', response.data.data);
+
+      this.patients = response.data.data || [];
+      this.totalPatients = response.data.total || 0;
+      this.totalPages = Math.ceil(this.totalPatients / this.perPage);
+
+      console.log('Patients loaded:', this.patients.length);
+      console.log('Total patients:', this.totalPatients);
+
+      // If current page is beyond total pages, reset to page 1
+      if (this.currentPage > this.totalPages && this.totalPages > 0) {
+        this.currentPage = 1;
+        await this.loadPatients();
+        return;
+      }
+
+      this.loading = false;
+      console.log('loadPatients completed successfully');
     },
 
     // Search methods
@@ -350,13 +368,8 @@ export default {
         return;
       }
 
-      try {
-        await axios.delete(`/api/patients/${patient.id}`);
-        await this.loadPatients();
-      } catch (error) {
-        console.error('Failed to delete patient:', error);
-        this.error = 'Failed to delete patient. Please try again.';
-      }
+      await axios.delete(`/api/patients/${patient.id}`);
+      await this.loadPatients();
     },
 
     // Modal management
@@ -377,15 +390,9 @@ export default {
       if (!patient?.id) return;
 
       this.loadingVisitHistory = true;
-      try {
-        const response = await axios.get(`/api/patients/${patient.id}/visit-history`);
-        this.visitHistories = response.data.visits || [];
-      } catch (error) {
-        console.error('Failed to load visit history:', error);
-        this.visitHistories = [];
-      } finally {
-        this.loadingVisitHistory = false;
-      }
+      const response = await axios.get(`/api/patients/${patient.id}/visit-history`);
+      this.visitHistories = response.data.visits || [];
+      this.loadingVisitHistory = false;
     },
 
     closeVisitHistoryModal() {
@@ -429,6 +436,77 @@ export default {
     closeMCModal() {
       this.showMCModal = false;
       this.selectedVisitForMC = null;
+      // Force close any stuck modals
+      this.forceCloseAllModals();
+      this.forceDOMModalClose();
+    },
+
+    // Force close all modals - emergency method
+    forceCloseAllModals() {
+      this.showAddModal = false;
+      this.showVisitHistoryModal = false;
+      this.showVisitDetailsModal = false;
+      this.showReceiptModal = false;
+      this.showMCModal = false;
+      this.selectedPatientForHistory = null;
+      this.selectedVisit = null;
+      this.selectedVisitForReceipt = null;
+      this.selectedVisitForMC = null;
+      this.editingPatient = null;
+      this.visitHistories = [];
+      
+      // Also force DOM cleanup
+      this.$nextTick(() => {
+        this.forceDOMModalClose();
+      });
+    },
+
+    // Handle escape key to close modals
+    handleEscapeKey(event) {
+      if (event.key === 'Escape') {
+        console.log('Escape key pressed - force closing all modals');
+        this.forceCloseAllModals();
+        this.forceDOMModalClose();
+      }
+    },
+
+    // Force close modals via DOM manipulation as last resort
+    forceDOMModalClose() {
+      console.log('Force closing modals via DOM manipulation');
+      
+      // Remove all modal backdrops
+      const backdrops = document.querySelectorAll('.modal-backdrop');
+      backdrops.forEach(backdrop => backdrop.remove());
+      
+      // Hide all modals
+      const modals = document.querySelectorAll('.modal');
+      modals.forEach(modal => {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+      });
+      
+      // Remove modal-open class from body
+      document.body.classList.remove('modal-open');
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      
+      console.log('DOM modal cleanup completed');
+    },
+
+    // Handle click outside modal to close
+    handleOutsideClick(event) {
+      // Check if any modal is open
+      const isModalOpen = this.showMCModal || this.showVisitHistoryModal || 
+                         this.showVisitDetailsModal || this.showReceiptModal || this.showAddModal;
+      
+      if (isModalOpen) {
+        // Check if click is on modal backdrop
+        if (event.target.classList.contains('modal-backdrop') || 
+            event.target.classList.contains('modal')) {
+          console.log('Click outside modal detected - force closing all modals');
+          this.forceCloseAllModals();
+        }
+      }
     },
 
     printMC() {

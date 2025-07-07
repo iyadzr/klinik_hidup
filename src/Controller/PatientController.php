@@ -773,6 +773,97 @@ class PatientController extends AbstractController
         return $this->json(['message' => 'Patient deleted successfully']);
     }
 
+    #[Route('/{id}/visit-history', name: 'app_patient_visit_history', methods: ['GET'])]
+    public function getVisitHistory(int $id): JsonResponse
+    {
+        try {
+            $patient = $this->entityManager->getRepository(Patient::class)->find($id);
+            
+            if (!$patient) {
+                return $this->json(['error' => 'Patient not found'], 404);
+            }
+
+            // Get consultations for this patient
+            $consultations = $this->entityManager->getRepository(Consultation::class)
+                ->createQueryBuilder('c')
+                ->leftJoin('c.doctor', 'd')
+                ->where('c.patient = :patientId')
+                ->setParameter('patientId', $id)
+                ->orderBy('c.consultationDate', 'DESC')
+                ->setMaxResults(50) // Limit to last 50 visits
+                ->getQuery()
+                ->getResult();
+
+            $visits = [];
+            foreach ($consultations as $consultation) {
+                // Parse medications from JSON string
+                $medications = [];
+                $medicationsJson = $consultation->getMedications();
+                if ($medicationsJson) {
+                    $decodedMedications = json_decode($medicationsJson, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decodedMedications)) {
+                        $medications = $decodedMedications;
+                    }
+                }
+
+                // Check payment status
+                $payments = $this->entityManager->getRepository(\App\Entity\Payment::class)
+                    ->findBy(['consultation' => $consultation]);
+                
+                $isPaid = count($payments) > 0;
+                $totalAmount = 0;
+                
+                if ($isPaid) {
+                    foreach ($payments as $payment) {
+                        $totalAmount += $payment->getAmount();
+                    }
+                }
+
+                $visits[] = [
+                    'id' => $consultation->getId(),
+                    'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d H:i:s'),
+                    'diagnosis' => $consultation->getDiagnosis(),
+                    'symptoms' => $consultation->getSymptoms(),
+                    'treatment' => $consultation->getTreatment(),
+                    'medications' => $medications,
+                    'doctor' => [
+                        'id' => $consultation->getDoctor()->getId(),
+                        'name' => $consultation->getDoctor()->getName()
+                    ],
+                    'isPaid' => $isPaid,
+                    'totalAmount' => $totalAmount,
+                    'receiptNumber' => $consultation->getReceiptNumber(),
+                    'mcRequired' => $consultation->getHasMedicalCertificate() ?? false,
+                    'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
+                    'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
+                    'mcRunningNumber' => $consultation->getMcRunningNumber(),
+                    'status' => $consultation->getStatus() ?? 'completed'
+                ];
+            }
+
+            return $this->json([
+                'visits' => $visits,
+                'patient' => [
+                    'id' => $patient->getId(),
+                    'name' => $patient->getName(),
+                    'nric' => $patient->getNric()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching patient visit history', [
+                'patientId' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return $this->json([
+                'error' => 'Failed to fetch visit history',
+                'message' => 'Please try again later'
+            ], 500);
+        }
+    }
+
     #[Route('/doctor/{doctorId}', name: 'app_patients_by_doctor', methods: ['GET'])]
     public function getPatientsByDoctor(int $doctorId, EntityManagerInterface $entityManager): JsonResponse
     {
