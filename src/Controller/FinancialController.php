@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Repository\PaymentRepository;
 use App\Repository\ConsultationRepository;
 use App\Repository\PrescribedMedicationRepository;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -16,7 +17,8 @@ class FinancialController extends AbstractController
     public function __construct(
         private PaymentRepository $paymentRepository,
         private ConsultationRepository $consultationRepository,
-        private PrescribedMedicationRepository $prescribedMedicationRepository
+        private PrescribedMedicationRepository $prescribedMedicationRepository,
+        private EntityManagerInterface $entityManager
     ) {}
 
     #[Route('/dashboard', name: 'api_financial_dashboard', methods: ['GET'])]
@@ -216,43 +218,255 @@ class FinancialController extends AbstractController
         return new JsonResponse($this->paymentRepository->getSummary());
     }
 
-    #[Route('/debug/payments', name: 'api_financial_debug_payments', methods: ['GET'])]
-    public function debugPayments(): JsonResponse
+    #[Route('/payments/all', name: 'api_financial_payments_all', methods: ['GET'])]
+    public function paymentsAll(Request $request): JsonResponse
     {
-        // Get all payments with raw data for debugging
+        $page = (int) $request->query->get('page', 1);
+        $limit = (int) $request->query->get('limit', 50);
+        $startDate = $request->query->get('start_date');
+        $endDate = $request->query->get('end_date');
+        $paymentMethod = $request->query->get('payment_method');
+
+        $allPayments = [];
+
+        // 1. Get completed payments (from Payment table)
+        $completedPayments = $this->getCompletedPayments($startDate, $endDate, $paymentMethod);
+        
+        // 2. Get pending payments (from Queue/Consultation with amounts but no Payment record)
+        $pendingPayments = $this->getPendingPayments($startDate, $endDate);
+
+        // Combine and sort by date
+        $allPayments = array_merge($completedPayments, $pendingPayments);
+        
+        // Sort by date/time (newest first)
+        usort($allPayments, function($a, $b) {
+            $timeA = $a['payment_date'] ?? $a['consultation_date'] ?? '1970-01-01 00:00:00';
+            $timeB = $b['payment_date'] ?? $b['consultation_date'] ?? '1970-01-01 00:00:00';
+            return strcmp($timeB, $timeA);
+        });
+
+        // Apply pagination
+        $total = count($allPayments);
+        $offset = ($page - 1) * $limit;
+        $paginatedPayments = array_slice($allPayments, $offset, $limit);
+
+        return new JsonResponse([
+            'data' => $paginatedPayments,
+            'total' => $total,
+            'page' => $page,
+            'limit' => $limit,
+            'total_pages' => ceil($total / $limit),
+            'filters' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'payment_method' => $paymentMethod,
+            ]
+        ]);
+    }
+
+    private function getCompletedPayments(?string $startDate, ?string $endDate, ?string $paymentMethod): array
+    {
         $qb = $this->paymentRepository->createQueryBuilder('p')
             ->leftJoin('p.consultation', 'c')
             ->leftJoin('c.patient', 'patient')
-            ->orderBy('p.paymentDate', 'DESC')
-            ->setMaxResults(10);
+            ->leftJoin('c.doctor', 'doctor')
+            ->leftJoin('p.processedBy', 'staff')
+            ->leftJoin('p.queue', 'q')
+            ->orderBy('p.paymentDate', 'DESC');
+
+        // Apply filters
+        if ($startDate) {
+            $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
+            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
+            $qb->andWhere('p.paymentDate >= :startDate')
+               ->setParameter('startDate', $startDateTime);
+        }
+        if ($endDate) {
+            $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
+            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
+            $qb->andWhere('p.paymentDate <= :endDate')
+               ->setParameter('endDate', $endDateTime);
+        }
+        if ($paymentMethod) {
+            $qb->andWhere('p.paymentMethod = :paymentMethod')
+               ->setParameter('paymentMethod', $paymentMethod);
+        }
+
+        // Default to today if no date filter
+        if (!$startDate && !$endDate) {
+            $todayStart = \App\Service\TimezoneService::startOfDay();
+            $todayEnd = \App\Service\TimezoneService::endOfDay();
+            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
+            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
+            
+            $qb->andWhere('p.paymentDate BETWEEN :todayStart AND :todayEnd')
+               ->setParameter('todayStart', $todayStart)
+               ->setParameter('todayEnd', $todayEnd);
+        }
 
         $payments = $qb->getQuery()->getResult();
-        
-        $today = \App\Service\TimezoneService::now();
-        
-        $debug = [
-            'current_time_myt' => $today->format('Y-m-d H:i:s T'),
-            'current_date_myt' => $today->format('Y-m-d'),
-            'recent_payments' => array_map(function($payment) {
-                $paymentDateUtc = $payment->getPaymentDate();
-                $paymentDateMyt = \App\Service\TimezoneService::convertToMalaysia($paymentDateUtc);
-                
-                return [
-                    'id' => $payment->getId(),
-                    'amount' => $payment->getAmount(),
-                    'payment_method' => $payment->getPaymentMethod(),
-                    'payment_date_utc' => $paymentDateUtc->format('Y-m-d H:i:s T'),
-                    'payment_date_myt' => $paymentDateMyt->format('Y-m-d H:i:s T'),
-                    'payment_date_only_myt' => $paymentDateMyt->format('Y-m-d'),
-                    'reference' => $payment->getReference(),
-                    'queue_number' => $payment->getQueueNumber(),
-                    'patient_name' => $payment->getConsultation() ? $payment->getConsultation()->getPatient()->getName() : 'No patient'
-                ];
-            }, $payments)
-        ];
-        
-        return new JsonResponse($debug);
+
+        return array_map(function ($payment) {
+            $consultation = $payment->getConsultation();
+            $processedBy = $payment->getProcessedBy();
+            
+            // Get medicines information
+            $medicines = [];
+            if ($consultation) {
+                $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
+                foreach ($prescribedMeds as $pm) {
+                    $medication = $pm->getMedication();
+                    if ($medication) {
+                        $medicines[] = [
+                            'name' => $medication->getName(),
+                            'dosage' => $pm->getDosage() ?? 'N/A',
+                            'frequency' => $pm->getFrequency() ?? 'N/A',
+                            'duration' => $pm->getDuration() ?? 'N/A'
+                        ];
+                    }
+                }
+            }
+
+            return [
+                'id' => $payment->getId(),
+                'type' => 'completed',
+                'amount' => number_format($payment->getAmount(), 2),
+                'payment_method' => $payment->getPaymentMethod(),
+                'payment_date' => $payment->getPaymentDate()->format('Y-m-d H:i:s'),
+                'payment_time' => $payment->getPaymentDate()->format('h:i A'),
+                'reference' => $payment->getReference(),
+                'notes' => $payment->getNotes(),
+                'queue_number' => $payment->getQueueNumber(),
+                'status' => 'paid',
+                'processed_by' => [
+                    'id' => $processedBy ? $processedBy->getId() : null,
+                    'name' => $processedBy ? $processedBy->getName() : 'System',
+                    'email' => $processedBy ? $processedBy->getEmail() : null,
+                ],
+                'patient' => $consultation ? [
+                    'id' => $consultation->getPatient()->getId(),
+                    'name' => $consultation->getPatient()->getName(),
+                    'nric' => $consultation->getPatient()->getNric(),
+                    'phone' => $consultation->getPatient()->getPhone(),
+                ] : null,
+                'doctor' => $consultation ? [
+                    'id' => $consultation->getDoctor()->getId(),
+                    'name' => $consultation->getDoctor()->getName(),
+                ] : null,
+                'consultation' => $consultation ? [
+                    'id' => $consultation->getId(),
+                    'consultation_fee' => $consultation->getConsultationFee(),
+                    'medicines_fee' => $consultation->getMedicinesFee(),
+                ] : null,
+                'medicines' => $medicines,
+                'medicines_count' => count($medicines),
+                'medicines_summary' => count($medicines) > 0 
+                    ? implode(', ', array_slice(array_column($medicines, 'name'), 0, 3)) 
+                    . (count($medicines) > 3 ? ' (+' . (count($medicines) - 3) . ' more)' : '')
+                    : 'No medicines'
+            ];
+        }, $payments);
     }
+
+    private function getPendingPayments(?string $startDate, ?string $endDate): array
+    {
+        // Get consultations with amounts but no payment records
+        $qb = $this->consultationRepository->createQueryBuilder('c')
+            ->leftJoin('c.patient', 'patient')
+            ->leftJoin('c.doctor', 'doctor')
+            ->leftJoin(\App\Entity\Payment::class, 'p', 'WITH', 'p.consultation = c.id')
+            ->where('c.totalAmount > 0')
+            ->andWhere('p.id IS NULL') // No payment record exists
+            ->andWhere('c.status IN (:statuses)')
+            ->setParameter('statuses', ['completed_consultation', 'completed'])
+            ->orderBy('c.consultationDate', 'DESC');
+
+        // Apply date filters
+        if ($startDate) {
+            $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
+            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
+            $qb->andWhere('c.consultationDate >= :startDate')
+               ->setParameter('startDate', $startDateTime);
+        }
+        if ($endDate) {
+            $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
+            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
+            $qb->andWhere('c.consultationDate <= :endDate')
+               ->setParameter('endDate', $endDateTime);
+        }
+
+        // Default to today if no date filter
+        if (!$startDate && !$endDate) {
+            $todayStart = \App\Service\TimezoneService::startOfDay();
+            $todayEnd = \App\Service\TimezoneService::endOfDay();
+            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
+            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
+            
+            $qb->andWhere('c.consultationDate BETWEEN :todayStart AND :todayEnd')
+               ->setParameter('todayStart', $todayStart)
+               ->setParameter('todayEnd', $todayEnd);
+        }
+
+        $consultations = $qb->getQuery()->getResult();
+
+        return array_map(function ($consultation) {
+            // Get medicines information
+            $medicines = [];
+            $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
+            foreach ($prescribedMeds as $pm) {
+                $medication = $pm->getMedication();
+                if ($medication) {
+                    $medicines[] = [
+                        'name' => $medication->getName(),
+                        'dosage' => $pm->getDosage() ?? 'N/A',
+                        'frequency' => $pm->getFrequency() ?? 'N/A',
+                        'duration' => $pm->getDuration() ?? 'N/A'
+                    ];
+                }
+            }
+
+            // Get queue information
+            $queue = $this->entityManager->getRepository(\App\Entity\Queue::class)
+                ->findOneBy(['patient' => $consultation->getPatient(), 'doctor' => $consultation->getDoctor()], ['id' => 'DESC']);
+
+            return [
+                'id' => $consultation->getId(),
+                'type' => 'pending',
+                'amount' => number_format($consultation->getTotalAmount(), 2),
+                'payment_method' => null,
+                'consultation_date' => $consultation->getConsultationDate()->format('Y-m-d H:i:s'),
+                'payment_time' => $consultation->getConsultationDate()->format('h:i A'),
+                'reference' => null,
+                'notes' => null,
+                'queue_number' => $queue ? $queue->getQueueNumber() : null,
+                'status' => 'pending',
+                'processed_by' => null,
+                'patient' => [
+                    'id' => $consultation->getPatient()->getId(),
+                    'name' => $consultation->getPatient()->getName(),
+                    'nric' => $consultation->getPatient()->getNric(),
+                    'phone' => $consultation->getPatient()->getPhone(),
+                ],
+                'doctor' => [
+                    'id' => $consultation->getDoctor()->getId(),
+                    'name' => $consultation->getDoctor()->getName(),
+                ],
+                'consultation' => [
+                    'id' => $consultation->getId(),
+                    'consultation_fee' => $consultation->getConsultationFee(),
+                    'medicines_fee' => $consultation->getMedicinesFee(),
+                ],
+                'medicines' => $medicines,
+                'medicines_count' => count($medicines),
+                'medicines_summary' => count($medicines) > 0 
+                    ? implode(', ', array_slice(array_column($medicines, 'name'), 0, 3)) 
+                    . (count($medicines) > 3 ? ' (+' . (count($medicines) - 3) . ' more)' : '')
+                    : 'No medicines'
+            ];
+        }, $consultations);
+    }
+
+
 
     #[Route('/export', name: 'api_financial_export', methods: ['GET'])]
     public function export(Request $request): JsonResponse

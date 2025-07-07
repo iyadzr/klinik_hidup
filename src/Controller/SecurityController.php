@@ -57,8 +57,19 @@ class SecurityController extends AbstractController
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        // Verify password (temporarily disabled password hashing for testing)
-        if ($user->getPassword() !== $password) {
+        // Verify password - check both hashed and plain text for backward compatibility
+        $isPasswordValid = false;
+        
+        // First try hashed password verification (for new users)
+        if ($passwordHasher->isPasswordValid($user, $password)) {
+            $isPasswordValid = true;
+        }
+        // Fallback to plain text comparison (for existing users)
+        elseif ($user->getPassword() === $password) {
+            $isPasswordValid = true;
+        }
+        
+        if (!$isPasswordValid) {
             return $this->json([
                 'error' => 'Invalid credentials',
                 'message' => 'Incorrect password. Please try again.'
@@ -140,8 +151,9 @@ class SecurityController extends AbstractController
             $user->setRoles(['ROLE_USER']);
             $user->setIsActive(true);
             
-            // Store password as plain text (temporarily for testing)
-            $user->setPassword($data['password']);
+            // Hash the password for security
+            $hashedPassword = $passwordHasher->hashPassword($user, $data['password']);
+            $user->setPassword($hashedPassword);
             
             // Persist to database
             $entityManager->persist($user);

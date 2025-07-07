@@ -53,6 +53,18 @@ library.add(
 const app = createApp(App);
 app.use(router);
 app.component('font-awesome-icon', FontAwesomeIcon);
+
+// Add global currency formatting methods
+app.config.globalProperties.$formatCurrency = function(amount) {
+  const numericAmount = parseFloat(amount || 0);
+  return numericAmount.toFixed(2);
+};
+
+app.config.globalProperties.$formatRM = function(amount) {
+  const formatted = this.$formatCurrency(amount);
+  return `RM ${formatted}`;
+};
+
 app.mount('#app');
 
 // Expose router for debugging

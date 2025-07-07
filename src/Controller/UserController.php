@@ -110,8 +110,9 @@ class UserController extends AbstractController
             $user->setEmail($data['email']);
             $user->setUsername($data['username']);
             
-            // Store password as plain text (temporarily for testing)
-            $user->setPassword($data['password']);
+            // Hash the password for security
+            $hashedPassword = $this->passwordHasher->hashPassword($user, $data['password']);
+            $user->setPassword($hashedPassword);
 
             // Set roles
             $roles = $data['roles'] ?? ['ROLE_USER'];
@@ -256,9 +257,10 @@ class UserController extends AbstractController
                 $user->setEmail($data['email']);
             }
 
-            // Update password (if provided) - temporarily storing as plain text for testing
+            // Update password (if provided) - hash it for security
             if (isset($data['password']) && !empty(trim($data['password']))) {
-                $user->setPassword($data['password']);
+                $hashedPassword = $this->passwordHasher->hashPassword($user, $data['password']);
+                $user->setPassword($hashedPassword);
             }
 
             // Update roles
@@ -373,23 +375,131 @@ class UserController extends AbstractController
     #[Route('/profile', name: 'app_user_profile', methods: ['GET'])]
     public function getProfile(Request $request): JsonResponse
     {
-        // For development mode, return mock data based on localStorage
-        // In production, you would get the current authenticated user
-        return new JsonResponse([
-            'user' => [
-                'id' => 1,
-                'name' => 'Dev User',
-                'email' => 'dev@example.com',
-                'username' => 'devuser'
-            ]
-        ]);
+        try {
+            // Get the authenticated user from JWT token
+            $user = $this->getUser();
+            
+            if (!$user || !($user instanceof \App\Entity\User)) {
+                return new JsonResponse(['error' => 'Not authenticated'], 401);
+            }
+
+            // Get doctor profile if user is a doctor
+            $doctorProfile = $user->getDoctorProfile();
+
+            return new JsonResponse([
+                'user' => [
+                    'id' => $user->getId(),
+                    'name' => $user->getName(),
+                    'email' => $user->getEmail(),
+                    'username' => $user->getUsername(),
+                    'roles' => $user->getRoles(),
+                    'isActive' => $user->isActive(),
+                    'allowedPages' => $user->getAllowedPages(),
+                    'profileImage' => $user->getProfileImage(),
+                    'createdAt' => $user->getCreatedAt()?->format('Y-m-d\TH:i:s'),
+                    'updatedAt' => $user->getUpdatedAt()?->format('Y-m-d\TH:i:s'),
+                    'doctorProfile' => $doctorProfile ? [
+                        'id' => $doctorProfile->getId(),
+                        'specialization' => $doctorProfile->getSpecialization(),
+                        'licenseNumber' => $doctorProfile->getLicenseNumber(),
+                        'phone' => $doctorProfile->getPhone(),
+                        'workingHours' => $doctorProfile->getWorkingHours()
+                    ] : null
+                ]
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Error getting user profile: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to load profile'], 500);
+        }
     }
 
     #[Route('/profile', name: 'app_user_profile_update', methods: ['PUT'])]
     public function updateProfile(Request $request): JsonResponse
     {
-        // Mock implementation for now
-        return new JsonResponse(['message' => 'Profile updated successfully']);
+        try {
+            // Get the authenticated user from JWT token
+            $user = $this->getUser();
+            
+            if (!$user || !($user instanceof \App\Entity\User)) {
+                return new JsonResponse(['error' => 'Not authenticated'], 401);
+            }
+
+            $data = json_decode($request->getContent(), true);
+            
+            if (!$data) {
+                return new JsonResponse(['message' => 'Invalid JSON'], 400);
+            }
+
+            // Update allowed fields
+            if (isset($data['name']) && !empty(trim($data['name']))) {
+                $user->setName(trim($data['name']));
+            }
+
+            if (isset($data['email']) && !empty(trim($data['email']))) {
+                // Validate email format
+                if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+                    return new JsonResponse(['message' => 'Invalid email format'], 400);
+                }
+
+                // Check if email already exists for another user
+                $existingUser = $this->entityManager->getRepository(User::class)->findOneBy([
+                    'email' => $data['email']
+                ]);
+                if ($existingUser && $existingUser->getId() !== $user->getId()) {
+                    return new JsonResponse(['message' => 'Email already exists'], 400);
+                }
+
+                $user->setEmail(trim($data['email']));
+            }
+
+            // Update password if provided - hash it for security
+            if (isset($data['password']) && !empty(trim($data['password']))) {
+                $hashedPassword = $this->passwordHasher->hashPassword($user, trim($data['password']));
+                $user->setPassword($hashedPassword);
+            }
+
+            // Update doctor profile if user is a doctor and data is provided
+            if ($user->hasRole('ROLE_DOCTOR') && isset($data['doctorProfile'])) {
+                $doctorProfile = $user->getDoctorProfile();
+                if ($doctorProfile) {
+                    $doctorData = $data['doctorProfile'];
+                    
+                    if (isset($doctorData['specialization'])) {
+                        $doctorProfile->setSpecialization($doctorData['specialization']);
+                    }
+                    
+                    if (isset($doctorData['phone'])) {
+                        $doctorProfile->setPhone($doctorData['phone']);
+                    }
+                    
+                    if (isset($doctorData['licenseNumber'])) {
+                        $doctorProfile->setLicenseNumber($doctorData['licenseNumber']);
+                    }
+                    
+                    if (isset($doctorData['workingHours'])) {
+                        $doctorProfile->setWorkingHours($doctorData['workingHours']);
+                    }
+                }
+            }
+
+            $this->entityManager->flush();
+
+            return new JsonResponse([
+                'message' => 'Profile updated successfully',
+                'user' => [
+                    'id' => $user->getId(),
+                    'name' => $user->getName(),
+                    'email' => $user->getEmail(),
+                    'username' => $user->getUsername(),
+                    'roles' => $user->getRoles(),
+                    'profileImage' => $user->getProfileImage()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error('Error updating user profile: ' . $e->getMessage());
+            return new JsonResponse(['error' => 'Failed to update profile'], 500);
+        }
     }
 
     #[Route('/users/profile-image', name: 'api_users_profile_image_upload', methods: ['POST'])]

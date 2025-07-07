@@ -8,5 +8,5 @@ alwaysApply: true
 - Never remove or change logic that handles edge cases or known bugs unless the fix is explicitly requested.
 - Focus on the root cause of issues. Do not patch symptoms; trace the actual source of bugs or malfunctions.
 - Always validate assumptions with relevant code context or documentation before making a change.
-- my application a dockerized application with containers
+- my application is a dockerized application with containers, digest that
 - Avoid to hardcode filenames that may be generated dyanmically and referenced by other codes, as this may break the whole application if a new dynamic file names are generated

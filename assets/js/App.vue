@@ -41,6 +41,16 @@
 
       <!-- Main Content -->
       <main :class="['main-content', { 'auth-page': isAuthPage }]">
+        <!-- Global Navigation Loading Indicator -->
+        <div v-if="isNavigationLoading" class="global-loading-overlay">
+          <div class="loading-spinner">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="loading-text">Loading...</div>
+          </div>
+        </div>
+        
         <div class="content-wrapper">
           <Suspense>
             <template #default>
@@ -181,7 +191,43 @@
     padding: 1rem;
   }
 }
+/* Global Navigation Loading Overlay */
+.global-loading-overlay {
+  position: fixed;
+  top: 60px;
+  left: 260px;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
+}
+
+.loading-spinner {
+  text-align: center;
+}
+
+.loading-text {
+  margin-top: 1rem;
+  font-size: 1rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .global-loading-overlay {
+    left: 180px;
+  }
+}
+
 @media (max-width: 576px) {
+  .global-loading-overlay {
+    left: 0;
+  }
+  
   .sidebar {
     width: 100vw;
     min-width: 0;
@@ -221,6 +267,7 @@ export default {
     const isSidebarOpen = ref(false);
     const currentUser = ref(null);
     const isMobile = ref(window.innerWidth < 992);
+    const isNavigationLoading = ref(false);
 
     // Make computed properties reactive to currentUser changes
     const isAuthenticated = computed(() => !!currentUser.value && !!currentUser.value.token);
@@ -479,6 +526,36 @@ export default {
           }
       });
 
+      // Set up router navigation guards for loading state
+      let navigationTimeout;
+      
+      router.beforeEach((to, from, next) => {
+        // Show loading state for navigation
+        isNavigationLoading.value = true;
+        
+        // Clear any existing timeout
+        if (navigationTimeout) {
+          clearTimeout(navigationTimeout);
+        }
+        
+        // Set maximum loading time (fallback)
+        navigationTimeout = setTimeout(() => {
+          isNavigationLoading.value = false;
+        }, 5000);
+        
+        next();
+      });
+
+      router.afterEach(() => {
+        // Hide loading state after navigation
+        setTimeout(() => {
+          isNavigationLoading.value = false;
+          if (navigationTimeout) {
+            clearTimeout(navigationTimeout);
+          }
+        }, 500); // Small delay to ensure page is rendered
+      });
+
       // Set up token expiration monitoring
       startTokenExpirationMonitoring();
     });
@@ -496,6 +573,7 @@ export default {
       isSuperAdmin,
       userRoles,
       isAuthPage,
+      isNavigationLoading,
       hasRole,
       toggleSidebar,
       closeSidebar,

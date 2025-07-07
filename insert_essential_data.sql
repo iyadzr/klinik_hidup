@@ -20,7 +20,7 @@ INSERT INTO clinic_assistant (id, name, email, phone, username, password) VALUES
 (2, 'Assistant John', 'john@clinic.com', '+60123456792', 'john', '$2y$13$password_hash_here');
 
 -- Insert Sample Patients
-INSERT INTO patient (id, registered_by_id, name, nric, email, phone, date_of_birth, medical_history, company, pre_informed_illness, gender, address) VALUES
+INSERT INTO patient (id, registered_by_id, name, nric, email, phone, date_of_birth, medical_history, company, remarks, gender, address) VALUES
 (1, 1, 'Siti Maisarah binti Zaharin', '950123-05-1234', 'maisarah@email.com', '+60123456793', '1995-01-23', 'No known allergies', 'Tech Company Sdn Bhd', '', 'F', 'Kuala Lumpur, Malaysia'),
 (2, 1, 'Ahmad bin Abdullah', '880615-14-5678', 'ahmad@email.com', '+60123456794', '1988-06-15', 'Diabetes Type 2', 'Government Office', '', 'M', 'Selangor, Malaysia'),
 (3, 1, 'Fatimah binti Hassan', '920308-06-9012', 'fatimah@email.com', '+60123456795', '1992-03-08', 'Hypertension', 'Banking Sector', '', 'F', 'Petaling Jaya, Malaysia');

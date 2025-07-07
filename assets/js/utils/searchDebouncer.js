@@ -60,7 +60,11 @@ class SearchDebouncer {
         timeout: setTimeout(async () => {
           try {
             config.onLoading(true);
-            console.log(`🔍 Executing search: "${query}" (${searchKey})`);
+            // Only log searches that take longer than expected
+            const logSearch = query.length > 3 || searchKey !== 'medication';
+            if (logSearch) {
+              console.log(`🔍 Executing search: "${query}" (${searchKey})`);
+            }
             
             const results = await searchFn(query);
             
@@ -97,7 +101,11 @@ class SearchDebouncer {
   cancelSearch(searchKey) {
     const existing = this.activeSearches.get(searchKey);
     if (existing) {
-      console.log(`🛑 Cancelling search: ${searchKey}`);
+      // Only log if the search was running for a reasonable amount of time
+      const runTime = Date.now() - existing.startTime;
+      if (runTime > 100) { // Only log if search was active for more than 100ms
+        console.log(`🛑 Cancelling search: ${searchKey} (ran for ${runTime}ms)`);
+      }
       clearTimeout(existing.timeout);
       this.activeSearches.delete(searchKey);
     }

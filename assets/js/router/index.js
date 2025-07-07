@@ -6,7 +6,6 @@ import DoctorList from '../views/doctors/DoctorList.vue';
 import QueueManagement from '../views/queue/QueueManagement.vue';
 import QueueDisplay from '../views/queue/QueueDisplay.vue';
 import ConsultationForm from '../views/consultations/ConsultationFormNew.vue';
-import ConsultationList from '../views/consultations/ConsultationList.vue';
 import OngoingConsultations from '../views/consultations/OngoingConsultations.vue';
 import PatientRegistration from '../views/registration/PatientRegistration.vue';
 import ClinicAssistantList from '../views/clinic-assistants/ClinicAssistantList.vue';
@@ -87,7 +86,7 @@ const routes = [
   {
     path: '/consultations',
     name: 'Consultations',
-    component: ConsultationList,
+    redirect: '/consultations/ongoing',
     meta: { requiresAuth: true, roles: ['ROLE_DOCTOR', 'ROLE_ASSISTANT', 'ROLE_SUPER_ADMIN'] }
   },
   {

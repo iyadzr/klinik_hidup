@@ -197,48 +197,13 @@ class ConsultationController extends AbstractController
                 $this->entityManager->flush();
                 $this->logger->info('Consultation persisted successfully');
                 
-                // Create Payment record if totalAmount > 0
-                if (isset($data['totalAmount']) && $data['totalAmount'] > 0) {
-                    try {
-                        $this->logger->info('Creating payment record', [
-                            'totalAmount' => $data['totalAmount'],
-                            'consultationId' => $consultation->getId()
-                        ]);
-                        
-                        $payment = new \App\Entity\Payment();
-                        $payment->setConsultation($consultation);
-                        $payment->setAmount((float)$data['totalAmount']);
-                        $payment->setPaymentMethod('cash'); // Default to cash, can be updated later
-                        $payment->setPaymentDate(new \DateTimeImmutable());
-                        $payment->setProcessedBy($this->getUser()); // Current logged-in user
-                        
-                        // Generate payment reference
-                        $reference = 'PAY-' . date('Ymd') . '-' . str_pad($consultation->getId(), 6, '0', STR_PAD_LEFT);
-                        $payment->setReference($reference);
-                        
-                        // Set queue information if available
-                        if (isset($data['queueNumber'])) {
-                            $payment->setQueueNumber($data['queueNumber']);
-                        }
-                        
-                        $this->entityManager->persist($payment);
-                        $this->entityManager->flush();
-                        
-                        $this->logger->info('Payment record created successfully', [
-                            'paymentId' => $payment->getId(),
-                            'amount' => $payment->getAmount(),
-                            'reference' => $payment->getReference(),
-                            'consultationId' => $consultation->getId()
-                        ]);
-                    } catch (\Exception $paymentError) {
-                        $this->logger->error('Failed to create payment record', [
-                            'error' => $paymentError->getMessage(),
-                            'totalAmount' => $data['totalAmount'],
-                            'consultationId' => $consultation->getId()
-                        ]);
-                        // Don't throw - continue with consultation creation
-                    }
-                }
+                // Do NOT create Payment record automatically - only create when payment is actually processed
+                // Payment records should only be created when the clinic assistant processes the payment
+                $this->logger->info('Consultation completed with total amount', [
+                    'totalAmount' => $data['totalAmount'] ?? 0,
+                    'consultationId' => $consultation->getId(),
+                    'note' => 'Payment record will be created when payment is processed'
+                ]);
             } catch (\Exception $persistError) {
                 $this->logger->error('Error persisting consultation', [
                     'error' => $persistError->getMessage(),
@@ -252,6 +217,28 @@ class ConsultationController extends AbstractController
             if (isset($data['prescribedMedications']) && is_array($data['prescribedMedications'])) {
                 foreach ($data['prescribedMedications'] as $medData) {
                     if (!empty($medData['name']) && !empty($medData['quantity'])) {
+                        
+                        // Validate required medication fields
+                        $validationErrors = [];
+                        if (empty(trim($medData['dosage'] ?? ''))) {
+                            $validationErrors[] = 'Dosage is required';
+                        }
+                        if (empty(trim($medData['frequency'] ?? ''))) {
+                            $validationErrors[] = 'Frequency is required';
+                        }
+                        if (empty(trim($medData['duration'] ?? ''))) {
+                            $validationErrors[] = 'Duration is required';
+                        }
+                        
+                        if (!empty($validationErrors)) {
+                            $this->logger->warning('Prescribed medication validation failed', [
+                                'medication' => $medData['name'],
+                                'errors' => $validationErrors
+                            ]);
+                            // Skip this medication but continue with others
+                            continue;
+                        }
+                        
                         // Find or create medication
                         $medication = null;
                         if (!empty($medData['medicationId'])) {
@@ -282,6 +269,11 @@ class ConsultationController extends AbstractController
                         if (isset($medData['quantity'])) {
                             $prescribedMed->setQuantity((int)$medData['quantity']);
                             $prescribedMed->setInstructions($medData['instructions'] ?? null);
+                            
+                            // Set dosage, frequency, and duration fields with validation
+                            $prescribedMed->setDosage(trim($medData['dosage']));
+                            $prescribedMed->setFrequency(trim($medData['frequency']));
+                            $prescribedMed->setDuration(trim($medData['duration']));
                             
                             // Handle actual price - allow 0 prices, use medication's selling price as fallback
                             if (isset($medData['actualPrice']) && is_numeric($medData['actualPrice'])) {
@@ -338,19 +330,12 @@ class ConsultationController extends AbstractController
                 $this->logger->info('Setting consultation status to completed_consultation');
                 $consultation->setStatus('completed_consultation');
                 
-                // Update payment record with queue information if payment was created
-                if (isset($data['totalAmount']) && $data['totalAmount'] > 0) {
-                    $paymentRepository = $this->entityManager->getRepository(\App\Entity\Payment::class);
-                    $payment = $paymentRepository->findOneBy(['consultation' => $consultation]);
-                    if ($payment) {
-                        $payment->setQueue($queue);
-                        $payment->setQueueNumber($queue->getQueueNumber());
-                        $this->logger->info('Updated payment with queue information', [
-                            'paymentId' => $payment->getId(),
-                            'queueNumber' => $queue->getQueueNumber()
-                        ]);
-                    }
-                }
+                // Payment record will be created later when payment is actually processed
+                $this->logger->info('Queue updated with amount for future payment processing', [
+                    'queueId' => $queue->getId(),
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'totalAmount' => $data['totalAmount'] ?? 0
+                ]);
                 
                 $this->entityManager->flush();
                 
@@ -803,7 +788,7 @@ class ConsultationController extends AbstractController
                             $groupPatients[] = [
                                 'patientName' => $groupPatient->getName(),
                                 'patientId' => $groupPatient->getId(),
-                                'symptoms' => $groupPatient->getPreInformedIllness()
+                                'symptoms' => $groupPatient->getRemarks()
                             ];
                         }
                     }
@@ -836,7 +821,7 @@ class ConsultationController extends AbstractController
                     'doctorName' => $doctor->getName(),
                     'doctorId' => $doctor->getId(),
                     'status' => $queue->getStatus(),
-                    'symptoms' => $patient->getPreInformedIllness(),
+                    'symptoms' => $patient->getRemarks(),
                     'isQueueEntry' => true,
                     'queueId' => $queue->getId(),
                     'queueNumber' => $queue->getQueueNumber(),
@@ -865,38 +850,22 @@ class ConsultationController extends AbstractController
             }
         });
             
-        // Get total patients for today (consultations + queue entries)
-        $consultationQb = $this->entityManager->getRepository(Consultation::class)
-            ->createQueryBuilder('c')
-            ->select('COUNT(c.id)')
-            ->where('c.consultationDate BETWEEN :start AND :end')
-            ->setParameter('start', $startOfDay)
-            ->setParameter('end', $endOfDay);
-            
-        if ($doctorId) {
-            $consultationQb->join('c.doctor', 'd')
-                          ->andWhere('d.id = :doctorId')
-                          ->setParameter('doctorId', $doctorId);
-        }
-        
-        $consultationCount = $consultationQb->getQuery()->getSingleScalarResult();
-
+        // Get total unique patients for today (count queue entries as primary source)
+        // Queue entries represent patient visits, consultations are created from queue entries
         $queueQb = $this->entityManager->getRepository(Queue::class)
             ->createQueryBuilder('q')
-            ->select('COUNT(q.id)')
+            ->select('COUNT(DISTINCT IDENTITY(q.patient))')
             ->where('q.queueDateTime BETWEEN :start AND :end')
             ->setParameter('start', $startOfDay)
             ->setParameter('end', $endOfDay);
             
         if ($doctorId) {
-            $queueQb->join('q.doctor', 'd2')
-                   ->andWhere('d2.id = :queueDoctorId')
-                   ->setParameter('queueDoctorId', $doctorId);
+            $queueQb->join('q.doctor', 'd')
+                   ->andWhere('d.id = :doctorId')
+                   ->setParameter('doctorId', $doctorId);
         }
         
-        $queueCount = $queueQb->getQuery()->getSingleScalarResult();
-
-        $todayTotal = $consultationCount + $queueCount;
+        $todayTotal = $queueQb->getQuery()->getSingleScalarResult();
 
         return [
             'ongoing' => $ongoingData,
@@ -919,7 +888,7 @@ class ConsultationController extends AbstractController
         // Get all consultations for today (including completed ones)
         $consultationQb = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
-            ->select('c.id', 'c.consultationDate', 'c.status', 'p.name as patientName', 'd.name as doctorName', 'p.id as patientId', 'd.id as doctorId', 'c.createdAt')
+            ->select('c.id', 'c.consultationDate', 'c.status', 'c.totalAmount', 'c.isPaid', 'c.paidAt', 'p.name as patientName', 'd.name as doctorName', 'p.id as patientId', 'd.id as doctorId', 'c.createdAt')
             ->join('c.patient', 'p')
             ->join('c.doctor', 'd')
             ->where('c.consultationDate BETWEEN :start AND :end')
@@ -958,14 +927,18 @@ class ConsultationController extends AbstractController
                 'doctorId' => $consultation['doctorId'],
                 'status' => $consultation['status'] ?: 'completed',
                 'queueNumber' => null,
-                'queueId' => null
+                'queueId' => null,
+                'totalAmount' => $consultation['totalAmount'] ?: '0.00',
+                'isPaid' => $consultation['isPaid'] ?: false,
+                'paidAt' => $consultation['paidAt'] ? $consultation['paidAt']->format('Y-m-d H:i:s') : null,
+                'paymentStatus' => $consultation['isPaid'] ? 'paid' : 'pending'
             ];
         }
 
         // Get all queue entries for today (including completed ones)
         $queueQb = $this->entityManager->getRepository(Queue::class)
             ->createQueryBuilder('q')
-            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId')
+            ->select('q.id as queueId', 'q.queueNumber', 'q.queueDateTime', 'q.status', 'q.amount', 'q.isPaid', 'q.paidAt', 'q.paymentMethod', 'p.name as patientName', 'p.id as patientId', 'd.name as doctorName', 'd.id as doctorId')
             ->join('q.patient', 'p')
             ->join('q.doctor', 'd')
             ->where('q.queueDateTime BETWEEN :start AND :end')
@@ -1001,7 +974,12 @@ class ConsultationController extends AbstractController
                 'doctorId' => $queue['doctorId'],
                 'status' => $queue['status'],
                 'queueNumber' => $queue['queueNumber'],
-                'queueId' => $queue['queueId']
+                'queueId' => $queue['queueId'],
+                'totalAmount' => $queue['amount'] ?: '0.00',
+                'isPaid' => $queue['isPaid'] ?: false,
+                'paidAt' => $queue['paidAt'] ? $queue['paidAt']->format('Y-m-d H:i:s') : null,
+                'paymentMethod' => $queue['paymentMethod'],
+                'paymentStatus' => $queue['isPaid'] ? 'paid' : 'pending'
             ];
         }
 
@@ -1085,10 +1063,21 @@ class ConsultationController extends AbstractController
                 $consultation->setPaidAt(null);
             }
             
-            // Update payment method if provided
+            // Update payment method if provided - also update the Payment entity
             if (isset($data['paymentMethod'])) {
                 if (method_exists($consultation, 'setPaymentMethod')) {
                     $consultation->setPaymentMethod($data['paymentMethod']);
+                }
+                
+                // Also update the Payment entity
+                $paymentRepository = $this->entityManager->getRepository(\App\Entity\Payment::class);
+                $payment = $paymentRepository->findOneBy(['consultation' => $consultation]);
+                if ($payment) {
+                    $payment->setPaymentMethod($data['paymentMethod']);
+                    $this->logger->info('Updated payment method in Payment entity', [
+                        'paymentId' => $payment->getId(),
+                        'paymentMethod' => $data['paymentMethod']
+                    ]);
                 }
             }
             

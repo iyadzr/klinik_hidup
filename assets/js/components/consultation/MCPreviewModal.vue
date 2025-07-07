@@ -66,10 +66,7 @@
                   </div>
                 </div>
 
-                <div class="mb-3" v-if="mcData.diagnosis">
-                  <p><strong>Diagnosis/Remarks:</strong></p>
-                  <p>{{ mcData.diagnosis }}</p>
-                </div>
+
 
                 <p class="mb-0">
                   The patient is advised to rest and refrain from work/study during the above period.
@@ -223,6 +220,19 @@ export default {
 </script>
 
 <style scoped>
+/* Ensure MC Preview Modal is always on top */
+#mcPreviewModal {
+  z-index: 99999 !important;
+}
+
+#mcPreviewModal .modal-backdrop {
+  z-index: 99998 !important;
+}
+
+#mcPreviewModal .modal-dialog {
+  z-index: 100000 !important;
+}
+
 .mc-preview-container {
   font-family: 'Times New Roman', serif;
   line-height: 1.6;

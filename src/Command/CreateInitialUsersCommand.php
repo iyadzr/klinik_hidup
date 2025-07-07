@@ -231,14 +231,14 @@ class CreateInitialUsersCommand extends Command
             ];
             $medicalHistory = $medicalConditions[array_rand($medicalConditions)];
             
-            // Generate pre-informed illness
+            // Generate remarks
             $symptoms = [
                 'Fever and cough', 'Headache', 'Stomach pain', 'Back pain', 'Joint pain',
                 'Chest pain', 'Shortness of breath', 'Dizziness', 'Nausea', 'Vomiting',
                 'Diarrhea', 'Constipation', 'Rash', 'Itching', 'Swelling',
                 'Fatigue', 'Insomnia', 'Anxiety', 'Depression', 'Memory problems'
             ];
-            $preInformedIllness = $symptoms[array_rand($symptoms)];
+            $remarks = $symptoms[array_rand($symptoms)];
 
             $patient = new Patient();
             $patient->setName($name);
@@ -250,7 +250,7 @@ class CreateInitialUsersCommand extends Command
             $patient->setAddress($address);
             $patient->setCompany($company);
             $patient->setMedicalHistory($medicalHistory);
-            $patient->setPreInformedIllness($preInformedIllness);
+            $patient->setRemarks($remarks);
 
             $this->entityManager->persist($patient);
             

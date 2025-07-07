@@ -1,36 +1,52 @@
 /**
  * Timezone utilities for Malaysia timezone handling
+ * All dates formatted in DD/MM/YYYY format for Malaysian standard
  */
 
 export const MALAYSIA_TIMEZONE = 'Asia/Kuala_Lumpur';
 
 /**
- * Format date for Malaysia timezone display
+ * Format date for Malaysia timezone display in DD/MM/YYYY format
  * @param {Date|string} date - Date to format
  * @param {object} options - Intl.DateTimeFormat options
- * @returns {string} - Formatted date string
+ * @returns {string} - Formatted date string in DD/MM/YYYY format
  */
 export function formatDateMalaysia(date, options = {}) {
     const defaultOptions = {
         timeZone: MALAYSIA_TIMEZONE,
-        year: 'numeric',
-        month: '2-digit',
         day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
+        hour12: false,
         ...options
     };
     
-    return new Date(date).toLocaleString('en-MY', defaultOptions);
+    return new Date(date).toLocaleString('en-GB', defaultOptions);
 }
 
 /**
- * Format date only (no time) for Malaysia timezone
+ * Format date only (no time) for Malaysia timezone in DD/MM/YYYY format
  * @param {Date|string} date - Date to format
- * @returns {string} - Formatted date string (YYYY-MM-DD)
+ * @returns {string} - Formatted date string (DD/MM/YYYY)
  */
 export function formatDateOnlyMalaysia(date) {
+    return new Date(date).toLocaleDateString('en-GB', {
+        timeZone: MALAYSIA_TIMEZONE,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+/**
+ * Format date for API (ISO format YYYY-MM-DD)
+ * @param {Date|string} date - Date to format
+ * @returns {string} - Formatted date string (YYYY-MM-DD) for API calls
+ */
+export function formatDateForAPI(date) {
     return new Date(date).toLocaleDateString('en-CA', {
         timeZone: MALAYSIA_TIMEZONE,
         year: 'numeric',
@@ -45,11 +61,28 @@ export function formatDateOnlyMalaysia(date) {
  * @returns {string} - Formatted time string (HH:MM AM/PM)
  */
 export function formatTimeOnlyMalaysia(date) {
-    return new Date(date).toLocaleTimeString('en-US', {
+    return new Date(date).toLocaleTimeString('en-GB', {
         timeZone: MALAYSIA_TIMEZONE,
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
+    });
+}
+
+/**
+ * Format datetime for display in DD/MM/YYYY, HH:MM format
+ * @param {Date|string} date - Date to format
+ * @returns {string} - Formatted datetime string
+ */
+export function formatDateTimeMalaysia(date) {
+    return new Date(date).toLocaleString('en-GB', {
+        timeZone: MALAYSIA_TIMEZONE,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
     });
 }
 
@@ -162,7 +195,9 @@ export default {
     MALAYSIA_TIMEZONE,
     formatDateMalaysia,
     formatDateOnlyMalaysia,
+    formatDateForAPI,
     formatTimeOnlyMalaysia,
+    formatDateTimeMalaysia,
     nowInMalaysia,
     startOfDayMalaysia,
     endOfDayMalaysia,

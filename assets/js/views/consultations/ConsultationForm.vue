@@ -106,7 +106,7 @@
       </div>
     </div>
 
-    <div class="consultation-form consultation-dashboard glass-card shadow p-4 mt-4 mb-4">
+    <div class="consultation-form consultation-dashboard glass-card shadow p-4 mt-4 mb-4" style="margin-top: 220px !important; padding-top: 30px !important;">
 
       <div class="d-flex justify-content-between align-items-center mb-4">
       <div>
@@ -120,32 +120,32 @@
     <form @submit.prevent="saveConsultation" class="row g-4">
 
 
-      <!-- Pre-Informed Illness - First Row (Full Width) -->
+      <!-- Remarks - First Row (Full Width) -->
       <div class="col-12">
         <div class="card section-card dashboard-card mb-4">
           <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
             <h5 class="mb-0 d-flex align-items-center">
               <i class="fas fa-clipboard-check text-warning me-2"></i>
-              Pre-Informed Illness
+              Remarks
             </h5>
           </div>
           <div class="card-body">
-            <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
+            <div v-if="selectedPatient && selectedPatient.remarks && selectedPatient.remarks.trim()">
               <div class="pre-illness-content p-3 bg-light rounded">
                 <div class="d-flex align-items-start gap-3">
                   <div>
                     <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
                   </div>
                   <div class="flex-grow-1">
-                    <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
+                    <p class="mb-0 text-dark">{{ selectedPatient.remarks }}</p>
                   </div>
                 </div>
               </div>
             </div>
             <div v-else class="text-center text-muted py-4">
               <i class="fas fa-clipboard fa-2x mb-2"></i>
-              <div>No pre-informed illness data available</div>
-              <small class="text-muted">Patient did not provide initial symptoms during registration</small>
+              <div>No remarks available</div>
+              <small class="text-muted">No initial remarks or symptoms were provided during registration</small>
             </div>
           </div>
         </div>
@@ -270,7 +270,7 @@
                               <small class="text-muted">
                                 {{ suggestion.unitDescription || suggestion.unitType || 'Unit not specified' }}
                                 <span v-if="suggestion.sellingPrice" class="text-success ms-2">
-                                  <i class="fas fa-tag"></i> RM {{ parseFloat(suggestion.sellingPrice).toFixed(2) }}
+                                  <i class="fas fa-tag"></i> RM {{ parseFloat(suggestion.sellingPrice || 0).toFixed(2) }}
                                 </span>
                               </small>
                             </div>
@@ -488,10 +488,20 @@
             
             <div class="row g-4">
               <div class="col-md-8">
-                <div class="input-group">
-                  <span class="input-group-text">RM</span>
-                  <input type="number" class="form-control" id="totalAmount" v-model="consultation.totalAmount" step="0.10" min="0" placeholder="0.00" required>
-                </div>
+                                  <div class="input-group">
+                    <span class="input-group-text">RM</span>
+                    <input 
+                      type="number" 
+                      class="form-control" 
+                      id="totalAmount" 
+                      :value="consultation.totalAmount && consultation.totalAmount > 0 ? consultation.totalAmount : ''" 
+                      @input="updateTotalAmount" 
+                      step="0.10" 
+                      min="0" 
+                      placeholder="Enter amount" 
+                      required
+                    >
+                  </div>
               </div>
             </div>
           </div>
@@ -933,7 +943,7 @@
                       <div class="medication-details">
                         <span class="quantity">Qty: {{ medication.quantity }}</span>
                         <span v-if="medication.instructions" class="instructions">{{ medication.instructions }}</span>
-                        <span v-if="medication.actualPrice" class="price">RM {{ parseFloat(medication.actualPrice).toFixed(2) }}</span>
+                        <span v-if="medication.actualPrice" class="price">RM {{ parseFloat(medication.actualPrice || 0).toFixed(2) }}</span>
                       </div>
                     </div>
 
@@ -1240,18 +1250,13 @@ export default {
     },
     formatDateOfBirth(dateOfBirth) {
       if (!dateOfBirth) return 'N/A';
-      try {
-        const dateObj = new Date(dateOfBirth);
-        return dateObj.toLocaleDateString('en-MY', {
-          timeZone: 'Asia/Kuala_Lumpur',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        });
-      } catch (error) {
-        console.error('Error formatting date:', error);
-        return 'Invalid Date';
-      }
+      const dateObj = new Date(dateOfBirth);
+      return dateObj.toLocaleDateString('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
     },
     formatTime(dateString) {
       if (!dateString) return 'N/A';
@@ -1396,9 +1401,10 @@ export default {
       if (!dateString) return '';
       
       const date = new Date(dateString);
-      return date.toLocaleDateString('ms-MY', {
-        day: 'numeric',
-        month: 'numeric',
+      return date.toLocaleDateString('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: '2-digit',
         year: 'numeric'
       });
     },
@@ -1841,7 +1847,15 @@ export default {
     },
     
     async searchMedications(medItem, event) {
-      const searchTerm = event.target.value;
+      const searchTerm = event.target.value.trim();
+      
+      // Clear suggestions if search term is too short
+      if (searchTerm.length < 2) {
+        medItem.allSuggestions = [];
+        medItem.paginatedSuggestions = [];
+        medItem.selectedSuggestionIndex = -1;
+        return;
+      }
       
       try {
         // Ensure medicationSearcher is initialized
@@ -1852,7 +1866,12 @@ export default {
           return;
         }
 
-        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
+        // Use longer debounce time for medication search to reduce API calls
+        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch, {
+          debounceMs: 500, // Increased from default 300ms to 500ms
+          minLength: 2,
+          cacheResults: true
+        });
         
         if (results) {
           this.updateMedicationPagination(medItem, results);
@@ -2565,17 +2584,18 @@ export default {
 
       this.consultationSummary = {
         patientName: patient?.name || patient?.displayName || 'Unknown Patient',
-        date: new Date().toLocaleDateString('en-MY', {
-          year: 'numeric',
+        date: new Date().toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          day: '2-digit',
           month: 'long', 
-          day: 'numeric'
+          year: 'numeric'
         }),
         doctorName: doctor?.name || 'Unknown Doctor',
         totalAmount: parseFloat(this.consultation.totalAmount || 0).toFixed(2),
         hasMedicalCertificate: this.consultation.hasMedicalCertificate !== undefined ? this.consultation.hasMedicalCertificate : false,
         mcDays: mcDays,
-        mcStartDate: this.consultation.mcStartDate ? new Date(this.consultation.mcStartDate).toLocaleDateString('en-MY') : '',
-        mcEndDate: this.consultation.mcEndDate ? new Date(this.consultation.mcEndDate).toLocaleDateString('en-MY') : '',
+        mcStartDate: this.consultation.mcStartDate ? new Date(this.consultation.mcStartDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: '2-digit', year: 'numeric' }) : '',
+        mcEndDate: this.consultation.mcEndDate ? new Date(this.consultation.mcEndDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: '2-digit', year: 'numeric' }) : '',
         hasMedications: validMedications.length > 0,
         medications: validMedications
       };
@@ -2714,9 +2734,9 @@ export default {
               dateOfBirth: patient.dateOfBirth,
               gender: patient.gender,
               phone: patient.phone,
-              address: patient.address,
-              relationship: patient.relationship || 'N/A',
-              preInformedIllness: patient.preInformedIllness || ''
+                              address: patient.address,
+                relationship: patient.relationship || 'N/A',
+                remarks: patient.remarks || ''
             }));
             
             // Set the currently selected patient to the primary patient if not already set
@@ -2752,20 +2772,40 @@ export default {
     // Initialize modals
     this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
     this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
-     }
-     </div>
-   </div>
- </template>
+  },
 
- <script>
- import axios from 'axios';
- import { ref, reactive } from 'vue';
- import AuthService from '../services/AuthService.js';
+  computed: {
+    selectedPatient() {
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
+        const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
+        if (groupPatient) {
+          return groupPatient;
+        }
+      }
+      
+      if (this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
+        return this.fullPatientDetails;
+      }
+      
+      if (Array.isArray(this.patients)) {
+        return this.patients.find(p => p.id === this.consultation.patientId) || null;
+      }
+      
+      return null;
+    },
 
- export default {
-   name: 'ConsultationForm',
-   data() {
-     return {
+    mcSelectedPatientIds: {
+      get() {
+        return this.mcSelectedPatientIds || [];
+      },
+      set(value) {
+        this.mcSelectedPatientIds = value;
+      }
+    }
+  },
+
+  data() {
+    return {
        consultation: {
          patientId: null,
          patientName: '',
@@ -2824,7 +2864,8 @@ export default {
        activeMedicationIndex: null,
        medicationSearchTimeout: null
      };
-   },
+     },
+
    async mounted() {
      console.log('🎯 ConsultationForm mounted with route:', this.$route.query);
      
@@ -2834,6 +2875,13 @@ export default {
      // Initialize modals
      this.consultationSummaryModal = new bootstrap.Modal(document.getElementById('consultationSummaryModal'));
      this.visitDetailsModal = new bootstrap.Modal(document.getElementById('visitDetailsModal'));
+   },
+
+   methods: {
+     async loadInitialData() {
+       // Placeholder for loading initial data
+       console.log('Loading initial data...');
+     }
    }
  };
  </script>
@@ -3038,7 +3086,7 @@ export default {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 1040;
+  z-index: 1100;
   background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #3498db 100%) !important;
   border-bottom: 3px solid rgba(255, 255, 255, 0.3);
   transition: all 0.3s ease;
@@ -3552,10 +3600,17 @@ export default {
       }
     },
     
-    updateTotalAmount() {
-      const consultationFee = parseFloat(this.consultation.consultationFee || 0);
-      const medicinesCost = this.totalMedicinesCost;
-      this.consultation.totalAmount = consultationFee + medicinesCost;
+    updateTotalAmount(event) {
+      if (event && event.target) {
+        // Handle manual input from user
+        const value = event.target.value;
+        this.consultation.totalAmount = value === '' ? 0 : parseFloat(value) || 0;
+      } else {
+        // Handle automatic calculation
+        const consultationFee = parseFloat(this.consultation.consultationFee || 0);
+        const medicinesCost = this.totalMedicinesCost;
+        this.consultation.totalAmount = consultationFee + medicinesCost;
+      }
     },
     
     async loadFromQueue(queueId) {
@@ -4279,7 +4334,7 @@ export default {
       if (!dateStr) return 'N/A';
       try {
         const date = new Date(dateStr);
-        return date.toLocaleDateString('en-MY', {
+        return date.toLocaleDateString('en-GB', {
           timeZone: 'Asia/Kuala_Lumpur',
           day: '2-digit',
           month: '2-digit',

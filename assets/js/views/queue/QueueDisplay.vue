@@ -121,6 +121,78 @@
       <button v-if="isFullscreen" @click="exitFullscreen" class="fullscreen-btn exit">
         <i class="fas fa-compress"></i> Exit Fullscreen
       </button>
+      
+      <!-- Sound Control Panel -->
+      <div class="sound-controls" :class="{ 'sound-controls-fullscreen': isFullscreen }">
+        <button @click="toggleSoundPanel" class="sound-toggle-btn" :title="soundPanelVisible ? 'Hide Sound Controls' : 'Show Sound Controls'">
+          <i :class="soundService.isEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
+        </button>
+        
+        <div v-if="soundPanelVisible" class="sound-panel">
+          <div class="sound-panel-header">
+            <h6><i class="fas fa-cog me-2"></i>Sound Settings</h6>
+            <button @click="soundPanelVisible = false" class="btn-close-panel">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          
+          <div class="sound-panel-body">
+            <!-- Audio Status -->
+            <div class="sound-setting">
+              <div class="sound-status" :class="{ 'status-ready': audioContextReady, 'status-waiting': !audioContextReady }">
+                <i :class="audioContextReady ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle'"></i>
+                <span>{{ audioContextReady ? 'Audio Ready' : 'Click to activate audio' }}</span>
+              </div>
+            </div>
+            
+            <!-- Master Enable/Disable -->
+            <div class="sound-setting">
+              <label class="sound-label">
+                <input type="checkbox" v-model="soundEnabled" @change="updateSoundEnabled">
+                <span>Enable Sound Notifications</span>
+              </label>
+            </div>
+            
+            <!-- Volume Control -->
+            <div class="sound-setting" v-if="soundEnabled">
+              <label class="sound-label">Volume</label>
+              <input type="range" v-model="volume" @input="updateVolume" min="0" max="100" class="sound-slider">
+              <span class="sound-value">{{ volume }}%</span>
+            </div>
+            
+            <!-- Text-to-Speech -->
+            <div class="sound-setting" v-if="soundEnabled">
+              <label class="sound-label">
+                <input type="checkbox" v-model="textToSpeechEnabled" @change="updateTextToSpeech">
+                <span>Voice Announcements</span>
+              </label>
+            </div>
+            
+            <!-- Speech Rate -->
+            <div class="sound-setting" v-if="soundEnabled && textToSpeechEnabled">
+              <label class="sound-label">Speech Speed</label>
+              <input type="range" v-model="speechRate" @input="updateSpeechRate" min="0.5" max="2" step="0.1" class="sound-slider">
+              <span class="sound-value">{{ speechRate }}x</span>
+            </div>
+            
+            <!-- Test Button -->
+            <div class="sound-setting" v-if="soundEnabled">
+              <button @click="testSounds" class="btn btn-sm btn-outline-primary" :disabled="testingSound">
+                <i class="fas fa-play me-1"></i>
+                {{ testingSound ? 'Testing...' : 'Test Sounds' }}
+              </button>
+            </div>
+            
+            <!-- Manual Queue Call Test -->
+            <div class="sound-setting" v-if="soundEnabled && audioContextReady">
+              <button @click="testQueueCall" class="btn btn-sm btn-outline-success" :disabled="testingSound">
+                <i class="fas fa-bullhorn me-1"></i>
+                Test Queue Call
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -128,6 +200,7 @@
 <script>
 import axios from 'axios';
 import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
+import soundService from '../../services/SoundService.js';
 
 export default {
   name: 'QueueDisplay',
@@ -140,7 +213,23 @@ export default {
       eventSource: null,
       isFullscreen: false,
       currentTime: '',
-      currentDate: ''
+      currentDate: '',
+      
+      // Sound-related data
+      soundService: soundService,
+      soundPanelVisible: false,
+      soundEnabled: soundService.isEnabled,
+      volume: Math.round(soundService.volume * 100),
+      textToSpeechEnabled: soundService.textToSpeechEnabled,
+      speechRate: soundService.speechRate,
+      testingSound: false,
+      audioContextReady: false,
+      
+      // Track previous active consultations for change detection
+      previousActiveConsultations: [],
+      
+      // Announcement tracking
+      lastAnnouncedConsultations: new Set()
     };
   },
   computed: {
@@ -198,6 +287,12 @@ export default {
     
     this.updateClock();
     this.clockInterval = setInterval(this.updateClock, 1000);
+    
+    // Check initial audio context state
+    this.checkAudioContextState();
+    
+    // Add click listener to activate audio on any user interaction
+    document.addEventListener('click', this.activateSoundSystem, { once: true });
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -398,24 +493,8 @@ export default {
       }
     },
     handleQueueUpdate(queueData) {
-      // If this is a group consultation or patientCount is present, always refresh the list
-      if (queueData.isGroupConsultation || typeof queueData.patientCount !== 'undefined') {
-        this.loadData();
-        return;
-      }
-      const queueIndex = this.queueList.findIndex(q => q.id === queueData.id);
-      if (queueIndex !== -1) {
-        this.queueList[queueIndex] = {
-          ...this.queueList[queueIndex],
-          status: queueData.status,
-          patient: queueData.patient,
-          doctor: queueData.doctor,
-          queueDateTime: queueData.queueDateTime
-        };
-        this.lastUpdated = new Date().toLocaleTimeString();
-      } else {
-        this.loadData();
-      }
+      // Always refresh the list for any update to ensure consistency and avoid double refresh/blink
+      this.loadData();
     },
     enterFullscreen() {
       this.isFullscreen = true;
@@ -519,6 +598,190 @@ export default {
         'cancelled': 'status-cancelled'
       };
       return statusClasses[status] || 'status-unknown';
+    },
+    toggleSoundPanel() {
+      this.soundPanelVisible = !this.soundPanelVisible;
+      // Activate sound system when user interacts with sound panel
+      this.activateSoundSystem();
+    },
+    updateSoundEnabled() {
+      this.soundService.isEnabled = this.soundEnabled;
+    },
+    updateVolume() {
+      this.soundService.volume = this.volume / 100;
+    },
+    updateTextToSpeech() {
+      this.soundService.textToSpeechEnabled = this.textToSpeechEnabled;
+    },
+    updateSpeechRate() {
+      this.soundService.speechRate = this.speechRate;
+    },
+    async testSounds() {
+      this.testingSound = true;
+      try {
+        // Ensure audio context is activated
+        if (this.soundService.audioContext && this.soundService.audioContext.state === 'suspended') {
+          await this.soundService.audioContext.resume();
+        }
+        
+        await this.soundService.testSounds();
+        
+        // Also test a queue announcement
+        setTimeout(async () => {
+          await this.soundService.announceQueueCall(
+            "A001",
+            "Test Patient",
+            "Test Doctor",
+            "Room 1"
+          );
+        }, 2000);
+        
+      } catch (error) {
+        console.error('Error testing sounds:', error);
+      } finally {
+        this.testingSound = false;
+      }
+    },
+    
+    /**
+     * Check for new consultations and announce them
+     */
+    checkForNewConsultations() {
+      const currentConsultations = this.activeConsultations;
+      const previousConsultations = this.previousActiveConsultations;
+      
+      // Find newly started consultations
+      const newConsultations = currentConsultations.filter(current => 
+        !previousConsultations.some(previous => 
+          previous.id === current.id && previous.status === 'in_consultation'
+        )
+      );
+      
+      // Announce new consultations
+      newConsultations.forEach(consultation => {
+        this.announceNewConsultation(consultation);
+      });
+      
+      // Update previous consultations for next comparison
+      this.previousActiveConsultations = [...currentConsultations];
+    },
+    
+    /**
+     * Announce a new consultation
+     */
+    async announceNewConsultation(consultation) {
+      if (!this.soundService.isEnabled) return;
+      
+      const consultationKey = `${consultation.id}-${consultation.queueNumber}`;
+      
+      // Prevent duplicate announcements for the same consultation
+      if (this.lastAnnouncedConsultations.has(consultationKey)) {
+        return;
+      }
+      
+      this.lastAnnouncedConsultations.add(consultationKey);
+      
+      // Clean up old announcements (keep only last 10)
+      if (this.lastAnnouncedConsultations.size > 10) {
+        const announcements = Array.from(this.lastAnnouncedConsultations);
+        this.lastAnnouncedConsultations.clear();
+        announcements.slice(-5).forEach(key => this.lastAnnouncedConsultations.add(key));
+      }
+      
+      try {
+        const queueNumber = consultation.queueNumber;
+        const patientName = this.getFormattedPatientName(consultation.patient);
+        const doctorName = this.getFormattedDoctorName(consultation.doctor);
+        const roomNumber = this.getDoctorRoom(consultation.doctor);
+        
+        console.log('🔊 Announcing new consultation:', {
+          queueNumber,
+          patientName,
+          doctorName,
+          roomNumber
+        });
+        
+        await this.soundService.announceQueueCall(
+          queueNumber,
+          patientName,
+          doctorName,
+          roomNumber
+        );
+      } catch (error) {
+        console.warn('⚠️ Error announcing consultation:', error);
+      }
+    },
+    
+    /**
+     * Save sound settings to localStorage
+     */
+    saveSoundSettings() {
+      this.soundService.saveSettings();
+    },
+    /**
+     * Activate sound system on user interaction
+     */
+    async activateSoundSystem() {
+      if (this.soundService.audioContext && this.soundService.audioContext.state === 'suspended') {
+        try {
+          await this.soundService.audioContext.resume();
+          console.log('🔊 Audio context activated');
+          this.audioContextReady = true;
+        } catch (error) {
+          console.warn('⚠️ Failed to activate audio context:', error);
+        }
+      } else if (this.soundService.audioContext && this.soundService.audioContext.state === 'running') {
+        this.audioContextReady = true;
+      }
+    },
+    checkAudioContextState() {
+      if (this.soundService.audioContext) {
+        this.audioContextReady = this.soundService.audioContext.state === 'running';
+        console.log('🔊 Audio context state:', this.soundService.audioContext.state);
+      } else {
+        this.audioContextReady = false;
+        console.log('⚠️ No audio context available');
+      }
+    },
+    async testQueueCall() {
+      try {
+        await this.soundService.announceQueueCall(
+          "A001",
+          "Test Patient",
+          "Test Doctor",
+          "Room 1"
+        );
+        console.log('🔊 Queue call test successful');
+      } catch (error) {
+        console.error('⚠️ Error testing queue call:', error);
+      }
+    }
+  },
+  
+  watch: {
+    // Watch for changes in active consultations to trigger sound notifications
+    activeConsultations: {
+      handler(newConsultations, oldConsultations) {
+        // Only check for new consultations if we have previous data
+        if (oldConsultations && oldConsultations.length >= 0) {
+          this.checkForNewConsultations();
+        }
+      },
+      deep: true
+    },
+    
+    // Save sound settings when they change
+    soundEnabled() {
+      this.saveSoundSettings();
+    },
+    volume() {
+      this.saveSoundSettings();
+    },
+    textToSpeechEnabled() {
+      this.saveSoundSettings();
+    },
+    speechRate() {
+      this.saveSoundSettings();
     }
   }
 };
@@ -774,6 +1037,171 @@ body.queue-fullscreen {
   
   .multiple-consultations .h6 {
     font-size: 0.9rem !important;
+  }
+}
+
+/* Sound Control Panel Styles */
+.sound-controls {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10001;
+  background: rgba(0,0,0,0.7);
+  border-radius: 8px;
+  padding: 0.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.sound-controls.sound-controls-fullscreen {
+  top: 20px;
+  right: 20px;
+}
+
+.sound-toggle-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.sound-toggle-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.sound-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 280px;
+  max-height: 400px;
+  background: rgba(0,0,0,0.9);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.sound-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+.sound-panel-header h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
+
+.btn-close-panel {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.btn-close-panel:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.sound-panel-body {
+  color: #fff;
+}
+
+.sound-setting {
+  margin-bottom: 1rem;
+}
+
+.sound-label {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.sound-label input[type="checkbox"] {
+  margin-right: 0.5rem;
+}
+
+.sound-label span {
+  flex: 1;
+}
+
+.sound-slider {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.sound-value {
+  font-size: 0.8rem;
+  color: #ccc;
+  float: right;
+}
+
+.sound-setting .btn {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.sound-status {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.sound-status.status-ready {
+  background: rgba(40, 167, 69, 0.2);
+  color: #28a745;
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.sound-status.status-waiting {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.sound-status i {
+  margin-right: 0.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sound-controls {
+    top: 10px;
+    right: 10px;
+  }
+  
+  .sound-panel {
+    width: 250px;
+    max-height: 350px;
+  }
+  
+  .sound-panel-header h6 {
+    font-size: 0.9rem;
+  }
+  
+  .sound-label {
+    font-size: 0.8rem;
   }
 }
 </style> 

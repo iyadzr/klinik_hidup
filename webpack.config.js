@@ -1,4 +1,5 @@
 const Encore = require('@symfony/webpack-encore');
+const webpack = require('webpack');
 
 // Manually configure the runtime environment if not already configured yet by the "encore" command.
 // It's useful when you use tools that rely on webpack.config.js file.
@@ -92,6 +93,15 @@ Encore
 
 // Get the base webpack config
 const config = Encore.getWebpackConfig();
+
+// Add Vue feature flags to prevent warnings
+config.plugins.push(
+    new webpack.DefinePlugin({
+        __VUE_OPTIONS_API__: JSON.stringify(true),
+        __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
+        __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false)
+    })
+);
 
 // Override the dev server configuration to prevent absolute URLs in entrypoints.json
 if (!Encore.isProduction()) {

@@ -14,6 +14,21 @@
               style="width: auto;"
             >
           </div>
+          <div class="d-flex align-items-center gap-2">
+            <label for="queueStatus" class="form-label mb-0">Status:</label>
+            <select 
+              id="queueStatus"
+              v-model="selectedStatus" 
+              class="form-select form-select-sm"
+              style="width: auto;"
+            >
+              <option value="all">All Statuses</option>
+              <option value="waiting">Waiting</option>
+              <option value="in_consultation">In Consultation</option>
+              <option value="completed_consultation">Pending Payment</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
           <button @click="setToday" class="btn btn-outline-primary btn-sm">
             <i class="fas fa-calendar-day"></i> Today
           </button>
@@ -260,17 +275,19 @@
 <script>
 import axios from 'axios';
 import * as bootstrap from 'bootstrap';
-import { makeProtectedRequest, cancelAllRequests } from '../../utils/requestManager.js';
+import { makeProtectedRequest, makeNavigationRequest, cancelAllRequests } from '../../utils/requestManager.js';
 import timezoneUtils from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'QueueManagement',
+  emits: ['patientAdded', 'patientUpdated', 'patientDeleted', 'loginSuccess'],
   data() {
     return {
       queueList: [],
       patients: [],
       doctors: [],
       selectedDate: '',
+      selectedStatus: 'all', // Default to show all statuses
       selectedQueue: null,
       paymentAmount: 0,
       paymentMethod: '',
@@ -278,6 +295,11 @@ export default {
       isLoading: false,
       isDoctorLoading: false,
       isPaymentProcessing: false,
+      
+      // Pagination
+      currentPage: 1,
+      pageSize: 50,
+      totalPages: 1,
       
       // SSE connection management
       eventSource: null,
@@ -357,14 +379,13 @@ export default {
 
     async loadPatients() {
       try {
-        const response = await makeProtectedRequest(
+        const response = await makeNavigationRequest(
           'load-patients-queue',
           async (signal) => {
             return await axios.get('/api/patients', { signal });
           },
           {
-            throttleMs: 10000, // Cache patients for 10 seconds
-            timeout: 15000
+            timeout: 8000
           }
         );
         
@@ -383,17 +404,22 @@ export default {
     },
 
     async loadDoctors() {
+      // Skip loading if doctors are already loaded and not empty
+      if (this.doctors && this.doctors.length > 0) {
+        console.log('⏩ Doctors already loaded, skipping API call');
+        return;
+      }
+      
       try {
         this.isDoctorLoading = true;
         
-        const response = await makeProtectedRequest(
+        const response = await makeNavigationRequest(
           'load-doctors-queue',
           async (signal) => {
             return await axios.get('/api/doctors', { signal });
           },
           {
-            throttleMs: 30000, // Cache doctors for 30 seconds (they change less frequently)
-            timeout: 10000
+            timeout: 8000
           }
         );
         
@@ -401,11 +427,16 @@ export default {
         console.log('✅ Doctors loaded for queue management');
         
       } catch (error) {
-        if (error.message.includes('cancelled') || error.message.includes('throttled')) {
-          console.log('⏩ Doctor loading skipped:', error.message);
+        // Handle cancellation gracefully without logging as error
+        if (error.name === 'CanceledError' || 
+            error.message?.includes('cancelled') || 
+            error.message?.includes('canceled') ||
+            error.message?.includes('throttled')) {
+          console.log('⏩ Doctor loading skipped (cancelled/throttled)');
           return;
         }
         
+        // Only log actual errors
         console.error('❌ Error loading doctors:', error);
         this.$toast?.error?.('Failed to load doctors data');
       } finally {
@@ -425,8 +456,8 @@ export default {
 
         console.log('📋 Loading queue list for date:', this.selectedDate, 'status:', this.selectedStatus);
 
-        // Add cache-busting timestamp to prevent stale data
-        const response = await makeProtectedRequest(
+        // Use high priority for user-initiated requests
+        const response = await makeNavigationRequest(
           `queue-list-${this.selectedDate}-${this.selectedStatus}`,
           async (signal) => {
             return await axios.get('/api/queue', {
@@ -437,28 +468,57 @@ export default {
                 limit: this.pageSize,
                 _t: Date.now() // Cache-busting timestamp
               },
-              signal
+              signal,
+              timeout: 8000 // Explicit timeout
             });
           },
           {
-            throttleMs: 200,
-            timeout: 15000,
-            maxRetries: 2,
-            skipThrottle: false
+            priority: 'high', // High priority for user interactions
+            timeout: 8000,
+            maxRetries: 1,
+            skipThrottle: false // Allow some throttling even for high priority
           }
         );
 
-        // Filter out completed queues from today to prevent confusion
+        // Filter and organize queue data to show all relevant statuses
         let queueData = Array.isArray(response.data) ? response.data : (response.data.data || []);
         
-        // Only show truly active queues (waiting, in_consultation)
-        if (this.selectedStatus === 'all') {
-          queueData = queueData.filter(queue => {
-            const isToday = queue.queueDateTime && queue.queueDateTime.startsWith(this.selectedDate);
-            const isActive = ['waiting', 'in_consultation'].includes(queue.status);
-            return isToday && (isActive || queue.status === 'completed_consultation');
+        console.log('🔍 Debug - Raw queue data:', queueData);
+        console.log('🔍 Debug - Selected date:', this.selectedDate);
+        console.log('🔍 Debug - Selected status:', this.selectedStatus);
+        
+        // Show all relevant statuses for today's activities
+        queueData = queueData.filter(queue => {
+          // Check if queue is for the selected date
+          const isToday = queue.queueDateTime && queue.queueDateTime.startsWith(this.selectedDate);
+          
+          console.log('🔍 Debug - Queue item:', {
+            id: queue.id,
+            queueDateTime: queue.queueDateTime,
+            status: queue.status,
+            isToday: isToday,
+            selectedDate: this.selectedDate
           });
-        }
+          
+          // If a specific status is selected, filter by that status
+          if (this.selectedStatus !== 'all') {
+            return isToday && queue.status === this.selectedStatus;
+          }
+          
+          // Otherwise, show all statuses that are relevant for daily operations:
+          // - waiting: patients waiting to be seen
+          // - in_consultation: patients currently being seen
+          // - completed_consultation: patients who finished consultation but need payment
+          // - completed: patients who are fully done (for reference)
+          const relevantStatuses = [
+            'waiting', 
+            'in_consultation', 
+            'completed_consultation', 
+            'completed'
+          ];
+          
+          return isToday && relevantStatuses.includes(queue.status);
+        });
 
         this.queueList = queueData;
         this.totalPages = Math.max(1, Math.ceil((response.data.total || queueData.length) / this.pageSize));
@@ -471,13 +531,34 @@ export default {
         });
 
       } catch (error) {
+        // Enhanced error handling with specific error types
+        if (error.circuitBreakerOpen) {
+          console.log('🔌 Circuit breaker open for queue list - using cached data if available');
+          this.error = 'Service temporarily unavailable. Using cached data.';
+          // Try to use any cached data
+          return;
+        }
+        
         if (error.message.includes('throttled')) {
           console.log('⏸️ Queue list request throttled');
+          this.error = 'Too many requests. Please wait a moment.';
           return;
         }
 
-        console.error('❌ Error loading queue list:', error);
-        this.error = 'Failed to load queue list. Please try again.';
+        if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+          console.error('⏰ Queue list request timed out');
+          this.error = 'Request timed out. The server may be overloaded.';
+        } else if (error.response?.status === 429) {
+          console.error('🚫 Rate limited');
+          this.error = 'Too many requests. Please wait before trying again.';
+        } else if (error.response?.status >= 500) {
+          console.error('🔥 Server error');
+          this.error = 'Server error occurred. Please try again in a moment.';
+        } else {
+          console.error('❌ Error loading queue list:', error);
+          this.error = 'Failed to load queue list. Please try again.';
+        }
+        
         this.queueList = [];
       } finally {
         this.isLoading = false;
@@ -491,24 +572,38 @@ export default {
       this.$toast?.info?.('Refreshing queue data...');
       
       try {
-        // Force refresh by clearing cache
+        // Force refresh by clearing cache and using high priority
         await makeProtectedRequest(
-          `load-queue-${this.selectedDate}`,
+          `manual-refresh-queue-${this.selectedDate}`,
           async (signal) => {
-            return await axios.get(`/api/queue?date=${this.selectedDate}&_t=${Date.now()}`, { signal });
+            return await axios.get(`/api/queue?date=${this.selectedDate}&_t=${Date.now()}`, { 
+              signal,
+              timeout: 10000 // Longer timeout for manual refresh
+            });
           },
           {
-            throttleMs: 500,   // Allow more frequent manual refreshes
+            priority: 'high',
             skipThrottle: true, // Skip throttling for manual refresh
-            timeout: 20000
+            skipDeduplication: true, // Skip deduplication for manual refresh
+            timeout: 10000,
+            maxRetries: 2
           }
         );
         
-        this.$toast?.success?.('Queue data refreshed');
+        // Reload the list after successful refresh
+        await this.loadQueueList();
+        this.$toast?.success?.('Queue data refreshed successfully');
         
       } catch (error) {
         console.error('❌ Manual refresh failed:', error);
-        this.$toast?.error?.('Failed to refresh queue data');
+        
+        if (error.circuitBreakerOpen) {
+          this.$toast?.warning?.('Service temporarily unavailable. Please try again in a moment.');
+        } else if (error.response?.status === 429) {
+          this.$toast?.warning?.('Too many requests. Please wait before refreshing again.');
+        } else {
+          this.$toast?.error?.('Failed to refresh queue data. Please check your connection.');
+        }
       }
     },
 
@@ -551,6 +646,18 @@ export default {
           this.queueList[queueIndex].isPaid = true;
           this.queueList[queueIndex].paidAt = new Date().toISOString();
         }
+        
+        // Notify other components about payment
+        window.dispatchEvent(new CustomEvent('paymentProcessed', {
+          detail: {
+            queueId: this.selectedQueue.id,
+            amount: this.calculateAmount(this.selectedQueue),
+            paymentMethod: this.paymentMethod
+          }
+        }));
+        
+        // Cross-tab communication via localStorage
+        localStorage.setItem('paymentsUpdated', Date.now().toString());
         
         // Close Vue modal and reset data
         this.closePaymentModal();
@@ -687,15 +794,15 @@ export default {
     },
 
     getTodayInMYT() {
-              // Get actual current date in Malaysia timezone
-        const mytTime = this.timezoneUtils.nowInMalaysia();
-      
+      // Get actual current date in Malaysia timezone
+      const mytTime = this.timezoneUtils.nowInMalaysia();
+    
       const year = mytTime.getFullYear();
       const month = String(mytTime.getMonth() + 1).padStart(2, '0');
       const day = String(mytTime.getDate()).padStart(2, '0');
       
       const dateString = `${year}-${month}-${day}`;
-      console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', mytTime.toLocaleString());
+      console.log('🕐 Current MYT date:', dateString, 'Local time:', new Date().toLocaleString(), 'MYT time:', mytTime.toLocaleString());
       return dateString;
     },
     setToday() {
@@ -726,17 +833,6 @@ export default {
       return 0;
     },
     
-
-
-    async updateStatus(queueId, newStatus) {
-      try {
-        await axios.put(`/api/queue/${queueId}/status`, { status: newStatus });
-        this.loadQueueList();
-      } catch (error) {
-        console.error('Error updating queue status:', error);
-        alert('Error updating queue status. Please try again.');
-      }
-    },
     formatStatus(status) {
       const statusMap = {
         'waiting': 'Waiting',
@@ -762,14 +858,14 @@ export default {
     formatDateTime(datetime) {
       if (!datetime) return '';
       const date = new Date(datetime);
-      return date.toLocaleString('en-MY', {
+      return date.toLocaleString('en-GB', {
         timeZone: this.timezoneUtils.MALAYSIA_TIMEZONE,
-        year: 'numeric',
-        month: 'short',
         day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
+        hour12: true,
       });
     },
     getPatientName(patientId) {
@@ -843,6 +939,9 @@ export default {
       this.medicinesList = [];
       
       try {
+        // Show loading state
+        this.showMedicinesModal = true;
+        
         // Fetch medicines based on consultation ID or queue ID
         let response;
         if (queue.consultationId) {
@@ -855,13 +954,31 @@ export default {
         this.medicinesList = response.data || [];
         console.log('💊 Fetched medicines:', this.medicinesList);
         
+        // Show success message if medicines found
+        if (this.medicinesList.length > 0) {
+          this.$toast?.success?.(`Found ${this.medicinesList.length} prescribed medicine(s)`);
+        } else {
+          this.$toast?.info?.('No medicines prescribed for this patient');
+        }
+        
       } catch (error) {
         console.error('❌ Error fetching medicines:', error);
         this.medicinesList = [];
+        
+        // Provide specific error messages
+        if (error.response?.status === 404) {
+          this.$toast?.warning?.('No consultation or medicines found for this queue');
+        } else if (error.response?.status === 429) {
+          this.$toast?.warning?.('Too many requests. Please wait before trying again.');
+        } else if (error.response?.status >= 500) {
+          this.$toast?.error?.('Server error occurred. Please try again later.');
+        } else {
+          this.$toast?.error?.('Failed to load medicines. Please try again.');
+        }
+        
+        // Still show modal even if there's an error
+        this.showMedicinesModal = true;
       }
-      
-      // Show Vue modal (no Bootstrap JS)
-      this.showMedicinesModal = true;
     },
     
     // Close medicines modal
@@ -920,7 +1037,12 @@ export default {
     printMedicinesList() {
       const patientName = this.getSelectedQueuePatientName();
       const queueNumber = this.formatQueueNumber(this.selectedQueue.queueNumber);
-      const today = new Date().toLocaleDateString('en-MY');
+      const today = new Date().toLocaleDateString('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
       
       let printContent = `
         <!DOCTYPE html>
@@ -1005,6 +1127,10 @@ export default {
   watch: {
     selectedDate() {
       console.log('📅 Date changed to:', this.selectedDate);
+      this.loadQueueList();
+    },
+    selectedStatus() {
+      console.log('🔍 Status filter changed to:', this.selectedStatus);
       this.loadQueueList();
     },
     '$route.query.refresh'() {

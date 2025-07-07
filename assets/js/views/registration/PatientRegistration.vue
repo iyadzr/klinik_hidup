@@ -113,7 +113,7 @@
                               <strong>Phone:</strong> {{ pat.phone }}
                             </p>
                             <p class="card-text small text-muted mb-1">
-                              <strong>Symptoms:</strong> {{ pat.preInformedIllness }}
+                              <strong>Remarks:</strong> {{ pat.remarks }}
                             </p>
                           </div>
                           <div class="btn-group-vertical">
@@ -183,7 +183,21 @@
                 <div class="row mb-3">
                   <div class="col-md-4">
                     <label class="form-label">Phone *</label>
-                    <input type="tel" v-model="currentPatient.phone" class="form-control" required>
+                    <input type="tel" v-model="currentPatient.phone" class="form-control" required @input="handleGroupPhoneInput">
+                    <div class="form-check-container mt-2" style="font-size: 0.75rem;">
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" :name="'groupPhoneFormat' + editingPatientIndex" id="groupMobile" value="mobile" v-model="currentPatient.phoneFormatType" @change="handleGroupPhoneFormatChange" style="transform: scale(0.85);">
+                        <label class="form-check-label" for="groupMobile" style="font-size: 0.75rem;">
+                          Mobile phone
+                        </label>
+                      </div>
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" :name="'groupPhoneFormat' + editingPatientIndex" id="groupFixedLine" value="fixed" v-model="currentPatient.phoneFormatType" @change="handleGroupPhoneFormatChange" style="transform: scale(0.85);">
+                        <label class="form-check-label" for="groupFixedLine" style="font-size: 0.75rem;">
+                          Fixed line
+                        </label>
+                      </div>
+                    </div>
                   </div>
                   <div class="col-md-4">
                     <label class="form-label">Date of Birth *</label>
@@ -223,13 +237,12 @@
 
                 <div class="row mb-3">
                   <div class="col-12">
-                    <label class="form-label">Symptoms & Chief Complaints *</label>
+                    <label class="form-label">Remarks (optional)</label>
                     <textarea 
-                      v-model="currentPatient.preInformedIllness" 
+                      v-model="currentPatient.remarks" 
                       class="form-control" 
                       rows="3" 
-                      required 
-                      placeholder="Please describe the symptoms, complaints, or reason for this visit..."
+                      placeholder="Please describe the remarks for this visit..."
                     ></textarea>
                   </div>
                 </div>
@@ -325,13 +338,13 @@
       <!-- Pre-informed Illness Section (only show for single patient registration) -->
       <div v-if="!multiplePatients" class="card mt-3">
         <div class="card-header">
-          <h4 class="mb-0">Pre-informed Illness/Symptoms</h4>
+          <h4 class="mb-0">Remarks (optional)</h4>
         </div>
         <div class="card-body">
           <div class="mb-3">
-            <label class="form-label">Symptoms & Chief Complaints</label>
-            <textarea v-model="patient.preInformedIllness" class="form-control" rows="4" required 
-                      placeholder="Please describe the symptoms, complaints, or reason for this visit..."></textarea>
+            <label class="form-label">Remarks (optional)</label>
+            <textarea v-model="patient.remarks" class="form-control" rows="4" 
+                      placeholder="Please describe the remarks for this visit..."></textarea>
           </div>
         </div>
       </div>
@@ -398,7 +411,7 @@ export default {
           address: '',
           company: '',
           companyAddress: '',
-          preInformedIllness: '',
+          remarks: '',
           nric: ''
         };
         this.selectedPatient = null;
@@ -426,7 +439,7 @@ export default {
         address: '',
         company: '',
         companyAddress: '',
-        preInformedIllness: '',
+        remarks: '',
         nric: ''
       },
       queueInfo: {
@@ -448,12 +461,13 @@ export default {
         name: '',
         email: '',
         phone: '',
+        phoneFormatType: 'mobile',
         dateOfBirth: '',
         gender: '',
         address: '',
         company: '',
         companyAddress: '',
-        preInformedIllness: '',
+        remarks: '',
         nric: '',
         relationship: ''
       }
@@ -662,7 +676,7 @@ export default {
     selectExistingPatient(patient) {
       this.selectedPatient = patient;
       this.patientType = 'existing';
-      // Populate the patient form with the selected patient's data (excluding preInformedIllness)
+      // Populate the patient form with the selected patient's data (excluding remarks)
       this.patient = {
         name: patient.name || '',
         nric: patient.nric || '',
@@ -673,7 +687,7 @@ export default {
         dateOfBirth: patient.dateOfBirth || '',
         company: patient.company || '',
         companyAddress: patient.companyAddress || '',
-        preInformedIllness: '' // Reset preInformedIllness for new visit
+        remarks: '' // Reset remarks for new visit
       };
     },
 
@@ -688,7 +702,7 @@ export default {
         address: '',
         company: '',
         companyAddress: '',
-        preInformedIllness: '',
+        remarks: '',
         nric: ''
       };
       
@@ -730,12 +744,13 @@ export default {
         name: '',
         email: '',
         phone: '',
+        phoneFormatType: 'mobile',
         dateOfBirth: '',
         gender: '',
         address: '',
         company: '',
         companyAddress: '',
-        preInformedIllness: '',
+        remarks: '',
         nric: '',
         relationship: ''
       };
@@ -744,14 +759,15 @@ export default {
     saveCurrentPatient() {
       // Validate required fields
       if (!this.currentPatient.name || !this.currentPatient.nric || !this.currentPatient.phone || 
-          !this.currentPatient.dateOfBirth || !this.currentPatient.gender || !this.currentPatient.preInformedIllness) {
+          !this.currentPatient.dateOfBirth || !this.currentPatient.gender || !this.currentPatient.remarks) {
         alert('Please fill in all required fields marked with *');
         return;
       }
 
-      // Check for duplicate NRIC
+      // Check for duplicate NRIC (format both for consistent comparison)
+      const formattedCurrentNric = formatNRIC(this.currentPatient.nric);
       const existingIndex = this.patients.findIndex((p, index) => 
-        p.nric === this.currentPatient.nric && index !== this.editingPatientIndex
+        formatNRIC(p.nric) === formattedCurrentNric && index !== this.editingPatientIndex
       );
       
       if (existingIndex !== -1) {
@@ -788,6 +804,8 @@ export default {
 
     editPatient(index) {
       this.currentPatient = { ...this.patients[index] };
+      // Default to mobile if not set
+      if (!this.currentPatient.phoneFormatType) this.currentPatient.phoneFormatType = 'mobile';
       this.editingPatientIndex = index;
       this.showPatientForm = true;
     },
@@ -910,7 +928,7 @@ export default {
             }
             return; // Exit early since registration endpoint handles both patient creation and queueing
           } else if (this.selectedPatient) {
-            // For existing patients, update with symptoms and add to queue
+            // For existing patients, update with remarks and add to queue
             const updatedPatient = { ...this.selectedPatient, ...this.patient };
             const response = await axios.post('/api/patients/register', {
               patient: updatedPatient,
@@ -1010,6 +1028,37 @@ export default {
         
         // Recalculate DOB and gender if it's a valid NRIC
         this.calculateDOBFromNRIC(this.patient);
+      }
+    },
+
+    handleGroupPhoneInput(event) {
+      const input = event.target.value;
+      const cleanPhone = input.replace(/\D/g, '');
+      if (this.currentPatient.phoneFormatType === 'mobile') {
+        if (cleanPhone.length > 3) {
+          this.currentPatient.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else {
+          this.currentPatient.phone = cleanPhone;
+        }
+      } else {
+        if (cleanPhone.length > 2) {
+          this.currentPatient.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.currentPatient.phone = cleanPhone;
+        }
+      }
+    },
+
+    handleGroupPhoneFormatChange() {
+      if (this.currentPatient.phone) {
+        const cleanPhone = this.currentPatient.phone.replace(/\D/g, '');
+        if (this.currentPatient.phoneFormatType === 'mobile' && cleanPhone.length > 3) {
+          this.currentPatient.phone = cleanPhone.substring(0, 3) + '-' + cleanPhone.substring(3);
+        } else if (this.currentPatient.phoneFormatType === 'fixed' && cleanPhone.length > 2) {
+          this.currentPatient.phone = cleanPhone.substring(0, 2) + '-' + cleanPhone.substring(2);
+        } else {
+          this.currentPatient.phone = cleanPhone;
+        }
       }
     }
   }

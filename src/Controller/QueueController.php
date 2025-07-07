@@ -66,99 +66,167 @@ class QueueController extends AbstractController
             return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
         }
         
+        $startTime = microtime(true);
+        
         try {
             $date = $request->query->get('date');
             $status = $request->query->get('status');
             $page = max(1, (int) $request->query->get('page', 1));
             $limit = min(100, max(10, (int) $request->query->get('limit', 50))); // Max 100, min 10
             
-            $cacheKey = 'queue_list_' . ($date ?: 'all') . '_' . ($status ?: 'all') . '_page_' . $page . '_limit_' . $limit;
+            // Enhanced caching with request fingerprint
+            $requestFingerprint = md5($date . $status . $page . $limit . $request->getClientIp());
+            $cacheKey = 'queue_list_' . $requestFingerprint;
             
-            if ($this->cache) {
-                $queueData = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $status, $page, $limit) {
-                    $item->expiresAfter(5); // 5 seconds cache for near real-time updates
-                    return $this->buildQueueList($date, $status, $page, $limit);
-                });
-            } else {
-                $queueData = $this->buildQueueList($date, $status, $page, $limit);
+            // Set connection timeout for this request
+            $connection = $this->entityManager->getConnection();
+            $originalTimeout = $connection->executeQuery('SELECT @@wait_timeout')->fetchOne();
+            $connection->executeStatement('SET SESSION wait_timeout = 30');
+            
+            try {
+                if ($this->cache) {
+                    $queueData = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $status, $page, $limit) {
+                        $item->expiresAfter(3); // Reduced to 3 seconds for better real-time updates
+                        return $this->buildQueueList($date, $status, $page, $limit);
+                    });
+                } else {
+                    $queueData = $this->buildQueueList($date, $status, $page, $limit);
+                }
+                
+                $executionTime = microtime(true) - $startTime;
+                
+                // Log slow requests
+                if ($executionTime > 1.0) {
+                    $this->logger->warning('Slow queue list request', [
+                        'execution_time' => $executionTime,
+                        'date' => $date,
+                        'status' => $status,
+                        'page' => $page,
+                        'limit' => $limit,
+                        'result_count' => count($queueData)
+                    ]);
+                }
+                
+                // Add performance headers
+                $response = new JsonResponse($queueData);
+                $response->headers->set('X-Execution-Time', round($executionTime * 1000, 2) . 'ms');
+                $response->headers->set('X-Cache-Key', $cacheKey);
+                
+                return $response;
+                
+            } finally {
+                // Restore original timeout
+                $connection->executeStatement("SET SESSION wait_timeout = {$originalTimeout}");
             }
             
-            return new JsonResponse($queueData);
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching queue list: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to fetch queue data'], 500);
+            $executionTime = microtime(true) - $startTime;
+            $this->logger->error('Error fetching queue list', [
+                'error' => $e->getMessage(),
+                'execution_time' => $executionTime,
+                'date' => $request->query->get('date'),
+                'status' => $request->query->get('status'),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Return a more helpful error response
+            return new JsonResponse([
+                'error' => 'Failed to fetch queue data',
+                'details' => $e->getMessage(),
+                'execution_time' => round($executionTime * 1000, 2) . 'ms'
+            ], 500);
         }
     }
     
     private function buildQueueList(?string $date, ?string $status, int $page, int $limit): array
     {
-        $qb = $this->entityManager->getRepository(Queue::class)
-            ->createQueryBuilder('q')
-            ->select('q', 'p', 'd') // Select related entities to avoid N+1 queries
-            ->leftJoin('q.patient', 'p')
-            ->leftJoin('q.doctor', 'd')
-            ->orderBy('q.queueDateTime', 'DESC');
-        
-        // Apply date filter
-        if ($date) {
-            $start = \App\Service\TimezoneService::startOfDay($date);
-            $end = \App\Service\TimezoneService::endOfDay($date);
-            
-            $qb->where('q.queueDateTime BETWEEN :start AND :end')
-               ->setParameter('start', $start)
-               ->setParameter('end', $end);
-        } else {
-            // Default to last 7 days for performance
-            $sevenDaysAgo = \App\Service\TimezoneService::createDateTime('-7 days');
-            $qb->where('q.queueDateTime >= :sevenDaysAgo')
-               ->setParameter('sevenDaysAgo', $sevenDaysAgo);
-        }
-        
-        // Apply status filter
-        if ($status) {
-            $qb->andWhere('q.status = :status')
-               ->setParameter('status', $status);
-        }
-        
-        // Apply pagination
-        $qb->setFirstResult(($page - 1) * $limit)
-           ->setMaxResults($limit);
-        
-        $queues = $qb->getQuery()->getResult();
-        
-        $queueData = [];
-        $groupedQueues = [];
-        
-        foreach ($queues as $queue) {
-            $patient = $queue->getPatient();
-            $doctor = $queue->getDoctor();
-            
-            if (!$patient || !$doctor) {
-                continue; // Skip incomplete records
+        try {
+            $qb = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('q', 'p', 'd') // Select full objects to access entity methods
+                ->join('q.patient', 'p')
+                ->join('q.doctor', 'd');
+
+            // Date filtering with proper timezone handling
+            if ($date) {
+                $startOfDay = \App\Service\TimezoneService::createDateTime($date . ' 00:00:00');
+                $endOfDay = \App\Service\TimezoneService::createDateTime($date . ' 23:59:59');
+                $qb->andWhere('q.queueDateTime BETWEEN :startDate AND :endDate')
+                   ->setParameter('startDate', $startOfDay)
+                   ->setParameter('endDate', $endOfDay);
             }
+
+            // Status filtering
+            if ($status && $status !== 'all') {
+                $qb->andWhere('q.status = :status')
+                   ->setParameter('status', $status);
+            }
+
+            // Add pagination to prevent memory issues
+            $offset = ($page - 1) * $limit;
+            $qb->setFirstResult($offset)
+               ->setMaxResults($limit)
+               ->orderBy('q.queueDateTime', 'DESC')
+               ->addOrderBy('q.queueNumber', 'ASC');
+
+            // Set query timeout and hints for performance
+            $query = $qb->getQuery();
+            $query->setHint(\Doctrine\ORM\Query::HINT_FORCE_PARTIAL_LOAD, true);
             
-            $groupId = $queue->getGroupId();
+            // Execute with timeout protection
+            $startTime = microtime(true);
+            $queues = $query->getResult();
+            $queryTime = microtime(true) - $startTime;
             
-            if ($groupId && $queue->isGroupConsultation()) {
-                // Group consultation handling
-                if (!isset($groupedQueues[$groupId])) {
-                    // Fetch all patients in this group
-                    $groupMembers = $this->entityManager->getRepository(\App\Entity\Queue::class)
-                        ->createQueryBuilder('q')
-                        ->leftJoin('q.patient', 'p')
-                        ->where('q.metadata LIKE :groupId')
+            // Log slow queries
+            if ($queryTime > 2.0) {
+                $this->logger->warning('Slow queue query detected', [
+                    'query_time' => $queryTime,
+                    'date' => $date,
+                    'status' => $status,
+                    'page' => $page,
+                    'limit' => $limit
+                ]);
+            }
+
+            $queueData = [];
+            $groupedQueues = [];
+
+            foreach ($queues as $queue) {
+                $patient = $queue->getPatient();
+                $doctor = $queue->getDoctor();
+
+                if (!$patient || !$doctor) {
+                    continue; // Skip incomplete records
+                }
+
+                // Check if this is a group consultation using Queue entity methods
+                $groupId = $queue->getGroupId();
+                $isGroupConsultation = $queue->isGroupConsultation();
+
+                if ($groupId && $isGroupConsultation && !isset($groupedQueues[$groupId])) {
+                    // Group consultation: collect all patients in this group with optimized query
+                    $groupQb = $this->entityManager->getRepository(Queue::class)
+                        ->createQueryBuilder('gq')
+                        ->select('gq', 'gp') // Select queue and patient only
+                        ->join('gq.patient', 'gp')
+                        ->where('gq.metadata LIKE :groupId')
                         ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
-                        ->getQuery()
-                        ->getResult();
-                    $patients = array_map(function($q) {
-                        $p = $q->getPatient();
-                        return $p ? [
-                            'id' => $p->getId(),
-                            'name' => $p->getName(),
-                            'displayName' => method_exists($p, 'getDisplayName') ? $p->getDisplayName() : $p->getName()
-                        ] : null;
-                    }, $groupMembers);
-                    $patients = array_filter($patients); // Remove nulls
+                        ->setMaxResults(20); // Prevent runaway group queries
+                    
+                    $groupQueues = $groupQb->getQuery()->getResult();
+                    
+                    $patients = [];
+                    foreach ($groupQueues as $groupQueue) {
+                        $groupPatient = $groupQueue->getPatient();
+                        if ($groupPatient) {
+                            $patients[] = [
+                                'id' => $groupPatient->getId(),
+                                'name' => $groupPatient->getName(),
+                                'displayName' => method_exists($groupPatient, 'getDisplayName') ? $groupPatient->getDisplayName() : $groupPatient->getName()
+                            ];
+                        }
+                    }
 
                     $groupedQueues[$groupId] = [
                         'id' => $queue->getId(),
@@ -166,8 +234,9 @@ class QueueController extends AbstractController
                         'registrationNumber' => $queue->getRegistrationNumber(),
                         'isGroupConsultation' => true,
                         'groupId' => $groupId,
-                        'patients' => array_values($patients),
+                        'patients' => $patients,
                         'patientCount' => count($patients),
+                        'mainPatient' => !empty($patients) ? $patients[0] : null,
                         'doctor' => [
                             'id' => $doctor->getId(),
                             'name' => $doctor->getName(),
@@ -185,39 +254,49 @@ class QueueController extends AbstractController
                         'hasMedicines' => $this->checkQueueHasMedicines($queue)
                     ];
                     $queueData[] = $groupedQueues[$groupId];
+                } else if (!$isGroupConsultation) {
+                    // Individual consultation
+                    $queueData[] = [
+                        'id' => $queue->getId(),
+                        'queueNumber' => $queue->getQueueNumber(),
+                        'registrationNumber' => $queue->getRegistrationNumber(),
+                        'isGroupConsultation' => false,
+                        'patient' => [
+                            'id' => $patient->getId(),
+                            'name' => $patient->getName(),
+                            'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName()
+                        ],
+                        'doctor' => [
+                            'id' => $doctor->getId(),
+                            'name' => $doctor->getName(),
+                            'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
+                        ],
+                        'status' => $queue->getStatus(),
+                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
+                        'isPaid' => $queue->getIsPaid(),
+                        'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
+                        'paymentMethod' => $queue->getPaymentMethod(),
+                        'amount' => $this->getQueueTotalAmount($queue),
+                        'totalAmount' => $this->getQueueTotalAmount($queue),
+                        'consultationId' => $this->getQueueConsultationId($queue),
+                        'hasMedicines' => $this->checkQueueHasMedicines($queue)
+                    ];
                 }
-            } else {
-                // Individual consultation
-                $queueData[] = [
-                    'id' => $queue->getId(),
-                    'queueNumber' => $queue->getQueueNumber(),
-                    'registrationNumber' => $queue->getRegistrationNumber(),
-                    'isGroupConsultation' => false,
-                    'patient' => [
-                        'id' => $patient->getId(),
-                        'name' => $patient->getName(),
-                        'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName()
-                    ],
-                    'doctor' => [
-                        'id' => $doctor->getId(),
-                        'name' => $doctor->getName(),
-                        'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
-                    ],
-                    'status' => $queue->getStatus(),
-                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                    'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
-                    'isPaid' => $queue->getIsPaid(),
-                    'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
-                    'paymentMethod' => $queue->getPaymentMethod(),
-                    'amount' => $this->getQueueTotalAmount($queue),
-                    'totalAmount' => $this->getQueueTotalAmount($queue),
-                    'consultationId' => $this->getQueueConsultationId($queue),
-                    'hasMedicines' => $this->checkQueueHasMedicines($queue)
-                ];
             }
-        }
 
-        return $queueData;
+            return $queueData;
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error building queue list', [
+                'error' => $e->getMessage(),
+                'date' => $date,
+                'status' => $status,
+                'page' => $page,
+                'limit' => $limit
+            ]);
+            throw $e;
+        }
     }
     
     /**
@@ -244,12 +323,24 @@ class QueueController extends AbstractController
      */
     private function getQueueConsultation(Queue $queue): ?\App\Entity\Consultation
     {
+        // Only look for consultations that are likely related to this queue session
+        // by checking consultations created on the same date as the queue
+        $queueDate = $queue->getQueueDateTime();
+        $startOfDay = $queueDate->format('Y-m-d 00:00:00');
+        $endOfDay = $queueDate->format('Y-m-d 23:59:59');
+        
         return $this->entityManager->getRepository(\App\Entity\Consultation::class)
             ->createQueryBuilder('c')
             ->where('c.patient = :patient')
             ->andWhere('c.doctor = :doctor')
+            ->andWhere('c.consultationDate >= :startOfDay')
+            ->andWhere('c.consultationDate <= :endOfDay')
+            ->andWhere('c.status IN (:validStatuses)')
             ->setParameter('patient', $queue->getPatient())
             ->setParameter('doctor', $queue->getDoctor())
+            ->setParameter('startOfDay', $startOfDay)
+            ->setParameter('endOfDay', $endOfDay)
+            ->setParameter('validStatuses', ['completed_consultation', 'completed'])
             ->orderBy('c.consultationDate', 'DESC')
             ->setMaxResults(1)
             ->getQuery()
@@ -261,13 +352,24 @@ class QueueController extends AbstractController
      */
     private function getQueueConsultationId(Queue $queue): ?int
     {
-        // Find consultation for this queue/patient and doctor
+        // Only look for consultations that are likely related to this queue session
+        // by checking consultations created on the same date as the queue
+        $queueDate = $queue->getQueueDateTime();
+        $startOfDay = $queueDate->format('Y-m-d 00:00:00');
+        $endOfDay = $queueDate->format('Y-m-d 23:59:59');
+        
         $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
             ->createQueryBuilder('c')
             ->where('c.patient = :patient')
             ->andWhere('c.doctor = :doctor')
+            ->andWhere('c.consultationDate >= :startOfDay')
+            ->andWhere('c.consultationDate <= :endOfDay')
+            ->andWhere('c.status IN (:validStatuses)')
             ->setParameter('patient', $queue->getPatient())
             ->setParameter('doctor', $queue->getDoctor())
+            ->setParameter('startOfDay', $startOfDay)
+            ->setParameter('endOfDay', $endOfDay)
+            ->setParameter('validStatuses', ['completed_consultation', 'completed'])
             ->orderBy('c.consultationDate', 'DESC')
             ->setMaxResults(1)
             ->getQuery()
@@ -281,6 +383,12 @@ class QueueController extends AbstractController
      */
     private function checkQueueHasMedicines(Queue $queue): bool
     {
+        // Only check for medicines if the queue has been processed (consultation completed)
+        // This prevents showing medicines for queues that haven't started consultation yet
+        if (!in_array($queue->getStatus(), ['completed_consultation', 'completed'])) {
+            return false;
+        }
+        
         $consultationId = $this->getQueueConsultationId($queue);
         if (!$consultationId) {
             return false;
@@ -604,20 +712,37 @@ class QueueController extends AbstractController
             $queue->setStatus($data['status']);
             $this->entityManager->flush();
             
-            // Clear relevant caches
+            // Clear relevant caches with more granular keys
             if ($this->cache) {
                 $today = date('Y-m-d');
                 $cacheKeys = [
+                    // Queue-specific caches
                     'queue_list_' . $today . '_all_page_1_limit_50',
                     'queue_list_' . $today . '_waiting_page_1_limit_50',
                     'queue_list_' . $today . '_in_consultation_page_1_limit_50',
                     'queue_list_' . $today . '_completed_page_1_limit_50',
-                    'queue_stats'
+                    'queue_list_' . $today . '_completed_consultation_page_1_limit_50',
+                    'queue_stats',
+                    'queue_stats_' . $today,
+                    // Doctor-specific caches
+                    'queue_list_doctor_' . $queue->getDoctor()->getId() . '_' . $today,
+                    // Patient-specific caches
+                    'patient_queue_' . $queue->getPatient()->getId() . '_' . $today,
+                    // Status-specific caches
+                    'queue_status_' . $oldStatus . '_' . $today,
+                    'queue_status_' . $data['status'] . '_' . $today
                 ];
                 
                 foreach ($cacheKeys as $key) {
                     $this->cache->delete($key);
                 }
+                
+                $this->logger->debug('Cache invalidated for status update', [
+                    'queueId' => $id,
+                    'oldStatus' => $oldStatus,
+                    'newStatus' => $data['status'],
+                    'keysCleared' => count($cacheKeys)
+                ]);
             }
             
             // Broadcast SSE update for status change
@@ -697,6 +822,9 @@ class QueueController extends AbstractController
             $queue->setPaymentMethod($data['paymentMethod']);
             $queue->setAmount($data['amount']);
             
+            // CRITICAL: Update the payment method in the Payment entity too
+            $payment->setPaymentMethod($data['paymentMethod']);
+            
             // If status is 'completed_consultation', change it to 'completed'
             if ($queue->getStatus() === 'completed_consultation') {
                 $queue->setStatus('completed');
@@ -716,6 +844,9 @@ class QueueController extends AbstractController
             
             // Broadcast SSE update for payment status change
             $this->broadcastQueueUpdate($queue);
+            
+            // Also broadcast payment-specific update
+            $this->broadcastPaymentUpdate($payment, $queue);
             
             $this->logger->info('Queue payment processed with Payment record', [
                 'queueId' => $id,
@@ -870,10 +1001,10 @@ class QueueController extends AbstractController
             }
         }
         
-        // Fallback to patient's pre-informed illness
+        // Fallback to patient's remarks
         $patient = $queue->getPatient();
-        if ($patient && method_exists($patient, 'getPreInformedIllness')) {
-            return $patient->getPreInformedIllness();
+        if ($patient && method_exists($patient, 'getRemarks')) {
+            return $patient->getRemarks();
         }
         
         return null;
@@ -980,6 +1111,13 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Incomplete queue data'], 400);
             }
             
+            // Get the most current remarks for the patient
+            $patientRemarks = $this->getQueueSymptoms($queue);
+            if (empty($patientRemarks) && method_exists($patient, 'getRemarks')) {
+                $patientRemarks = $patient->getRemarks();
+            }
+            $patientRemarks = $patientRemarks ?: null;
+            
             $queueData = [
                 'id' => $queue->getId(),
                 'queueNumber' => $queue->getQueueNumber(),
@@ -994,7 +1132,8 @@ class QueueController extends AbstractController
                     'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
                     'gender' => $patient->getGender(),
                     'phone' => $patient->getPhone(),
-                    'address' => $patient->getAddress()
+                    'address' => $patient->getAddress(),
+                    'remarks' => $patientRemarks
                 ],
                 'doctor' => [
                     'id' => $doctor->getId(),
@@ -1036,6 +1175,12 @@ class QueueController extends AbstractController
                             $relationship = $metadataArray['relationship'] ?? 'N/A';
                         }
                         
+                        // Get the most current remarks - check queue metadata first, then patient
+                        $remarks = $this->getQueueSymptoms($memberQueue);
+                        if (!$remarks && method_exists($memberPatient, 'getRemarks')) {
+                            $remarks = $memberPatient->getRemarks();
+                        }
+                        
                         $groupPatients[] = [
                             'id' => $memberPatient->getId(),
                             'name' => $memberPatient->getName(),
@@ -1046,7 +1191,7 @@ class QueueController extends AbstractController
                             'phone' => $memberPatient->getPhone(),
                             'address' => $memberPatient->getAddress(),
                             'relationship' => $relationship,
-                            'preInformedIllness' => method_exists($memberPatient, 'getPreInformedIllness') ? $memberPatient->getPreInformedIllness() : null
+                            'remarks' => $remarks
                         ];
                     }
                 }
@@ -1221,5 +1366,58 @@ class QueueController extends AbstractController
         
         // Write back to file
         file_put_contents($updateFile, json_encode($updates));
+    }
+
+    /**
+     * Broadcast payment update via SSE
+     */
+    private function broadcastPaymentUpdate($payment, $queue): void
+    {
+        // Store the payment update in a temporary file for SSE to pick up
+        $updateData = [
+            'type' => 'payment_processed',
+            'timestamp' => time(),
+            'data' => [
+                'payment_id' => $payment->getId(),
+                'amount' => $payment->getAmount(),
+                'payment_method' => $payment->getPaymentMethod(),
+                'reference' => $payment->getReference(),
+                'queue_id' => $queue->getId(),
+                'queue_number' => $queue->getQueueNumber(),
+                'patient' => [
+                    'id' => $queue->getPatient()->getId(),
+                    'name' => $queue->getPatient()->getName(),
+                ],
+                'doctor' => [
+                    'id' => $queue->getDoctor()->getId(),
+                    'name' => $queue->getDoctor()->getName(),
+                ],
+                'payment_date' => $payment->getPaymentDate()->format('Y-m-d H:i:s'),
+                'processed_by' => [
+                    'id' => $payment->getProcessedBy()->getId(),
+                    'name' => $payment->getProcessedBy()->getName(),
+                ]
+            ]
+        ];
+        
+        // Write to payment-specific temporary file
+        $tempDir = sys_get_temp_dir();
+        $paymentUpdateFile = $tempDir . '/payment_updates.json';
+        
+        // Read existing updates
+        $updates = [];
+        if (file_exists($paymentUpdateFile)) {
+            $content = file_get_contents($paymentUpdateFile);
+            $updates = json_decode($content, true) ?: [];
+        }
+        
+        // Add new update
+        $updates[] = $updateData;
+        
+        // Keep only last 10 updates to prevent file from growing too large
+        $updates = array_slice($updates, -10);
+        
+        // Write back to file
+        file_put_contents($paymentUpdateFile, json_encode($updates));
     }
 }

@@ -167,10 +167,11 @@ export default {
       }
     },
     formatDate(date) {
-      return new Date(date).toLocaleDateString('en-US', {
-        year: 'numeric',
+      return new Date(date).toLocaleDateString('en-GB', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        day: '2-digit',
         month: 'long',
-        day: 'numeric'
+        year: 'numeric'
       });
     },
     printCertificate() {

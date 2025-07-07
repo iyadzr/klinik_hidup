@@ -89,7 +89,7 @@ CREATE TABLE patient (
     date_of_birth DATE NOT NULL,
     medical_history VARCHAR(1000) DEFAULT NULL,
     company VARCHAR(255) DEFAULT NULL,
-    pre_informed_illness VARCHAR(1000) DEFAULT NULL,
+    remarks VARCHAR(1000) DEFAULT NULL,
     gender VARCHAR(1) DEFAULT NULL,
     address VARCHAR(500) DEFAULT NULL,
     UNIQUE INDEX UNIQ_1ADAD7EBCD4C031E (nric),
@@ -371,9 +371,73 @@ CREATE INDEX IDX_CONSULTATION_CREATED ON consultation (created_at);
 CREATE INDEX IDX_QUEUE_REG_NUMBER ON queue (registration_number);
 
 -- =====================================================
+-- CRITICAL PERFORMANCE INDEXES FOR API OPTIMIZATION
+-- =====================================================
+
+-- Queue table performance indexes (most critical for API performance)
+CREATE INDEX IDX_QUEUE_DATETIME_STATUS ON queue (queue_date_time, status);
+CREATE INDEX IDX_QUEUE_STATUS_DATETIME ON queue (status, queue_date_time);
+CREATE INDEX IDX_QUEUE_DATETIME_DESC ON queue (queue_date_time DESC);
+CREATE INDEX IDX_QUEUE_PATIENT_DOCTOR ON queue (patient_id, doctor_id);
+CREATE INDEX IDX_QUEUE_METADATA_SEARCH ON queue (metadata(255)); -- For group consultation lookups
+CREATE INDEX IDX_QUEUE_PAYMENT_STATUS ON queue (is_paid, payment_method);
+
+-- Patient table performance indexes
+CREATE INDEX IDX_PATIENT_NAME_SEARCH ON patient (name(50));
+CREATE INDEX IDX_PATIENT_NRIC_UNIQUE ON patient (nric);
+CREATE INDEX IDX_PATIENT_PHONE ON patient (phone);
+CREATE INDEX IDX_PATIENT_CREATED ON patient (created_at);
+
+-- Consultation table performance indexes
+CREATE INDEX IDX_CONSULTATION_DATETIME ON consultation (consultation_date);
+CREATE INDEX IDX_CONSULTATION_PATIENT_DOCTOR ON consultation (patient_id, doctor_id);
+CREATE INDEX IDX_CONSULTATION_STATUS_DATE ON consultation (status, consultation_date);
+CREATE INDEX IDX_CONSULTATION_TOTAL_AMOUNT ON consultation (total_amount);
+
+-- Doctor table performance indexes
+CREATE INDEX IDX_DOCTOR_NAME ON doctor (name);
+CREATE INDEX IDX_DOCTOR_ACTIVE ON doctor (is_active);
+
+-- Payment table performance indexes
+CREATE INDEX IDX_PAYMENT_DATE_METHOD ON payment (payment_date, payment_method);
+CREATE INDEX IDX_PAYMENT_CONSULTATION ON payment (consultation_id);
+CREATE INDEX IDX_PAYMENT_AMOUNT ON payment (amount);
+
+-- Prescribed medication performance indexes
+CREATE INDEX IDX_PRESCRIBED_MED_CONSULTATION ON prescribed_medication (consultation_id);
+CREATE INDEX IDX_PRESCRIBED_MED_MEDICATION ON prescribed_medication (medication_id);
+
+-- Medical certificate performance indexes
+CREATE INDEX IDX_MEDICAL_CERT_CONSULTATION ON medical_certificate (consultation_id);
+CREATE INDEX IDX_MEDICAL_CERT_DATE ON medical_certificate (issue_date);
+
+-- Composite indexes for common query patterns
+CREATE INDEX IDX_QUEUE_SEARCH_PATTERN ON queue (queue_date_time, status, patient_id, doctor_id);
+CREATE INDEX IDX_CONSULTATION_SEARCH_PATTERN ON consultation (consultation_date, status, patient_id);
+
+-- =====================================================
+-- DATABASE PERFORMANCE OPTIMIZATION SETTINGS
+-- =====================================================
+
+-- Optimize MySQL settings for better performance
+SET GLOBAL innodb_buffer_pool_size = 268435456; -- 256MB
+SET GLOBAL query_cache_size = 33554432; -- 32MB
+SET GLOBAL query_cache_type = 1;
+SET GLOBAL slow_query_log = 1;
+SET GLOBAL long_query_time = 2;
+SET GLOBAL max_connections = 200;
+SET GLOBAL wait_timeout = 300;
+SET GLOBAL interactive_timeout = 300;
+
+-- Enable query cache for better performance
+SET GLOBAL query_cache_limit = 1048576; -- 1MB
+SET GLOBAL query_cache_min_res_unit = 4096;
+
+-- =====================================================
 -- COMPLETION MESSAGE
 -- =====================================================
 
 SELECT 'Database setup completed successfully!' as STATUS,
        'All tables, relationships, and initial data have been created.' as MESSAGE,
+       'Performance indexes have been optimized for API stability.' as PERFORMANCE,
        'Default admin login: admin@clinic.com / password: temp123456' as ADMIN_LOGIN; 

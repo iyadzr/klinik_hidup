@@ -85,7 +85,7 @@ class Patient
     private ?string $company = null;
 
     #[ORM\Column(length: 1000, nullable: true)]
-    private ?string $preInformedIllness = null;
+    private ?string $remarks = null;
 
     #[ORM\Column(length: 1, nullable: true)]
     private ?string $gender = null;
@@ -187,14 +187,14 @@ class Patient
         return $this;
     }
 
-    public function getPreInformedIllness(): ?string
+    public function getRemarks(): ?string
     {
-        return $this->preInformedIllness;
+        return $this->remarks;
     }
 
-    public function setPreInformedIllness(?string $preInformedIllness): self
+    public function setRemarks(?string $remarks): self
     {
-        $this->preInformedIllness = $preInformedIllness;
+        $this->remarks = $remarks;
         return $this;
     }
 

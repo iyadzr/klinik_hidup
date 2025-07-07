@@ -32,6 +32,50 @@ body, html {
   overflow-y: auto;
 }
 
+/* MC Preview Modal - Force to top-most layer */
+#mcPreviewModal {
+  z-index: 99999 !important;
+}
+
+#mcPreviewModal .modal-backdrop {
+  z-index: 99998 !important;
+}
+
+#mcPreviewModal .modal-dialog {
+  z-index: 100000 !important;
+  position: relative !important;
+}
+
+/* Ensure MC Preview Modal is always visible */
+.modal-backdrop.show {
+  opacity: 0.5;
+}
+
+#mcPreviewModal.show {
+  display: block !important;
+}
+
+#mcPreviewModal.show .modal-dialog {
+  transform: none !important;
+}
+
+/* Force MC Preview Modal to be above all other elements */
+#mcPreviewModal .modal-content {
+  position: relative !important;
+  z-index: 100001 !important;
+}
+
+/* Ensure backdrop doesn't interfere */
+#mcPreviewModal + .modal-backdrop {
+  z-index: 99998 !important;
+}
+
+/* Override any conflicting modal styles */
+#mcPreviewModal.modal.show {
+  z-index: 99999 !important;
+  display: block !important;
+}
+
 /* Large modals adjustments */
 .modal-lg {
   max-width: 90% !important;

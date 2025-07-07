@@ -1,25 +1,36 @@
-// Simple date formatting utility for clinic-management-system
-// Usage: formatDate('2025-05-18T00:52:36+08:00') => '2025-05-18'
+// Standardized date formatting utility for clinic-management-system
+// All dates formatted in DD/MM/YYYY format for Malaysian standard
 
+/**
+ * Format date in DD/MM/YYYY format
+ * @param {string|Date} dateString - Date to format
+ * @returns {string} - Formatted date in DD/MM/YYYY format
+ */
 export function formatDate(dateString) {
   if (!dateString) return '';
   const date = new Date(dateString);
-  return date.toLocaleDateString('ms-MY', {
-    day: 'numeric',
-    month: 'numeric',
+  return date.toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: '2-digit',
+    month: '2-digit',
     year: 'numeric'
   });
 }
 
+/**
+ * Format date with full month name in DD Month YYYY format
+ * @param {string|Date} date - Date to format
+ * @returns {string} - Formatted date in DD Month YYYY format
+ */
 export const formatDateOnly = (date) => {
   if (!date) return 'N/A';
   try {
     const d = new Date(date);
-    return d.toLocaleDateString('en-MY', {
+    return d.toLocaleDateString('en-GB', {
       timeZone: 'Asia/Kuala_Lumpur',
-      year: 'numeric',
+      day: '2-digit',
       month: 'long',
-      day: '2-digit'
+      year: 'numeric'
     });
   } catch (e) {
     console.error('Error formatting date:', e);
@@ -27,7 +38,26 @@ export const formatDateOnly = (date) => {
   }
 };
 
-// Get today's date in MYT timezone in YYYY-MM-DD format
+/**
+ * Format datetime in DD/MM/YYYY, HH:MM format
+ * @param {string|Date} dateString - Date to format
+ * @returns {string} - Formatted datetime
+ */
+export function formatDateTime(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleString('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
+// Get today's date in MYT timezone in YYYY-MM-DD format (for API calls)
 export const getTodayInMYT = () => {
   try {
     const now = new Date();
@@ -41,7 +71,7 @@ export const getTodayInMYT = () => {
     });
     
     const dateString = formatter.format(now);
-    console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', now.toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }));
+    console.log('🕐 Current MYT date:', dateString, 'Local time:', now.toLocaleString(), 'MYT time:', now.toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }));
     return dateString;
   } catch (e) {
     console.error('Error getting today in MYT:', e);

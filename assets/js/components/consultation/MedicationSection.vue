@@ -50,7 +50,7 @@
                   <small class="text-muted">
                     {{ suggestion.unitDescription || suggestion.unitType || 'Unit not specified' }}
                     <span v-if="suggestion.sellingPrice" class="text-success ms-2">
-                      <i class="fas fa-tag"></i> RM {{ parseFloat(suggestion.sellingPrice).toFixed(2) }}
+                      <i class="fas fa-tag"></i> RM {{ parseFloat(suggestion.sellingPrice || 0).toFixed(2) }}
                     </span>
                   </small>
                 </div>
@@ -198,7 +198,15 @@ export default {
     },
     
     async searchMedications(medItem, event) {
-      const searchTerm = event.target.value;
+      const searchTerm = event.target.value.trim();
+      
+      // Clear suggestions if search term is too short
+      if (searchTerm.length < 2) {
+        medItem.allSuggestions = [];
+        medItem.paginatedSuggestions = [];
+        medItem.selectedSuggestionIndex = -1;
+        return;
+      }
       
       try {
         if (!this.medicationSearcher) {
@@ -209,7 +217,12 @@ export default {
           return;
         }
 
-        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch);
+        // Use longer debounce time for medication search to reduce API calls
+        const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch, {
+          debounceMs: 500, // Increased from default 300ms to 500ms
+          minLength: 2,
+          cacheResults: true
+        });
         
         if (results) {
           this.updateMedicationPagination(medItem, results);

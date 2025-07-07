@@ -6,13 +6,26 @@ doctrine:
         # either here or in the DATABASE_URL env var (see .env file)
         #server_version: '16'
         
-        # Connection settings for production performance
+        # Enhanced connection settings for production performance and stability
         options:
             # MySQL specific performance optimizations
-            1002: 'SET sql_mode=(SELECT REPLACE(@@sql_mode,"ONLY_FULL_GROUP_BY",""));'  # PDO::MYSQL_ATTR_INIT_COMMAND
+            1002: 'SET sql_mode=(SELECT REPLACE(@@sql_mode,"ONLY_FULL_GROUP_BY",""));SET SESSION wait_timeout=60;SET SESSION interactive_timeout=60;'  # PDO::MYSQL_ATTR_INIT_COMMAND
+            # Connection timeout and retry settings
+            2: 30  # PDO::ATTR_TIMEOUT - Connection timeout in seconds
+            3: 2   # PDO::ATTR_ERRMODE - Error reporting mode
+            1000: true  # PDO::MYSQL_ATTR_USE_BUFFERED_QUERY
+            1001: 'utf8mb4'  # PDO::MYSQL_ATTR_INIT_COMMAND charset
         
-        # Database connection settings
+        # Database connection settings with timeouts
         server_version: '8.0'
+        
+        # Connection management
+        wrapper_class: ~
+        charset: utf8mb4
+        default_table_options:
+            charset: utf8mb4
+            collate: utf8mb4_unicode_ci
+            engine: InnoDB
         
         profiling_collect_backtrace: '%kernel.debug%'
         use_savepoints: true
@@ -56,6 +69,9 @@ when@prod:
             result_cache_driver:
                 type: pool
                 pool: doctrine.result_cache_pool
+            metadata_cache_driver:
+                type: pool
+                pool: doctrine.system_cache_pool
 
     framework:
         cache:

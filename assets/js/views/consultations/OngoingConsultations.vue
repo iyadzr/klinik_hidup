@@ -7,12 +7,16 @@
             <i class="fas fa-stethoscope me-2"></i>Patient Consultation
           </h4>
           <div class="d-flex gap-2">
-            <button @click="refreshData" class="btn btn-outline-primary btn-sm" :disabled="loading || isRateLimited">
-              <i class="fas fa-sync-alt me-1" :class="{ 'fa-spin': loading }"></i> Refresh
-            </button>
             <span v-if="lastUpdated" class="badge bg-secondary">
               Last updated: {{ formatTime(lastUpdated) }}
             </span>
+            <span :class="sseConnected ? 'badge bg-success' : 'badge bg-warning'" :title="sseConnected ? 'Real-time updates connected' : 'Real-time updates disconnected'">
+              <i class="fas fa-broadcast-tower me-1"></i>{{ sseConnected ? 'Live' : 'Offline' }}
+            </span>
+            <button @click="refreshData" class="btn btn-sm btn-outline-primary" :disabled="loading || isRateLimited" title="Refresh data">
+              <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
+              <span class="d-none d-sm-inline ms-1">Refresh</span>
+            </button>
           </div>
         </div>
       </div>
@@ -40,10 +44,22 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else-if="!ongoingConsultations.length" class="empty-state">
+        <div v-else-if="!ongoingConsultations.length" class="empty-state text-center py-5">
           <i class="fas fa-clipboard-check fa-3x mb-3 text-muted"></i>
           <h5>No Patients Waiting</h5>
-          <p class="text-muted">No patients are currently waiting for consultation.</p>
+          <p class="text-muted mb-3">No patients are currently waiting for consultation.</p>
+          <div class="mt-3">
+            <small class="text-muted">
+              <i class="fas fa-info-circle me-1"></i>
+              New patients will appear here automatically when they register and join the queue.
+            </small>
+          </div>
+          <div class="mt-2">
+            <button @click="refreshData" class="btn btn-sm btn-outline-primary" :disabled="loading">
+              <i class="fas fa-sync-alt me-1" :class="{ 'fa-spin': loading }"></i>
+              Check for Updates
+            </button>
+          </div>
         </div>
 
         <!-- Ongoing Consultations List -->
@@ -154,7 +170,7 @@
                     </template>
                     <template v-else>
                       <p v-if="consultation.symptoms" class="card-text mb-2">
-                        <strong>Symptoms:</strong> {{ truncateText(consultation.symptoms, 80) }}
+                        <strong>Remarks:</strong> {{ truncateText(consultation.symptoms, 80) }}
                       </p>
                       <button
                         v-if="consultation.isQueueEntry && consultation.status === 'waiting'"
@@ -235,6 +251,9 @@
             <h5 class="modal-title">
               <i class="fas fa-calendar-day me-2"></i>
               Today's Patients ({{ todayTotal }})
+              <span v-if="pendingPaymentsCount > 0" class="badge bg-warning text-dark ms-2">
+                {{ pendingPaymentsCount }} pending payment{{ pendingPaymentsCount > 1 ? 's' : '' }}
+              </span>
             </h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -259,11 +278,12 @@
                       <th>Patient</th>
                       <th>Doctor</th>
                       <th>Status</th>
+                      <th>Payment</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="patient in todayPatients" :key="patient.id + '-' + patient.type">
+                    <tr v-for="patient in deduplicatedTodayPatients" :key="patient.id + '-' + patient.type">
                       <td>{{ formatTime(patient.time) }}</td>
                       <td>
                         <div class="d-flex align-items-center">
@@ -283,6 +303,20 @@
                         </span>
                       </td>
                       <td>
+                        <div v-if="patient.status === 'completed' || patient.status === 'completed_consultation'">
+                          <span v-if="patient.isPaid" class="badge bg-success">
+                            <i class="fas fa-check-circle me-1"></i>Paid
+                          </span>
+                          <span v-else class="badge bg-warning text-dark">
+                            <i class="fas fa-clock me-1"></i>Pending
+                          </span>
+                          <div v-if="patient.totalAmount && parseFloat(patient.totalAmount) > 0" class="small text-muted mt-1">
+                            RM {{ parseFloat(patient.totalAmount || 0).toFixed(2) }}
+                          </div>
+                        </div>
+                        <span v-else class="text-muted small">-</span>
+                      </td>
+                      <td>
                         <button 
                           v-if="patient.status === 'waiting'" 
                           @click="startPatientConsultation(patient)"
@@ -299,9 +333,19 @@
                         >
                           <i class="fas fa-arrow-right me-1"></i>Continue
                         </button>
-                        <span v-else-if="patient.status === 'completed' || patient.status === 'completed_consultation'" class="badge bg-success">
-                          <i class="fas fa-check me-1"></i>Completed
-                        </span>
+                        <div v-else-if="patient.status === 'completed' || patient.status === 'completed_consultation'" class="d-flex flex-column gap-1">
+                          <span class="badge bg-success">
+                            <i class="fas fa-check me-1"></i>Completed
+                          </span>
+                          <button 
+                            v-if="!patient.isPaid && patient.totalAmount && parseFloat(patient.totalAmount) > 0" 
+                            @click="processPayment(patient)"
+                            class="btn btn-sm btn-outline-primary"
+                            title="Process Payment"
+                          >
+                            <i class="fas fa-credit-card me-1"></i>Pay
+                          </button>
+                        </div>
                         <span v-else class="text-muted">-</span>
                       </td>
                     </tr>
@@ -326,6 +370,7 @@ import axios from 'axios';
 import { getTodayInMYT, formatQueueNumber } from '../../utils/dateUtils';
 import AuthService from '../../services/AuthService';
 import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
+import { makeNavigationRequest } from '../../utils/requestManager.js';
 
 export default {
   name: 'PatientConsultation',
@@ -345,11 +390,20 @@ export default {
     const loadingTodayPatients = ref(false);
     const todayPatientsModal = ref(null);
     
+    // SSE connection status
+    const sseConnected = ref(false);
+    
     // Request cancellation
     let currentRequest = null;
     let refreshInterval = null;
     let retryTimeout = null;
     let rateLimitTimeout = null;
+    
+    // SSE connection for real-time updates
+    let eventSource = null;
+    let sseReconnectAttempts = 0;
+    const maxSseReconnectAttempts = 5;
+    const sseReconnectDelay = 1000;
     
     // Client-side cache
     const cache = ref({
@@ -364,30 +418,43 @@ export default {
     
     // Rate limiting helpers
     const requestLog = ref([]);
+    const manualRequestLog = ref([]);
     const maxRequestsPerMinute = 10;
+    const maxManualRequestsPerMinute = 5; // Lower limit for manual requests
 
-    const checkRateLimit = () => {
+    const checkRateLimit = (isManual = false) => {
       const now = Date.now();
       const oneMinuteAgo = now - 60000;
       
       // Clean old requests
       requestLog.value = requestLog.value.filter(time => time > oneMinuteAgo);
+      manualRequestLog.value = manualRequestLog.value.filter(time => time > oneMinuteAgo);
       
-      if (requestLog.value.length >= maxRequestsPerMinute) {
-        isRateLimited.value = true;
-        rateLimitCooldown.value = 60;
-        
-        if (rateLimitTimeout) clearInterval(rateLimitTimeout);
-        rateLimitTimeout = setInterval(() => {
-          rateLimitCooldown.value--;
-          if (rateLimitCooldown.value <= 0) {
-            isRateLimited.value = false;
-            clearInterval(rateLimitTimeout);
-            rateLimitTimeout = null;
-          }
-        }, 1000);
-        
-        return false;
+      if (isManual) {
+        // Check manual request limit
+        if (manualRequestLog.value.length >= maxManualRequestsPerMinute) {
+          isRateLimited.value = true;
+          rateLimitCooldown.value = 60;
+          
+          if (rateLimitTimeout) clearInterval(rateLimitTimeout);
+          rateLimitTimeout = setInterval(() => {
+            rateLimitCooldown.value--;
+            if (rateLimitCooldown.value <= 0) {
+              isRateLimited.value = false;
+              clearInterval(rateLimitTimeout);
+              rateLimitTimeout = null;
+            }
+          }, 1000);
+          
+          return false;
+        }
+        manualRequestLog.value.push(now);
+      } else {
+        // Check overall request limit for automatic requests
+        if (requestLog.value.length >= maxRequestsPerMinute) {
+          console.warn('⚠️ Automatic request rate limit reached, skipping request');
+          return false;
+        }
       }
       
       requestLog.value.push(now);
@@ -399,35 +466,34 @@ export default {
       return (Date.now() - cache.value.timestamp) < cache.value.ttl;
     };
 
-    const fetchOngoingConsultations = async (useCache = true) => {
+    const fetchOngoingConsultations = async (useCache = true, isManual = false) => {
       // Check rate limiting
-      if (!checkRateLimit()) {
-        console.warn('Rate limited - skipping request');
+      if (!checkRateLimit(isManual)) {
+        if (isManual) {
+          console.warn('Manual request rate limited - skipping request');
+        }
         return;
       }
       
       // Use cache if available and fresh
       if (useCache && isDataFresh()) {
         console.log('Using cached data');
-        ongoingConsultations.value = cache.value.data;
+        ongoingConsultations.value = cache.value.data || [];
         return;
       }
       
-      // Cancel previous request
-      if (currentRequest) {
-        currentRequest.abort();
-        currentRequest = null;
+      // Don't cancel previous request if already loading - just wait for it to complete
+      if (loading.value) {
+        console.log('Request already in progress, skipping...');
+        return;
       }
-      
-      // Prevent multiple simultaneous requests
-      if (loading.value) return;
       
       loading.value = true;
       error.value = null;
       
-      // Create abort controller
-      currentRequest = new AbortController();
-      const { signal } = currentRequest;
+      // Create abort controller for this specific request
+      const abortController = new AbortController();
+      currentRequest = abortController;
       
       try {
         let doctorId = null;
@@ -436,33 +502,99 @@ export default {
           console.log('Using doctor ID:', doctorId, 'for user:', currentUser.value.email);
         }
 
-        const response = await axios.get('/api/consultations/ongoing', {
-          signal,
-          params: {
-            doctorId: doctorId
+        console.log('🔄 Fetching ongoing consultations...');
+        const response = await makeNavigationRequest(
+          'ongoing-consultations',
+          async (signal) => {
+            return await axios.get('/api/consultations/ongoing', {
+              signal: signal || abortController.signal,
+              params: {
+                doctorId: doctorId
+              }
+            });
+          },
+          {
+            timeout: 8000, // Faster timeout for ongoing consultations
+            maxRetries: 1
           }
-        });
+        );
         
-        ongoingConsultations.value = response.data.ongoing;
-        todayTotal.value = response.data.todayTotal;
+        console.log('✅ Successfully fetched ongoing consultations:', response.data);
+        ongoingConsultations.value = response.data.ongoing || [];
+        todayTotal.value = response.data.todayTotal || 0;
         lastUpdated.value = new Date();
         error.value = null; // Clear error on success
         retryCount.value = 0; // Reset retry count
         
         // Update cache
-        cache.value.data = response.data.ongoing;
+        cache.value.data = response.data.ongoing || [];
         cache.value.timestamp = Date.now();
         
       } catch (err) {
-        if (axios.isCancel(err)) {
-          console.log('Request canceled');
-        } else {
-          error.value = 'Failed to load ongoing consultations.';
-          console.error(err);
+        // Only handle error if this request wasn't aborted
+        if (currentRequest === abortController) {
+          if (axios.isCancel(err)) {
+            console.log('Request was canceled');
+          } else {
+            // Enhanced error handling with specific messages
+            let errorMessage = 'Failed to load ongoing consultations.';
+            
+            console.error('🔍 API Error Details:', {
+              status: err.response?.status,
+              statusText: err.response?.statusText,
+              data: err.response?.data,
+              url: err.config?.url,
+              method: err.config?.method,
+              headers: err.config?.headers ? Object.keys(err.config.headers) : 'none',
+              hasAuthHeader: !!err.config?.headers?.Authorization
+            });
+            
+            if (err.response?.status === 401) {
+              errorMessage = 'Authentication required. Please log in again.';
+              console.log('🔐 401 Unauthorized - checking authentication status...');
+              console.log('🔐 Current user:', AuthService.getCurrentUser());
+              console.log('🔐 Is authenticated:', AuthService.isAuthenticated());
+              console.log('🔐 Token valid:', !AuthService.isTokenExpired(AuthService.getCurrentUser()?.token));
+              
+              // Check if user is still authenticated
+              if (!AuthService.isAuthenticated()) {
+                console.log('🔐 User is not authenticated, forcing logout...');
+                // Force logout and redirect to login
+                AuthService.logout();
+                router.push('/login');
+                return;
+              } else {
+                console.log('🔐 User appears authenticated but got 401 - token might be expired');
+                // Token might be expired, try to refresh
+                console.log('🔄 Token might be expired, attempting to refresh data...');
+                setTimeout(() => {
+                  fetchOngoingConsultations(false, false);
+                }, 1000);
+              }
+            } else if (err.response?.status === 429) {
+              errorMessage = 'Too many requests. Please wait before refreshing.';
+            } else if (err.response?.status >= 500) {
+              errorMessage = 'Server error occurred. Retrying automatically...';
+              retryCount.value++;
+              if (retryCount.value < 3) {
+                setTimeout(() => retryWithBackoff(), 2000);
+              }
+            } else if (err.response?.status === 404) {
+              errorMessage = 'Consultation data not found.';
+            } else if (err.code === 'NETWORK_ERROR' || !err.response) {
+              errorMessage = 'Network connection error. Check your internet connection.';
+            }
+            
+            error.value = errorMessage;
+            console.error('Fetch ongoing consultations error:', err);
+          }
         }
       } finally {
-        loading.value = false;
-        currentRequest = null;
+        // Only clear loading if this is still the current request
+        if (currentRequest === abortController) {
+          loading.value = false;
+          currentRequest = null;
+        }
       }
     };
     
@@ -477,7 +609,7 @@ export default {
       
       if (retryTimeout) clearTimeout(retryTimeout);
       retryTimeout = setTimeout(() => {
-        fetchOngoingConsultations(false); // Don't use cache on retry
+        fetchOngoingConsultations(false, false); // Don't use cache on retry, not manual
       }, backoffDelay);
     };
 
@@ -519,8 +651,12 @@ export default {
     };
 
     const refreshData = () => {
-      if (isRateLimited.value) return;
-      fetchOngoingConsultations(false); // Force refresh without cache
+      if (isRateLimited.value) {
+        console.warn('⚠️ Refresh blocked due to rate limiting');
+        return;
+      }
+      console.log('🔄 Manual refresh triggered');
+      fetchOngoingConsultations(false, true); // Force refresh without cache, manual request
     };
 
     const formatDate = (dateString) => {
@@ -594,18 +730,192 @@ export default {
         clearInterval(refreshInterval);
       }
       
-      // Auto-refresh every 45 seconds (less frequent to reduce load)
+      // Auto-refresh every 60 seconds (less frequent to reduce load)
+      // Only refresh if SSE is not connected (fallback mechanism)
       refreshInterval = setInterval(() => {
-        if (!loading.value && !isRateLimited.value && !error.value) {
-          fetchOngoingConsultations(true); // Allow cache usage
+        if (!loading.value && !isRateLimited.value && !error.value && !sseConnected.value) {
+          console.log('🔄 Auto-refresh triggered (SSE not connected)');
+          fetchOngoingConsultations(true, false); // Allow cache usage, not manual
         }
-      }, 45000);
+      }, 60000);
+    };
+
+    // Initialize SSE connection for real-time updates
+    const initializeSSE = () => {
+      // Close existing connection
+      if (eventSource) {
+        console.log('🔌 Closing existing SSE connection...');
+        eventSource.close();
+        eventSource = null;
+      }
+
+      // Don't initialize SSE if user is not authenticated
+      if (!AuthService.isAuthenticated()) {
+        console.log('🔐 User not authenticated, skipping SSE initialization');
+        sseConnected.value = false;
+        return;
+      }
+
+      try {
+        // Get authentication token for SSE connection
+        const user = AuthService.getCurrentUser();
+        const token = user?.token;
+        
+        // Build SSE URL with token parameter if available
+        let sseUrl = '/api/sse/queue-updates';
+        if (token) {
+          sseUrl += `?token=${encodeURIComponent(token)}`;
+        }
+        
+        console.log('🔌 Initializing SSE connection for ongoing consultations...');
+        console.log('🔌 SSE URL:', sseUrl.replace(/token=[^&]+/, 'token=[REDACTED]'));
+        console.log('🔌 Base URL:', window.location.origin);
+        console.log('🔌 Has token:', !!token);
+        
+        eventSource = new EventSource(sseUrl);
+        
+        eventSource.onopen = () => {
+          console.log('✅ SSE connection established for ongoing consultations');
+          console.log('✅ SSE readyState:', eventSource.readyState);
+          sseReconnectAttempts = 0;
+          sseConnected.value = true;
+        };
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const queueData = JSON.parse(event.data);
+            console.log('📡 SSE queue update received for ongoing consultations:', queueData);
+            handleQueueUpdate(queueData);
+          } catch (error) {
+            console.error('❌ Error parsing SSE data:', error);
+          }
+        };
+        
+        eventSource.addEventListener('connected', (event) => {
+          try {
+            const connectionData = JSON.parse(event.data);
+            console.log('✅ SSE connection established for ongoing consultations:', connectionData);
+          } catch (error) {
+            console.error('❌ Error parsing SSE connection data:', error);
+          }
+        });
+        
+        eventSource.addEventListener('heartbeat', (event) => {
+          try {
+            const heartbeatData = JSON.parse(event.data);
+            console.log('💓 SSE heartbeat received for ongoing consultations:', heartbeatData);
+          } catch (error) {
+            console.error('❌ Error parsing SSE heartbeat data:', error);
+          }
+        });
+        
+        eventSource.onerror = (error) => {
+          console.error('❌ SSE connection error for ongoing consultations:', error);
+          console.error('❌ SSE readyState:', eventSource?.readyState);
+          console.error('❌ SSE url:', eventSource?.url);
+          console.error('❌ Error details:', {
+            type: error.type,
+            target: error.target,
+            currentTarget: error.currentTarget,
+            eventPhase: error.eventPhase
+          });
+          
+          sseConnected.value = false;
+          
+          // Close the connection if it's in an error state
+          if (eventSource) {
+            console.log('🔌 Closing failed SSE connection...');
+            eventSource.close();
+            eventSource = null;
+          }
+          
+          // Always attempt to reconnect after an error
+          console.log('🔄 SSE connection error, attempting to reconnect...');
+          handleSSEReconnect();
+        };
+        
+      } catch (error) {
+        console.error('❌ Failed to initialize SSE for ongoing consultations:', error);
+        sseConnected.value = false;
+      }
+    };
+
+    const handleSSEReconnect = () => {
+      if (sseReconnectAttempts >= maxSseReconnectAttempts) {
+        console.warn('⚠️ Max SSE reconnection attempts reached for ongoing consultations');
+        return;
+      }
+
+      sseReconnectAttempts++;
+      const delay = sseReconnectDelay * Math.pow(2, sseReconnectAttempts - 1); // Exponential backoff
+      
+      console.log(`🔄 Attempting SSE reconnection ${sseReconnectAttempts}/${maxSseReconnectAttempts} in ${delay}ms`);
+      
+      setTimeout(() => {
+        initializeSSE();
+      }, delay);
+    };
+
+    // Handle real-time queue updates
+    const handleQueueUpdate = (queueData) => {
+      console.log('📡 SSE queue update received for ongoing consultations:', queueData);
+      
+      // ALWAYS refresh the list for ANY queue update to ensure immediate updates
+      // This includes new patient registrations, status changes, etc.
+      console.log('🔄 Queue update detected, refreshing ongoing consultations immediately');
+      fetchOngoingConsultations(false, false); // Force refresh without cache, not manual
+      
+      // Show notification for new patient registrations
+      if (queueData.status === 'waiting' && queueData.patient && queueData.patient.name) {
+        console.log('🆕 New patient registered:', queueData.patient.name);
+        // Optional: Show a toast notification
+        // this.$toast?.info?.(`New patient registered: ${queueData.patient.name}`);
+      }
     };
 
     onMounted(() => {
       console.log('OngoingConsultations component mounted');
-      fetchOngoingConsultations();
-      setupAutoRefresh();
+      
+      // Debug authentication state
+      const user = AuthService.getCurrentUser();
+      console.log('🔐 Current user:', user);
+      console.log('🔐 Is authenticated:', AuthService.isAuthenticated());
+      console.log('🔐 Has ROLE_DOCTOR:', AuthService.hasRole('ROLE_DOCTOR'));
+      
+      if (user && user.token) {
+        console.log('🔐 Token exists, length:', user.token.length);
+        console.log('🔐 Token expiration:', AuthService.getTokenExpirationTime());
+        console.log('🔐 Token expires soon:', AuthService.isTokenExpiringSoon());
+        
+        // Test token validity by making a simple API call
+        console.log('🔐 Testing token validity...');
+        axios.get('/api/profile')
+          .then(response => {
+            console.log('✅ Token is valid, user profile:', response.data);
+          })
+          .catch(error => {
+            console.error('❌ Token validation failed:', error);
+            if (error.response?.status === 401) {
+              console.log('🔐 Token is invalid, logging out...');
+              AuthService.logout();
+              router.push('/login');
+              return;
+            }
+          });
+      } else {
+        console.log('🔐 No token found in user data');
+        console.log('🔐 Redirecting to login...');
+        AuthService.logout();
+        router.push('/login');
+        return;
+      }
+      
+      // Only proceed if authenticated
+      if (AuthService.isAuthenticated()) {
+        fetchOngoingConsultations(true, false); // Use cache, not manual
+        setupAutoRefresh();
+        initializeSSE(); // Initialize SSE for real-time updates
+      }
     });
 
     onUnmounted(() => {
@@ -622,6 +932,13 @@ export default {
       if (rateLimitTimeout) {
         clearInterval(rateLimitTimeout);
       }
+      
+      // Cleanup SSE connection
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      sseConnected.value = false;
     });
 
     // Today's Patients Modal functionality
@@ -703,6 +1020,21 @@ export default {
         router.push(`/consultations/${patient.id}`);
       }
     };
+
+    const processPayment = async (patient) => {
+      try {
+        // Navigate to payment processing for this patient
+        if (patient.type === 'queue') {
+          // For queue entries, redirect to queue management with payment focus
+          router.push(`/queue?payment=${patient.queueId}`);
+        } else {
+          // For consultations, redirect to consultation list with payment focus
+          router.push(`/consultations?payment=${patient.id}`);
+        }
+      } catch (error) {
+        console.error('Error processing payment:', error);
+      }
+    };
     
     const getPatientCardClasses = (patientCount) => {
       // Responsive classes based on number of patients
@@ -725,10 +1057,65 @@ export default {
       () => router.currentRoute.value.name,
       (newName) => {
         if (newName === 'OngoingConsultations') {
-          fetchOngoingConsultations(false); // Force fetch new data
+          fetchOngoingConsultations(false, false); // Force fetch new data, not manual
         }
       }
     );
+
+    // Deduplicate today's patients: prefer 'consultation' over 'queue' for same patient
+    const deduplicatedTodayPatients = computed(() => {
+      const map = new Map();
+      for (const patient of todayPatients.value) {
+        const key = patient.patientId || patient.id;
+        if (!key) continue;
+        // If already exists, prefer 'consultation' type
+        if (!map.has(key) || patient.type === 'consultation') {
+          map.set(key, patient);
+        }
+      }
+      return Array.from(map.values());
+    });
+
+    // Count patients with pending payments
+    const pendingPaymentsCount = computed(() => {
+      return deduplicatedTodayPatients.value.filter(patient => 
+        (patient.status === 'completed' || patient.status === 'completed_consultation') &&
+        !patient.isPaid && 
+        patient.totalAmount && 
+        parseFloat(patient.totalAmount) > 0
+      ).length;
+    });
+
+    // Watch for logout/login and reset rate limit
+    watch(currentUser, (newUser, oldUser) => {
+      requestLog.value = [];
+      manualRequestLog.value = [];
+      isRateLimited.value = false;
+      rateLimitCooldown.value = 0;
+      if (rateLimitTimeout) {
+        clearInterval(rateLimitTimeout);
+        rateLimitTimeout = null;
+      }
+      
+      // If user just logged in (was null/undefined, now has value), fetch data
+      if (!oldUser && newUser) {
+        console.log('🔐 User logged in, fetching ongoing consultations...');
+        error.value = null; // Clear any auth errors
+        fetchOngoingConsultations(false, false);
+      }
+      
+      // If user logged out, clear data and close SSE
+      if (oldUser && !newUser) {
+        console.log('🔐 User logged out, clearing ongoing consultations...');
+        ongoingConsultations.value = [];
+        todayTotal.value = 0;
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+          sseConnected.value = false;
+        }
+      }
+    });
 
     return {
       ongoingConsultations,
@@ -758,7 +1145,14 @@ export default {
       formatTodayPatientStatus,
       startPatientConsultation,
       continuePatientConsultation,
+      processPayment,
       getPatientCardClasses,
+      // SSE methods
+      initializeSSE,
+      handleQueueUpdate,
+      sseConnected,
+      deduplicatedTodayPatients,
+      pendingPaymentsCount,
     };
   }
 };

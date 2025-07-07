@@ -524,7 +524,7 @@ export default {
 
     formatCurrency(amount) {
       const num = parseFloat(amount || 0);
-      return num.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return num.toFixed(2);
     },
 
     formatNumber(number) {
@@ -535,12 +535,11 @@ export default {
       if (!dateString) return 'N/A';
       try {
         const dateObj = new Date(dateString);
-        return dateObj.toLocaleDateString('en-MY', {
+        return dateObj.toLocaleDateString('en-GB', {
           timeZone: 'Asia/Kuala_Lumpur',
+          day: '2-digit',
           month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
+          year: 'numeric'
         });
       } catch (error) {
         return 'Invalid Date';
@@ -550,13 +549,14 @@ export default {
     formatDateTime(dateTime) {
       if (!dateTime) return 'N/A';
       try {
-        return dateTime.toLocaleString('en-MY', {
+        return dateTime.toLocaleString('en-GB', {
           timeZone: 'Asia/Kuala_Lumpur',
-          year: 'numeric',
+          day: '2-digit',
           month: 'short',
-          day: 'numeric',
+          year: 'numeric',
           hour: '2-digit',
-          minute: '2-digit'
+          minute: '2-digit',
+          hour12: false
         });
       } catch (error) {
         return 'Invalid Date';

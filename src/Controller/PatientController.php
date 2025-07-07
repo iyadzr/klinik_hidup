@@ -50,9 +50,11 @@ class PatientController extends AbstractController
             'email' => $patient->getEmail(),
             'phone' => $patient->getPhone(),
             'dateOfBirth' => $patient->getDateOfBirth()?->format('Y-m-d'),
+            'gender' => $patient->getGender(),
+            'address' => $patient->getAddress(),
             'medicalHistory' => $patient->getMedicalHistory(),
             'company' => method_exists($patient, 'getCompany') ? $patient->getCompany() : null,
-            'preInformedIllness' => method_exists($patient, 'getPreInformedIllness') ? $patient->getPreInformedIllness() : null,
+            'remarks' => method_exists($patient, 'getRemarks') ? $patient->getRemarks() : null,
             'displayName' => $patient->getName(),
         ]);
     }
@@ -94,7 +96,7 @@ class PatientController extends AbstractController
                 'gender' => $patient->getGender(),
                 'address' => $patient->getAddress(),
                 'company' => $patient->getCompany(),
-                'preInformedIllness' => $patient->getPreInformedIllness(),
+                'remarks' => $patient->getRemarks(),
                 'medicalHistory' => $patient->getMedicalHistory(),
                 'displayName' => $patient->getName(),
             ];
@@ -158,7 +160,7 @@ class PatientController extends AbstractController
                     'gender' => $patient->getGender() ?? '',
                     'address' => $patient->getAddress() ?? '',
                     'company' => $patient->getCompany() ?? '',
-                    'preInformedIllness' => $patient->getPreInformedIllness() ?? '',
+                    'remarks' => $patient->getRemarks() ?? '',
                     'medicalHistory' => $patient->getMedicalHistory() ?? '',
                     'registrationNumber' => null
                 ];
@@ -205,9 +207,12 @@ class PatientController extends AbstractController
                 }
             }
 
-            // Check for duplicate NRIC
+            // Format NRIC for storage FIRST (ensure it has dashes for 12-digit NRIC)
+            $nric = $this->formatNRICForStorage($data['nric']);
+            
+            // Check for duplicate NRIC using the formatted version
             $existingPatient = $this->entityManager->getRepository(Patient::class)
-                ->findOneBy(['nric' => $data['nric']]);
+                ->findOneBy(['nric' => $nric]);
             
             if ($existingPatient) {
                 return $this->json(['error' => 'A patient with this NRIC already exists'], 409);
@@ -215,9 +220,6 @@ class PatientController extends AbstractController
 
             $patient = new Patient();
             $patient->setName($data['name']);
-            
-            // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
-            $nric = $this->formatNRICForStorage($data['nric']);
             $patient->setNric($nric);
             
             $patient->setEmail($data['email'] ?? '');
@@ -243,8 +245,8 @@ class PatientController extends AbstractController
             if (isset($data['company'])) {
                 $patient->setCompany($data['company']);
             }
-            if (isset($data['preInformedIllness'])) {
-                $patient->setPreInformedIllness($data['preInformedIllness']);
+            if (isset($data['remarks'])) {
+                $patient->setRemarks($data['remarks']);
             }
 
             $this->entityManager->persist($patient);
@@ -269,7 +271,7 @@ class PatientController extends AbstractController
                     'gender' => $patient->getGender(),
                     'address' => $patient->getAddress(),
                     'company' => $patient->getCompany(),
-                    'preInformedIllness' => $patient->getPreInformedIllness(),
+                    'remarks' => $patient->getRemarks(),
                 ]
             ], Response::HTTP_CREATED);
         } catch (\Exception $e) {
@@ -325,9 +327,12 @@ class PatientController extends AbstractController
                 return $this->json(['error' => 'Doctor not found'], 404);
             }
 
-            // Check for duplicate NRIC
+            // Format NRIC for storage FIRST (ensure it has dashes for 12-digit NRIC)
+            $nric = $this->formatNRICForStorage($patientData['nric']);
+            
+            // Check for duplicate NRIC using the formatted version
             $existingPatient = $this->entityManager->getRepository(Patient::class)
-                ->findOneBy(['nric' => $patientData['nric']]);
+                ->findOneBy(['nric' => $nric]);
             
             if ($existingPatient) {
                 // Patient exists, just add to queue
@@ -349,9 +354,6 @@ class PatientController extends AbstractController
             // Create new patient
             $patient = new Patient();
             $patient->setName($patientData['name']);
-            
-            // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
-            $nric = $this->formatNRICForStorage($patientData['nric']);
             $patient->setNric($nric);
             
             $patient->setEmail($patientData['email'] ?? '');
@@ -377,8 +379,8 @@ class PatientController extends AbstractController
             if (isset($patientData['company'])) {
                 $patient->setCompany($patientData['company']);
             }
-            if (isset($patientData['preInformedIllness'])) {
-                $patient->setPreInformedIllness($patientData['preInformedIllness']);
+            if (isset($patientData['remarks'])) {
+                $patient->setRemarks($patientData['remarks']);
             }
 
             $this->entityManager->persist($patient);
@@ -409,7 +411,7 @@ class PatientController extends AbstractController
                     'gender' => $patient->getGender(),
                     'address' => $patient->getAddress(),
                     'company' => $patient->getCompany(),
-                    'preInformedIllness' => $patient->getPreInformedIllness(),
+                    'remarks' => $patient->getRemarks(),
                 ]
             ], 201);
 
@@ -559,7 +561,7 @@ class PatientController extends AbstractController
             'gender' => $patient->getGender(),
             'address' => $patient->getAddress(),
             'company' => $patient->getCompany(),
-            'preInformedIllness' => $patient->getPreInformedIllness(),
+            'remarks' => $patient->getRemarks(),
             'medicalHistory' => $patient->getMedicalHistory(),
             'displayName' => $patient->getName(),
         ]);
@@ -576,6 +578,21 @@ class PatientController extends AbstractController
         if (isset($data['nric'])) {
             // Format NRIC for storage (ensure it has dashes for 12-digit NRIC)
             $nric = $this->formatNRICForStorage($data['nric']);
+            
+            // Check for duplicate NRIC (excluding current patient)
+            $existingPatient = $this->entityManager->getRepository(Patient::class)
+                ->createQueryBuilder('p')
+                ->where('p.nric = :nric')
+                ->andWhere('p.id != :currentId')
+                ->setParameter('nric', $nric)
+                ->setParameter('currentId', $patient->getId())
+                ->getQuery()
+                ->getOneOrNullResult();
+            
+            if ($existingPatient) {
+                return $this->json(['error' => 'A patient with this NRIC already exists'], 409);
+            }
+            
             $patient->setNric($nric);
         }
         if (isset($data['email'])) {
@@ -599,8 +616,8 @@ class PatientController extends AbstractController
         if (isset($data['company'])) {
             $patient->setCompany($data['company']);
         }
-        if (isset($data['preInformedIllness'])) {
-            $patient->setPreInformedIllness($data['preInformedIllness']);
+        if (isset($data['remarks'])) {
+            $patient->setRemarks($data['remarks']);
         }
 
         $entityManager->flush();
@@ -622,7 +639,7 @@ class PatientController extends AbstractController
                 'gender' => $patient->getGender(),
                 'address' => $patient->getAddress(),
                 'company' => $patient->getCompany(),
-                'preInformedIllness' => $patient->getPreInformedIllness(),
+                'remarks' => $patient->getRemarks(),
                 'medicalHistory' => $patient->getMedicalHistory(),
             ]
         ]);
@@ -703,7 +720,7 @@ class PatientController extends AbstractController
                     'address' => $patient->getAddress(),
                     'medicalHistory' => $patient->getMedicalHistory(),
                     'company' => $patient->getCompany(),
-                    'preInformedIllness' => $patient->getPreInformedIllness(),
+                    'remarks' => $patient->getRemarks(),
                     'registeredBy' => $patient->getRegisteredBy() ? [
                         'id' => $patient->getRegisteredBy()->getId(),
                         'name' => $patient->getRegisteredBy()->getName()

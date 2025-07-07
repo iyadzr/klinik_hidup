@@ -9,7 +9,7 @@
       @patient-switch="handlePatientSwitch"
     />
 
-    <div class="consultation-form consultation-dashboard glass-card shadow p-4 mt-4 mb-4" style="margin-top: 140px !important; padding-top: 30px !important;">
+    <div class="consultation-form consultation-dashboard glass-card shadow p-4 mt-4 mb-4" style="margin-top: 220px !important; padding-top: 30px !important;">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 class="mb-0">Consultation</h2>
@@ -20,32 +20,42 @@
       </div>
 
       <form @submit.prevent="saveConsultation" class="row g-4">
-        <!-- Pre-Informed Illness Section -->
+        <!-- Remarks Section -->
         <div class="col-12">
           <div class="card section-card dashboard-card mb-4">
             <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
-              <h5 class="mb-0 d-flex align-items-center">
-                <i class="fas fa-clipboard-check text-warning me-2"></i>
-                Pre-Informed Illness
+              <h5 class="mb-0 d-flex align-items-center justify-content-between">
+                <span>
+                  <i class="fas fa-clipboard-check text-warning me-2"></i>
+                  Remarks
+                </span>
+                <button 
+                  type="button" 
+                  class="btn btn-sm btn-outline-secondary"
+                  @click="refreshPatientData"
+                  title="Refresh patient data to get latest remarks"
+                >
+                  <i class="fas fa-sync-alt"></i>
+                </button>
               </h5>
             </div>
             <div class="card-body">
-              <div v-if="selectedPatient && selectedPatient.preInformedIllness && selectedPatient.preInformedIllness.trim()">
+              <div v-if="selectedPatient && selectedPatient.remarks && selectedPatient.remarks.trim()">
                 <div class="pre-illness-content p-3 bg-light rounded">
                   <div class="d-flex align-items-start gap-3">
                     <div>
                       <i class="fas fa-exclamation-triangle fa-2x text-warning"></i>
                     </div>
                     <div class="flex-grow-1">
-                      <p class="mb-0 text-dark">{{ selectedPatient.preInformedIllness }}</p>
+                      <p class="mb-0 text-dark">{{ selectedPatient.remarks }}</p>
                     </div>
                   </div>
                 </div>
               </div>
               <div v-else class="text-center text-muted py-4">
                 <i class="fas fa-clipboard fa-2x mb-2"></i>
-                <div>No pre-informed illness data available</div>
-                <small class="text-muted">Patient did not provide initial symptoms during registration</small>
+                <div>No remarks available</div>
+                <small class="text-muted">No initial remarks or symptoms were provided during registration</small>
               </div>
             </div>
           </div>
@@ -123,10 +133,11 @@
                       type="number" 
                       class="form-control" 
                       id="totalAmount" 
-                      v-model="consultation.totalAmount" 
+                      :value="consultation.totalAmount && consultation.totalAmount > 0 ? consultation.totalAmount : ''" 
+                      @input="updateTotalAmount" 
                       step="0.10" 
                       min="0" 
-                      placeholder="0.00" 
+                      placeholder="Enter amount" 
                       required
                     >
                   </div>
@@ -321,23 +332,39 @@ export default {
         const response = await axios.get(`/api/queue/${this.queueId}`);
         const queueData = response.data;
         
+        console.log('🔍 Queue data loaded:', {
+          queueId: this.queueId,
+          isGroupConsultation: queueData.isGroupConsultation,
+          singlePatientRemarks: queueData.patient?.remarks,
+          groupPatientsCount: queueData.groupPatients?.length || 0
+        });
+        
         if (queueData.isGroupConsultation) {
           this.isGroupConsultation = true;
           this.groupId = queueData.groupId;
           
           if (queueData.groupPatients && Array.isArray(queueData.groupPatients)) {
-            this.groupPatients = queueData.groupPatients.map(patient => ({
-              id: patient.id,
-              name: patient.name || patient.displayName,
-              displayName: patient.displayName || patient.name,
-              nric: patient.nric,
-              dateOfBirth: patient.dateOfBirth,
-              gender: patient.gender,
-              phone: patient.phone,
-              address: patient.address,
-              relationship: patient.relationship || 'N/A',
-              preInformedIllness: patient.preInformedIllness || ''
-            }));
+            this.groupPatients = queueData.groupPatients.map(patient => {
+              console.log('🔍 Processing group patient:', {
+                id: patient.id,
+                name: patient.name,
+                remarks: patient.remarks,
+                relationship: patient.relationship
+              });
+              
+              return {
+                id: patient.id,
+                name: patient.name || patient.displayName,
+                displayName: patient.displayName || patient.name,
+                nric: patient.nric,
+                dateOfBirth: patient.dateOfBirth,
+                gender: patient.gender,
+                phone: patient.phone,
+                address: patient.address,
+                relationship: patient.relationship || 'N/A',
+                remarks: patient.remarks || ''
+              };
+            });
             
             if (!this.consultation.patientId && this.groupPatients.length > 0) {
               const primaryPatient = this.groupPatients.find(p => p.relationship === 'self') || this.groupPatients[0];
@@ -349,6 +376,20 @@ export default {
               }
               
               this.loadPatientDataToForm(primaryPatient.id);
+            }
+          }
+        } else {
+          // For single patient consultations, use the patient data from queue
+          if (queueData.patient) {
+            console.log('🔍 Processing single patient from queue:', {
+              id: queueData.patient.id,
+              name: queueData.patient.name,
+              remarks: queueData.patient.remarks
+            });
+            
+            // Update the consultation patient ID if not set
+            if (!this.consultation.patientId) {
+              this.consultation.patientId = queueData.patient.id;
             }
           }
         }
@@ -368,6 +409,19 @@ export default {
       } else {
         await this.fetchPatientDetails();
       }
+    },
+    
+    async refreshPatientData() {
+      // Force refresh patient data to get the latest remarks
+      console.log('🔄 Refreshing patient data to get latest remarks...');
+      
+      if (this.queueId) {
+        // If we have a queue ID, reload queue details first
+        await this.loadQueueDetails();
+      }
+      
+      // Then fetch patient details
+      await this.fetchPatientDetails();
     },
     
     async loadPatients() {
@@ -398,6 +452,12 @@ export default {
       if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
         if (groupPatient) {
+          console.log('🔍 Using group patient data for remarks:', {
+            patientId: groupPatient.id,
+            patientName: groupPatient.name,
+            remarks: groupPatient.remarks,
+            source: 'groupPatients'
+          });
           this.fullPatientDetails = groupPatient;
           await this.loadVisitHistories();
           return;
@@ -406,6 +466,12 @@ export default {
       
       try {
         const response = await axios.get(`/api/patients/${this.consultation.patientId}`);
+        console.log('🔍 Using individual patient data for remarks:', {
+          patientId: response.data.id,
+          patientName: response.data.name,
+          remarks: response.data.remarks,
+          source: 'patientAPI'
+        });
         this.fullPatientDetails = response.data;
         await this.loadVisitHistories();
       } catch (error) {
@@ -730,12 +796,11 @@ export default {
         return;
       }
       
-      // Prepare MC data for preview
+      // Prepare MC data for preview (without consultation notes/diagnosis)
       this.mcPreviewData = {
         mcRunningNumber: this.consultation.mcRunningNumber,
         mcStartDate: this.consultation.mcStartDate,
         mcEndDate: this.consultation.mcEndDate,
-        diagnosis: this.consultation.notes || this.consultation.diagnosis,
         doctorName: this.getDoctorName(this.consultation.doctorId),
         doctorRegNo: 'MMC12345', // This should come from doctor data
         consultationDate: this.consultation.consultationDate
@@ -811,6 +876,14 @@ export default {
         // Handle loaded consultation data
       } catch (error) {
         console.error('Error loading consultation:', error);
+      }
+    },
+    
+    updateTotalAmount(event) {
+      if (event && event.target) {
+        // Handle manual input from user
+        const value = event.target.value;
+        this.consultation.totalAmount = value === '' ? 0 : parseFloat(value) || 0;
       }
     }
   }
@@ -898,18 +971,15 @@ export default {
     flex: 0 0 100%;
     max-width: 100%;
   }
-}
-
-@media (max-width: 991px) {
   .consultation-form {
-    margin-top: 120px !important; /* Less margin on tablet */
+    margin-top: 180px !important; /* Increased for tablet screens */
   }
 }
 
 @media (max-width: 768px) {
   .consultation-form {
     padding: 1rem 0;
-    margin-top: 110px !important; /* Even less margin on mobile */
+    margin-top: 160px !important; /* Increased for mobile screens */
   }
   .card-body {
     padding: 1rem;
@@ -917,6 +987,13 @@ export default {
   .btn {
     padding: 0.6rem 1.2rem;
     font-size: 0.9rem;
+  }
+}
+
+/* For larger screens and potential zoom scenarios */
+@media (min-width: 1200px) {
+  .consultation-form {
+    margin-top: 250px !important; /* Much more space for larger screens and zoom */
   }
 }
 </style> 

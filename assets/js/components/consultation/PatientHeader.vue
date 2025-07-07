@@ -1,36 +1,42 @@
 <template>
-  <div class="patient-header-bar sticky-patient-topbar shadow-lg">
+  <div class="patient-header-bar sticky-patient-topbar shadow-lg" role="region" aria-label="Patient Information">
     <div class="container-fluid">
       <div class="row align-items-center py-3">
         <div class="col-md-12">
-          <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center justify-content-between flex-wrap">
             <!-- Patient Info Section -->
-            <div class="d-flex align-items-center flex-grow-1">
-              <div class="patient-avatar me-3">
-                <i class="fas fa-user-circle fa-3x text-white"></i>
+            <div class="d-flex align-items-center flex-grow-1 patient-info-main">
+              <div class="patient-avatar me-4 flex-shrink-0">
+                <i class="fas fa-user-circle"></i>
               </div>
               <div class="patient-summary flex-grow-1">
-                <div class="d-flex align-items-center gap-3 mb-1">
-                  <h4 class="mb-0 patient-name text-white fw-bold">{{ patientName }}</h4>
-                  <span class="badge bg-light text-dark fw-bold">{{ patientGender }}, {{ patientAge }} years</span>
-                  <span class="badge bg-warning text-dark fw-bold">{{ patientIC }}</span>
+                <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+                  <span class="patient-name">{{ patientName }}</span>
+                  <span class="badge patient-badge-age">{{ patientGender }}, {{ patientAge }} years</span>
+                  <span class="badge patient-badge-ic">{{ patientIC }}</span>
                 </div>
-                <div class="patient-meta text-white small d-flex gap-4">
-                  <span v-if="queueNumber">
-                    <i class="fas fa-list-ol me-1"></i>Queue #{{ formatQueueNumber(queueNumber) }}
+                <div class="patient-meta d-flex gap-4 flex-wrap">
+                  <span v-if="queueNumber" class="patient-meta-item">
+                    <i class="fas fa-list-ol me-1"></i>
+                    <span class="patient-meta-label">Queue</span>
+                    <span class="patient-meta-value">#{{ formatQueueNumber(queueNumber) }}</span>
                   </span>
-                  <span>
-                    <i class="fas fa-phone me-1"></i>{{ patientPhone }}
+                  <span class="patient-meta-item">
+                    <i class="fas fa-phone me-1"></i>
+                    <span class="patient-meta-label">Phone</span>
+                    <span class="patient-meta-value">{{ patientPhone }}</span>
                   </span>
-                  <span>
-                    <i class="fas fa-map-marker-alt me-1"></i>{{ patientAddress }}
+                  <span class="patient-meta-item">
+                    <i class="fas fa-map-marker-alt me-1"></i>
+                    <span class="patient-meta-label">Address</span>
+                    <span class="patient-meta-value">{{ patientAddress }}</span>
                   </span>
                 </div>
               </div>
             </div>
             
             <!-- Enhanced Group Patient Selector -->
-            <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="patient-selector ms-3">
+            <div v-if="isGroupConsultation && groupPatients && groupPatients.length > 1" class="patient-selector ms-3 mt-3 mt-md-0">
               <div class="dropdown">
                 <button class="btn btn-warning btn-lg dropdown-toggle shadow-sm fw-bold patient-select-btn" 
                         type="button" 
@@ -210,174 +216,129 @@ export default {
 /* Professional Fixed Patient Topbar */
 .sticky-patient-topbar {
   position: fixed !important;
-  top: 60px !important; /* Just below main navigation */
-  left: 250px !important; /* More gap from sidebar border */
-  right: 15px !important; /* Small margin from right edge */
-  z-index: 1025; /* Below main nav but above content */
-  background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #3498db 100%) !important;
-  border-bottom: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: 0 0 16px 16px !important; /* Rounded bottom corners */
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(15px);
-}
-
-/* Card styling to match other sections */
-.patient-header-card {
-  border: none;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  top: 10px; /* Moved down slightly from top edge */
+  left: 250px; /* Account for sidebar width */
+  right: 0;
+  z-index: 1100;
   background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #3498db 100%);
-  overflow: visible !important;
-}
-
-.sticky-patient-topbar:hover {
-  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+  color: #fff;
+  border-radius: 0 0 18px 18px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  margin-bottom: 3rem; /* Increased margin for better spacing */
+  padding: 1.5rem 2rem;
 }
 
 .sticky-patient-topbar .patient-name {
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
-  font-size: 1.5rem;
+  font-size: 2.5rem;
+  font-weight: 800;
 }
 
 .sticky-patient-topbar .badge {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+  font-size: 1.3rem;
+  padding: 0.6em 1.2em;
+}
+
+.sticky-patient-topbar .patient-meta {
+  font-size: 1.3rem;
+  gap: 2.5rem;
+}
+
+.sticky-patient-topbar .patient-meta-label {
   font-weight: 600;
+  color: #dbeafe;
+  margin-right: 0.3em;
 }
 
-.sticky-patient-topbar .patient-meta i {
-  opacity: 0.9;
+.sticky-patient-topbar .patient-meta-value {
+  font-weight: 700;
+  color: #fff;
 }
 
-/* Enhanced Patient Avatar */
-.sticky-patient-topbar .patient-avatar {
-  position: relative;
-}
-
-.sticky-patient-topbar .patient-avatar::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  left: -5px;
-  right: -5px;
-  bottom: -5px;
-  background: linear-gradient(45deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
+.sticky-patient-topbar .patient-avatar i {
+  font-size: 4rem;
+  color: #fff;
+  background: #1e40af;
   border-radius: 50%;
-  z-index: -1;
+  padding: 0.5rem;
 }
 
-/* Patient Dropdown Styling */
-.patient-dropdown .dropdown-item {
-  border: none !important;
-  padding: 0.75rem 1rem !important;
-  transition: all 0.2s ease;
-  color: #333 !important;
+.sticky-patient-topbar .patient-info-main {
+  min-width: 0;
 }
 
-.patient-dropdown .dropdown-item:hover {
-  background-color: #f8f9fa !important;
-  color: #000 !important;
+.sticky-patient-topbar .patient-summary {
+  min-width: 0;
 }
 
-.patient-dropdown .dropdown-item.active {
-  background-color: #fff3cd !important;
-  color: #856404 !important;
-  border-left: 4px solid #ffc107 !important;
+.sticky-patient-topbar .patient-badge-age, .sticky-patient-topbar .patient-badge-ic {
+  font-size: 1.2rem;
+  font-weight: 700;
+  background: #1e40af;
+  color: #fff;
+  border-radius: 12px;
+  padding: 0.5em 1.2em;
 }
 
-.patient-select-btn {
-  font-size: 0.9rem !important;
-  white-space: nowrap;
-  position: relative;
-  overflow: hidden;
-  border: 3px solid #fff !important;
-  box-shadow: 0 4px 15px rgba(255,193,7,0.4) !important;
+.sticky-patient-topbar .patient-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.25em;
 }
 
-.patient-select-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-  transition: left 0.5s;
-}
-
-.patient-select-btn:hover::before {
-  left: 100%;
-}
-
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
-}
-
-/* Ensure dropdown shows above everything */
-.dropdown-menu {
-  z-index: 1055 !important;
-}
-
-/* Professional Animation */
-@keyframes fadeInDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.sticky-patient-topbar {
-  animation: fadeInDown 0.5s ease-out;
-}
-
-/* Mobile responsive adjustments */
-@media (max-width: 991px) {
-  .sticky-patient-topbar {
-    left: 0 !important; /* Full width when sidebar collapses */
-    top: 55px !important; /* Adjust for mobile sidebar collapse */
-  }
+.sticky-patient-topbar .patient-meta-item i {
+  font-size: 1.2em;
+  color: #fbbf24;
+  margin-right: 0.3em;
 }
 
 @media (max-width: 768px) {
   .sticky-patient-topbar {
-    left: 0 !important; /* Full width on mobile */
-    top: 50px !important; /* Mobile nav height */
+    left: 0; /* Full width on mobile */
+    padding: 0.5rem 0.2rem;
+    top: 5px; /* Less space from top on mobile */
   }
-  
-  .sticky-patient-topbar .container-fluid {
-    padding: 0 1rem !important;
-  }
-  
   .sticky-patient-topbar .patient-name {
-    font-size: 1.2rem;
+    font-size: 1.7rem;
   }
-  
   .sticky-patient-topbar .patient-meta {
-    flex-direction: column;
-    gap: 0.5rem !important;
+    font-size: 1.1rem;
+    gap: 1.2rem;
   }
-  
   .sticky-patient-topbar .badge {
-    font-size: 0.75rem;
+    font-size: 1rem;
+    padding: 0.3em 0.7em;
   }
-  
-  .patient-select-btn {
-    padding: 0.5rem 1rem !important;
+  .sticky-patient-topbar .patient-badge-age, .sticky-patient-topbar .patient-badge-ic {
+    font-size: 1rem;
+    padding: 0.3em 0.7em;
   }
-  
-  .patient-dropdown {
-    min-width: 300px !important;
+}
+
+/* Additional responsive breakpoints for better zoom handling */
+@media (max-width: 991px) {
+  .sticky-patient-topbar {
+    top: 8px; /* Slightly less space on tablets */
+    padding: 1.2rem 1.5rem;
   }
-  
-  .patient-select-btn .d-none.d-sm-inline {
-    display: none !important;
+  .sticky-patient-topbar .patient-name {
+    font-size: 2.2rem;
+  }
+  .sticky-patient-topbar .patient-meta {
+    font-size: 1.2rem;
+    gap: 2rem;
+  }
+}
+
+/* For larger screens with potential zoom */
+@media (min-width: 1200px) {
+  .sticky-patient-topbar {
+    top: 15px; /* More space on larger screens */
+    padding: 1.8rem 2.5rem;
   }
 }
 </style> 

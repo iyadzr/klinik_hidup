@@ -303,6 +303,8 @@
                   </div>
                 </div>
 
+                <!-- Cost Price and Selling Price fields hidden per user request -->
+                <!--
                 <div class="col-md-6">
                   <div class="form-floating">
                     <input 
@@ -334,6 +336,7 @@
                   </div>
                   <small class="text-muted">Default selling price</small>
                 </div>
+                -->
 
                 <div class="col-md-6">
                   <div class="form-floating">

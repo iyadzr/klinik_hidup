@@ -153,18 +153,14 @@ class BackupService
     }
 
     /**
-     * Create files backup (uploads, configs, etc.)
+     * Create files backup (data files only - source code is in GitLab)
      */
     public function createFilesBackup(string $backupPath): array
     {
         try {
             $filesToBackup = [
                 'public/uploads' => 'uploads',
-                'config' => 'config',
-                '.env' => '.env',
-                'assets' => 'assets',
-                'src' => 'src',
-                'templates' => 'templates'
+                '.env' => '.env'
             ];
             
             $filesBackupPath = $backupPath . '/files';

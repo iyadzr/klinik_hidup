@@ -359,9 +359,9 @@
                       <th>Date</th>
                       <th>Doctor</th>
                       <th>Remarks/Diagnosis</th>
-                      <th>Status</th>
+                      <th>Payment Status</th>
                       <th>Fees</th>
-                      <th>Action</th>
+                      <!-- Action column hidden per user request -->
                     </tr>
                   </thead>
                   <tbody>
@@ -382,24 +382,45 @@
                         <span v-else class="text-muted">No remarks/diagnosis recorded</span>
                       </td>
                       <td>
-                        <span :class="getStatusBadgeClass(visit.status)">
-                          {{ visit.status || 'Completed' }}
-                        </span>
+                        <!-- Payment Status: Check if payment exists or totalAmount > 0 -->
+                        <div v-if="visit.isPaid || visit.payments?.length > 0">
+                          <span class="badge bg-success">
+                            <i class="fas fa-check-circle me-1"></i>PAID
+                          </span>
+                        </div>
+                        <div v-else-if="visit.totalAmount && visit.totalAmount > 0">
+                          <span class="badge bg-warning text-dark">
+                            <i class="fas fa-clock me-1"></i>PENDING
+                          </span>
+                        </div>
+                        <div v-else>
+                          <span class="badge bg-secondary">
+                            <i class="fas fa-info-circle me-1"></i>NO CHARGE
+                          </span>
+                        </div>
                       </td>
                       <td>
-                        <div v-if="visit.consultationFee || visit.medicinesFee">
-                          <div v-if="visit.consultationFee">
-                            <small class="text-muted">Consultation:</small> RM{{ visit.consultationFee }}
+                        <!-- Updated Fees Display -->
+                        <div v-if="visit.totalAmount && visit.totalAmount > 0">
+                          <div class="fw-bold text-success">
+                            RM{{ parseFloat(visit.totalAmount).toFixed(2) }}
                           </div>
-                          <div v-if="visit.medicinesFee">
-                            <small class="text-muted">Medicines:</small> RM{{ visit.medicinesFee }}
-                          </div>
-                          <div class="fw-bold">
-                            <small class="text-muted">Total:</small> RM{{ (parseFloat(visit.consultationFee || 0) + parseFloat(visit.medicinesFee || 0)).toFixed(2) }}
+                          <!-- Breakdown if available -->
+                          <div v-if="visit.consultationFee || visit.medicinesFee" class="small text-muted">
+                            <div v-if="visit.consultationFee">
+                              Consultation: RM{{ parseFloat(visit.consultationFee).toFixed(2) }}
+                            </div>
+                            <div v-if="visit.medicinesFee">
+                              Medicines: RM{{ parseFloat(visit.medicinesFee).toFixed(2) }}
+                            </div>
                           </div>
                         </div>
-                        <span v-else class="text-muted">No fee data</span>
+                        <div v-else class="text-muted">
+                          <i class="fas fa-gift me-1"></i>Free Consultation
+                        </div>
                       </td>
+                      <!-- Action column hidden per user request -->
+                      <!--
                       <td>
                         <div class="btn-group">
                           <button class="btn btn-sm btn-primary" @click="viewVisitDetails(visit)">
@@ -423,6 +444,7 @@
                           </button>
                         </div>
                       </td>
+                      -->
                     </tr>
                   </tbody>
                 </table>
@@ -762,7 +784,7 @@ export default {
         gender: '',
         address: '',
         company: '',
-        preInformedIllness: '',
+        remarks: '',
         medicalHistory: ''
       },
       // Visit History Modal
@@ -995,11 +1017,11 @@ export default {
       if (!dateOfBirth) return 'N/A';
       try {
         const dateObj = new Date(dateOfBirth);
-        return dateObj.toLocaleDateString('en-MY', {
+        return dateObj.toLocaleDateString('en-GB', {
           timeZone: 'Asia/Kuala_Lumpur',
-          year: 'numeric',
+          day: '2-digit',
           month: '2-digit',
-          day: '2-digit'
+          year: 'numeric'
         });
       } catch (error) {
         console.error('Error formatting date:', error);
@@ -1102,10 +1124,11 @@ export default {
       if (!dateString) return 'N/A';
       try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-MY', {
-          year: 'numeric',
+        return date.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kuala_Lumpur',
+          day: '2-digit',
           month: 'short',
-          day: 'numeric'
+          year: 'numeric'
         });
       } catch (error) {
         return 'Invalid Date';
@@ -1229,7 +1252,7 @@ export default {
     formatReceiptDate(date) {
       if (!date) return '';
       const dateObj = new Date(date);
-      return dateObj.toLocaleDateString('en-MY', {
+      return dateObj.toLocaleDateString('en-GB', {
         timeZone: 'Asia/Kuala_Lumpur',
         day: '2-digit',
         month: '2-digit',
