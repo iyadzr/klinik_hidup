@@ -912,11 +912,22 @@ export default {
           let patientId, regNumber;
 
           if (this.patientType === 'new') {
-            // Register new patient using the registration endpoint
+            // Register new patient using the registration endpoint with timeout handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+              controller.abort();
+            }, 30000); // 30 second timeout
+            
+            // TEMPORARILY REMOVED TRY-CATCH TO DEBUG
             const response = await axios.post('/api/patients/register', {
               patient: this.patient,
               doctorId: this.queueInfo.doctorId
+            }, {
+              signal: controller.signal,
+              timeout: 30000
             });
+            
+            clearTimeout(timeoutId);
             patientId = response.data.patientId;
             regNumber = response.data.registrationNumber;
             
@@ -930,10 +941,22 @@ export default {
           } else if (this.selectedPatient) {
             // For existing patients, update with remarks and add to queue
             const updatedPatient = { ...this.selectedPatient, ...this.patient };
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+              controller.abort();
+            }, 30000);
+            
+            // TEMPORARILY REMOVED TRY-CATCH TO DEBUG
             const response = await axios.post('/api/patients/register', {
               patient: updatedPatient,
               doctorId: this.queueInfo.doctorId
+            }, {
+              signal: controller.signal,
+              timeout: 30000
             });
+            
+            clearTimeout(timeoutId);
             
             if (response.data) {
               alert('Existing patient added to queue successfully!');
@@ -945,18 +968,32 @@ export default {
             alert('Please select an existing patient before proceeding.');
             return;
           }
-        }
+                }
       } catch (error) {
         console.error('Error registering patient:', error);
         
         let errorMessage = 'Failed to register patient. Please try again.';
         
-        if (error.response && error.response.data) {
-          if (error.response.data.error) {
-            errorMessage = error.response.data.error;
-          } else if (error.response.data.message) {
-            errorMessage = error.response.data.message;
+        // Handle different types of errors with specific messages
+        if (error.message && error.message.includes('timed out')) {
+          errorMessage = error.message;
+        } else if (error.response) {
+          // Server responded with an error
+          if (error.response.status === 504) {
+            errorMessage = 'Registration timed out due to server overload. Please wait a moment and try again.';
+          } else if (error.response.status === 503) {
+            errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+          } else if (error.response.status === 429) {
+            errorMessage = 'Too many requests. Please wait a moment before trying again.';
+          } else if (error.response.data) {
+            if (error.response.data.error) {
+              errorMessage = error.response.data.error;
+            } else if (error.response.data.message) {
+              errorMessage = error.response.data.message;
+            }
           }
+        } else if (error.code === 'NETWORK_ERROR' || !error.response) {
+          errorMessage = 'Network error. Please check your connection and try again.';
         }
         
         alert(errorMessage);

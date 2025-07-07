@@ -387,12 +387,12 @@ class PatientController extends AbstractController
     {
         try {
             $data = json_decode($request->getContent(), true);
-            
-            if (!$data) {
-                return $this->json(['error' => 'Invalid JSON data'], 400);
-            }
+        
+        if (!$data) {
+            return $this->json(['error' => 'Invalid JSON data'], 400);
+        }
 
-            $this->logger->info('Patient registration request received', ['data' => $data]);
+        $this->logger->info('Patient registration request received', ['data' => $data]);
 
             // Handle multiple patients (group consultation)
             if (isset($data['patients']) && is_array($data['patients'])) {
@@ -432,7 +432,10 @@ class PatientController extends AbstractController
                 // Patient exists, just add to queue
                 $queue = $this->createQueueEntry($existingPatient, $doctor, $patientData);
                 
-                // Clear cache and broadcast update
+                // Flush the queue creation
+                $this->entityManager->flush();
+                
+                // Clear cache and broadcast update after successful DB commit
                 $this->invalidateQueueCache();
                 $this->broadcastQueueUpdate($queue);
                 
@@ -480,8 +483,15 @@ class PatientController extends AbstractController
             $this->entityManager->persist($patient);
             $this->entityManager->flush();
 
-            // Create queue entry
+            // Create queue entry (but don't flush yet)
             $queue = $this->createQueueEntry($patient, $doctor, $patientData);
+
+            // Single flush for all database operations to improve performance
+            $this->entityManager->flush();
+
+            // Now handle cache and broadcast operations after successful DB commit
+            $this->invalidateQueueCache();
+            $this->broadcastQueueUpdate($queue);
 
             $this->logger->info('Patient registered and queued successfully', [
                 'patientId' => $patient->getId(),
@@ -531,36 +541,31 @@ class PatientController extends AbstractController
         $queue->setStatus('waiting');
         
         // Set queue date/time
-                    $queueDateTime = \App\Service\TimezoneService::nowImmutable();
+        $queueDateTime = \App\Service\TimezoneService::nowImmutable();
         $queue->setQueueDateTime($queueDateTime);
         $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
         
-        // Find the latest queue number for this hour block today
+        // Optimized queue number generation with better query
         $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');
-        $qb->select('q.queueNumber')
-            ->where('q.queueDateTime >= :start')
-            ->andWhere('q.queueDateTime < :end')
+        $qb->select('MAX(q.queueNumber) as maxQueueNumber')
+            ->where('q.queueDateTime >= :start AND q.queueDateTime < :end')
             ->setParameter('start', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':00:00')
-            ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59')
-            ->orderBy('q.queueNumber', 'DESC')
-            ->setMaxResults(1);
-        $lastQueue = $qb->getQuery()->getOneOrNullResult();
+            ->setParameter('end', $queueDateTime->format('Y-m-d ') . str_pad($hour, 2, '0', STR_PAD_LEFT) . ':59:59');
+        
+        $result = $qb->getQuery()->getOneOrNullResult();
+        $maxQueueNumber = $result['maxQueueNumber'] ?? null;
         
         $runningNumber = 1;
-        if ($lastQueue && isset($lastQueue['queueNumber'])) {
-            $lastNum = (int)substr($lastQueue['queueNumber'], -2);
+        if ($maxQueueNumber) {
+            $lastNum = (int)substr($maxQueueNumber, -2);
             $runningNumber = $lastNum + 1;
         }
         $queueNumber = sprintf('%d%02d', $hour, $runningNumber); // e.g., 8001, 9002, 1501
         $queue->setQueueNumber($queueNumber);
         $queue->setRegistrationNumber((int)$queueNumber); // Convert string to integer
         
+        // Only persist, don't flush yet - let the calling method handle the flush
         $this->entityManager->persist($queue);
-        $this->entityManager->flush();
-        
-        // Clear cache and broadcast update after queue creation
-        $this->invalidateQueueCache();
-        $this->broadcastQueueUpdate($queue);
         
         return $queue;
     }
@@ -596,50 +601,66 @@ class PatientController extends AbstractController
     }
 
     /**
-     * Broadcast queue update via SSE
+     * Asynchronous broadcast queue update to avoid blocking the main request
      */
     private function broadcastQueueUpdate($queue): void
     {
-        // Store the update in a temporary file for SSE to pick up
-        $updateData = [
-            'type' => 'queue_status_update',
-            'timestamp' => time(),
-            'data' => [
-                'id' => $queue->getId(),
-                'queueNumber' => $queue->getQueueNumber(),
-                'registrationNumber' => $queue->getRegistrationNumber(),
-                'status' => $queue->getStatus(),
-                'patient' => [
-                    'id' => $queue->getPatient()->getId(),
-                    'name' => $queue->getPatient()->getName(),
-                ],
-                'doctor' => [
-                    'id' => $queue->getDoctor()->getId(),
-                    'name' => $queue->getDoctor()->getName(),
-                ],
-                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
-            ]
-        ];
-        
-        // Write to temporary file that SSE endpoint will read
-        $tempDir = sys_get_temp_dir();
-        $updateFile = $tempDir . '/queue_updates.json';
-        
-        // Read existing updates
-        $updates = [];
-        if (file_exists($updateFile)) {
-            $content = file_get_contents($updateFile);
-            $updates = json_decode($content, true) ?: [];
+        // Use a simple approach that doesn't block the main request
+        try {
+            $updateData = [
+                'type' => 'queue_status_update',
+                'timestamp' => time(),
+                'data' => [
+                    'id' => $queue->getId(),
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'registrationNumber' => $queue->getRegistrationNumber(),
+                    'status' => $queue->getStatus(),
+                    'patient' => [
+                        'id' => $queue->getPatient()->getId(),
+                        'name' => $queue->getPatient()->getName(),
+                    ],
+                    'doctor' => [
+                        'id' => $queue->getDoctor()->getId(),
+                        'name' => $queue->getDoctor()->getName(),
+                    ],
+                    'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+                ]
+            ];
+            
+            // Write to temporary file in a non-blocking way
+            $tempDir = sys_get_temp_dir();
+            $updateFile = $tempDir . '/queue_updates.json';
+            
+            // Use file locking to prevent race conditions but don't wait too long
+            $lockFile = $updateFile . '.lock';
+            $lockHandle = fopen($lockFile, 'w');
+            
+            if (flock($lockHandle, LOCK_EX | LOCK_NB)) { // Non-blocking lock
+                // Read existing updates
+                $updates = [];
+                if (file_exists($updateFile)) {
+                    $content = file_get_contents($updateFile);
+                    if ($content !== false) {
+                        $updates = json_decode($content, true) ?: [];
+                    }
+                }
+                
+                // Add new update and keep only last 10
+                $updates[] = $updateData;
+                $updates = array_slice($updates, -10);
+                
+                // Write back to file
+                file_put_contents($updateFile, json_encode($updates), LOCK_EX);
+                
+                flock($lockHandle, LOCK_UN);
+            }
+            
+            fclose($lockHandle);
+            
+        } catch (\Exception $e) {
+            // Log error but don't fail the main request
+            $this->logger->warning('Failed to broadcast queue update: ' . $e->getMessage());
         }
-        
-        // Add new update
-        $updates[] = $updateData;
-        
-        // Keep only last 10 updates to prevent file from growing too large
-        $updates = array_slice($updates, -10);
-        
-        // Write back to file
-        file_put_contents($updateFile, json_encode($updates));
     }
 
     #[Route('/{id}', name: 'app_patient_show', methods: ['GET'])]

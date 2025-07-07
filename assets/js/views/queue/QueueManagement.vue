@@ -372,11 +372,18 @@ export default {
       }
       
       console.log('🔄 Loading queue management data...');
-      await Promise.all([
+      
+      // Prioritize queue list loading for immediate UI feedback
+      // Load other data in background to avoid blocking the main view
+      await this.loadQueueList();
+      
+      // Load other data in parallel without blocking queue display
+      Promise.all([
         this.loadPatients(),
-        this.loadDoctors(),
-        this.loadQueueList()
-      ]);
+        this.loadDoctors()
+      ]).catch(error => {
+        console.warn('⚠️ Background data loading failed:', error);
+      });
     },
 
     async loadPatients() {
@@ -387,12 +394,13 @@ export default {
             return await axios.get('/api/patients', { 
               signal,
               params: {
-                limit: 100 // Limit initial load for performance
+                limit: 50, // Reduced limit for faster initial load
+                fields: 'id,name,nric' // Only essential fields for dropdown
               }
             });
           },
           {
-            timeout: 12000 // Increased timeout
+            timeout: 8000 // Reduced timeout for background loading
           }
         );
         
@@ -406,7 +414,8 @@ export default {
         }
         
         console.error('❌ Error loading patients:', error);
-        this.$toast?.error?.('Failed to load patients data');
+        // Don't show error toast for background loading failures
+        console.warn('Patient data loading failed - queue management will work without patient list');
       }
     },
 
