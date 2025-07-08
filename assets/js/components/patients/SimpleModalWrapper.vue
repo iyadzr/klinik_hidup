@@ -80,13 +80,14 @@ export default {
 <style scoped>
 .modal.show {
   display: block;
+  z-index: 1200 !important; /* Higher than sticky patient header (1100) */
 }
 
 .modal-backdrop {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1040;
+  z-index: 1190 !important; /* Just below modal */
   width: 100vw;
   height: 100vh;
   background-color: #000;

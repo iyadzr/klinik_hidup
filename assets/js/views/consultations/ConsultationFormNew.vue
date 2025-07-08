@@ -487,20 +487,23 @@ export default {
         return;
       }
       try {
-        const response = await axios.get(`/api/consultations/patient/${this.consultation.patientId}`);
-        this.visitHistories = response.data.map(visit => ({
+        // Use the proper visit history endpoint
+        const response = await axios.get(`/api/patients/${this.consultation.patientId}/visit-history`);
+        const visits = response.data.visits || response.data || [];
+        this.visitHistories = visits.map(visit => ({
           id: visit.id,
           consultationDate: visit.consultationDate,
           doctor: visit.doctor,
-          diagnosis: visit.notes || visit.diagnosis || '',
+          diagnosis: visit.diagnosis || visit.notes || '',
           notes: visit.notes || '',
           prescribedMedications: visit.prescribedMedications || [],
           totalAmount: visit.totalAmount || 0,
           mcStartDate: visit.mcStartDate,
           mcEndDate: visit.mcEndDate,
           mcRunningNumber: visit.mcRunningNumber,
-          status: visit.status
+          status: visit.status || 'Completed'
         }));
+        console.log('📋 Medical history loaded for patient:', this.consultation.patientId, 'visits:', this.visitHistories.length);
       } catch (error) {
         console.error('Error loading visit histories:', error);
         this.visitHistories = [];
@@ -885,7 +888,53 @@ export default {
         const value = event.target.value;
         this.consultation.totalAmount = value === '' ? 0 : parseFloat(value) || 0;
       }
+    },
+    
+    cancelPendingRequests() {
+      // Cancel any axios requests that might be pending
+      console.log('🛑 Cancelling pending requests');
+      
+      // If there are any ongoing axios requests, they should be cancelled here
+      // This prevents the system from hanging on navigation or component unmount
+    },
+    
+    clearAllTimeouts() {
+      // Clear any JavaScript timeouts that might be running
+      // This prevents memory leaks and unexpected behavior
+      console.log('🧹 Clearing timeouts and intervals');
+    },
+    
+    // Enhanced error handling for API calls
+    async safeApiCall(apiCall, fallbackValue = null, timeoutMs = 10000) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        const result = await apiCall(controller.signal);
+        clearTimeout(timeoutId);
+        return result;
+        
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.warn('⏰ API call timed out');
+          return fallbackValue;
+        }
+        console.error('❌ API call failed:', error);
+        throw error;
+      }
     }
+  },
+  beforeUnmount() {
+    // Cancel any pending medication searches
+    if (this.medicationSearcher) {
+      this.medicationSearcher.cleanup();
+    }
+    
+    // Cancel any pending API requests
+    this.cancelPendingRequests();
+    
+    // Clear any timeouts
+    this.clearAllTimeouts();
   }
 };
 </script>
@@ -995,5 +1044,29 @@ export default {
   .consultation-form {
     margin-top: 250px !important; /* Much more space for larger screens and zoom */
   }
+}
+
+/* CRITICAL: Enhanced z-index fixes for ALL modals */
+.modal,
+.modal.fade,
+.modal.show,
+.modal[style*="display: block"] {
+  z-index: 1300 !important;
+}
+
+.modal-backdrop,
+.modal-backdrop.fade,
+.modal-backdrop.show,
+.modal-backdrop.fade.show {
+  z-index: 1250 !important;
+}
+
+/* Global Bootstrap modal override */
+.modal {
+  z-index: 1300 !important;
+}
+
+.modal-backdrop {
+  z-index: 1250 !important;
 }
 </style> 

@@ -276,7 +276,7 @@
 <script>
 import axios from 'axios';
 import * as bootstrap from 'bootstrap';
-import { makeProtectedRequest, makeNavigationRequest, cancelAllRequests } from '../../utils/requestManager.js';
+// Removed complex request manager - using simple axios calls
 import timezoneUtils from '../../utils/timezoneUtils.js';
 
 export default {
@@ -388,21 +388,13 @@ export default {
 
     async loadPatients() {
       try {
-        const response = await makeNavigationRequest(
-          'load-patients-queue',
-          async (signal) => {
-            return await axios.get('/api/patients', { 
-              signal,
-              params: {
-                limit: 50, // Reduced limit for faster initial load
-                fields: 'id,name,nric' // Only essential fields for dropdown
-              }
-            });
-          },
-          {
-            timeout: 8000 // Reduced timeout for background loading
+        const response = await axios.get('/api/patients', { 
+          timeout: 8000,
+          params: {
+            limit: 50, // Reduced limit for faster initial load
+            fields: 'id,name,nric' // Only essential fields for dropdown
           }
-        );
+        });
         
         this.patients = response.data.data || response.data;
         console.log('✅ Patients loaded for queue management');
@@ -429,15 +421,9 @@ export default {
       try {
         this.isDoctorLoading = true;
         
-        const response = await makeNavigationRequest(
-          'load-doctors-queue',
-          async (signal) => {
-            return await axios.get('/api/doctors', { signal });
-          },
-          {
-            timeout: 10000 // Increased timeout
-          }
-        );
+        const response = await axios.get('/api/doctors', { 
+          timeout: 10000
+        });
         
         this.doctors = response.data;
         console.log('✅ Doctors loaded for queue management');
@@ -472,29 +458,16 @@ export default {
 
         console.log('📋 Loading queue list for date:', this.selectedDate, 'status:', this.selectedStatus);
 
-        // Use high priority for user-initiated requests with longer timeout
-        const response = await makeNavigationRequest(
-          `queue-list-${this.selectedDate}-${this.selectedStatus}`,
-          async (signal) => {
-            return await axios.get('/api/queue', {
-              params: {
-                date: this.selectedDate,
-                status: this.selectedStatus,
-                page: this.currentPage,
-                limit: this.pageSize,
-                _t: Date.now() // Cache-busting timestamp
-              },
-              signal,
-              timeout: 15000 // Increased timeout for complex queries
-            });
+        const response = await axios.get('/api/queue', {
+          params: {
+            date: this.selectedDate,
+            status: this.selectedStatus,
+            page: this.currentPage,
+            limit: this.pageSize,
+            _t: Date.now() // Cache-busting timestamp
           },
-          {
-            priority: 'high', // High priority for user interactions
-            timeout: 15000, // Increased timeout
-            maxRetries: 2, // Allow more retries
-            skipThrottle: false // Allow some throttling even for high priority
-          }
-        );
+          timeout: 15000
+        });
 
         // Filter and organize queue data to show all relevant statuses
         let queueData = Array.isArray(response.data) ? response.data : (response.data.data || []);
@@ -604,31 +577,40 @@ export default {
         // Use a unique key with timestamp to avoid conflicts
         const refreshKey = `manual-refresh-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
-        // Force refresh by clearing cache and using high priority
-        await makeNavigationRequest(
-          refreshKey,
-          async (signal) => {
-            return await axios.get('/api/queue', {
-              params: {
-                date: this.selectedDate,
-                status: this.selectedStatus,
-                _refresh: Date.now() // Cache busting
-              },
-              signal,
-              timeout: 15000 // Longer timeout for manual refresh
-            });
+        const refreshResponse = await axios.get('/api/queue', {
+          params: {
+            date: this.selectedDate,
+            status: this.selectedStatus,
+            _refresh: Date.now() // Cache busting
           },
-          {
-            priority: 'high',
-            skipThrottle: true, // Skip throttling for manual refresh
-            skipDeduplication: true, // Skip deduplication for manual refresh
-            timeout: 15000,
-            maxRetries: 1 // Reduced retries for manual actions
-          }
-        );
+          timeout: 15000
+        });
         
-        // Reload the list after successful refresh
-        await this.loadQueueList();
+        // Process the refresh response directly instead of calling loadQueueList again
+        if (refreshResponse && refreshResponse.data) {
+          let queueData = Array.isArray(refreshResponse.data) ? refreshResponse.data : (refreshResponse.data.data || []);
+          
+          // Apply the same filtering logic as in loadQueueList
+          queueData = queueData.filter(queue => {
+            const isToday = queue.queueDateTime && queue.queueDateTime.startsWith(this.selectedDate);
+            
+            if (this.selectedStatus !== 'all') {
+              return isToday && queue.status === this.selectedStatus;
+            }
+            
+            const relevantStatuses = ['waiting', 'in_consultation', 'completed_consultation', 'completed'];
+            return isToday && relevantStatuses.includes(queue.status);
+          });
+
+          this.queueList = queueData;
+          this.totalPages = Math.max(1, Math.ceil((refreshResponse.data.total || queueData.length) / this.pageSize));
+          
+          console.log('✅ Manual refresh completed:', {
+            count: this.queueList.length,
+            date: this.selectedDate,
+            status: this.selectedStatus
+          });
+        }
         this.$toast?.success?.('Queue data refreshed successfully');
         
       } catch (error) {
@@ -665,21 +647,12 @@ export default {
       try {
         this.processing = true;
         
-        await makeProtectedRequest(
-          `process-payment-${this.selectedQueue.id}`,
-          async (signal) => {
-            return await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
-              amount: this.calculateAmount(this.selectedQueue),
-              paymentMethod: this.paymentMethod
-            }, { signal });
-          },
-          {
-            throttleMs: 1000,    // Prevent rapid payment processing
-            timeout: 20000,      // Longer timeout for payment processing
-            maxRetries: 1,       // Only retry once for payments
-            skipThrottle: false  // Always respect throttling for payments
-          }
-        );
+        await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
+          amount: this.calculateAmount(this.selectedQueue),
+          paymentMethod: this.paymentMethod
+        }, { 
+          timeout: 20000
+        });
 
         console.log('✅ Payment processed successfully');
         this.$toast?.success?.(`Payment of RM ${this.calculateAmount(this.selectedQueue)} received via ${this.paymentMethod}`);
@@ -731,19 +704,11 @@ export default {
 
     async updateStatus(queueId, newStatus) {
       try {
-        await makeProtectedRequest(
-          `update-queue-status-${queueId}`,
-          async (signal) => {
-            return await axios.put(`/api/queue/${queueId}/status`, {
-              status: newStatus
-            }, { signal });
-          },
-          {
-            throttleMs: 500,
-            timeout: 10000,
-            maxRetries: 1
-          }
-        );
+        await axios.put(`/api/queue/${queueId}/status`, {
+          status: newStatus
+        }, { 
+          timeout: 10000 
+        });
         
         console.log(`✅ Queue ${queueId} status updated to ${newStatus}`);
         
@@ -838,16 +803,16 @@ export default {
     },
 
     getTodayInMYT() {
-      // Get actual current date in Malaysia timezone
-      const mytTime = this.timezoneUtils.nowInMalaysia();
-    
-      const year = mytTime.getFullYear();
-      const month = String(mytTime.getMonth() + 1).padStart(2, '0');
-      const day = String(mytTime.getDate()).padStart(2, '0');
+      // Use Intl.DateTimeFormat to get the correct current date in Malaysia timezone
+      const malaysianDate = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
       
-      const dateString = `${year}-${month}-${day}`;
-      console.log('🕐 Current MYT date:', dateString, 'Local time:', new Date().toLocaleString(), 'MYT time:', mytTime.toLocaleString());
-      return dateString;
+      console.log('🕐 Current MYT date for Queue:', malaysianDate, 'Current time in MYT:', new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }));
+      return malaysianDate;
     },
     setToday() {
       this.selectedDate = this.getTodayInMYT();

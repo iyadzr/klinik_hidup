@@ -1,5 +1,5 @@
 <template>
-  <div class="modal fade" :class="{ show: visible }" tabindex="-1" v-if="visible">
+  <div class="modal fade" :class="{ show: visible }" tabindex="-1" v-if="visible" style="z-index: 1200 !important;">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
@@ -138,8 +138,8 @@
                 </div>
                 <div v-else class="text-center text-muted py-3">
                   <i class="fas fa-file-medical-alt fa-2x mb-2"></i>
-                  <div>No visit history found</div>
-                  <small>This is the patient's first visit</small>
+                  <div>No visit history loaded</div>
+                  <small>Unable to load previous visit records at this time</small>
                 </div>
               </div>
               <div v-else class="text-muted p-3 border rounded">
@@ -159,7 +159,7 @@
       </div>
     </div>
   </div>
-  <div class="modal-backdrop fade show" v-if="visible"></div>
+  <div class="modal-backdrop fade show" v-if="visible" style="z-index: 1190 !important;"></div>
 </template>
 
 <script>

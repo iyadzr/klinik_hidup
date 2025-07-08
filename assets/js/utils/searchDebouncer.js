@@ -81,6 +81,17 @@ class SearchDebouncer {
             
           } catch (error) {
             config.onLoading(false);
+            
+            // Don't treat cancelled/aborted requests as errors
+            if (error.name === 'AbortError' || 
+                error.message.includes('aborted') || 
+                error.message.includes('cancelled') ||
+                error.code === 'ERR_CANCELED') {
+              console.log(`⏩ Search cancelled: "${query}" (${searchKey})`);
+              resolve([]); // Return empty results instead of rejecting
+              return;
+            }
+            
             config.onError(error);
             reject(error);
           } finally {

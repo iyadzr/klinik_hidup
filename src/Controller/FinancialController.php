@@ -142,10 +142,10 @@ class FinancialController extends AbstractController
             $queue = $payment->getQueue();
             $processedBy = $payment->getProcessedBy();
             
-            // Get medicines information
+            // Get medicines information - try multiple sources
             $medicines = [];
             if ($consultation) {
-                // Query prescribed medications separately
+                // First try prescribed medications table
                 $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
                 foreach ($prescribedMeds as $pm) {
                     $medication = $pm->getMedication();
@@ -154,8 +154,26 @@ class FinancialController extends AbstractController
                             'name' => $medication->getName(),
                             'dosage' => $pm->getDosage() ?? 'N/A',
                             'frequency' => $pm->getFrequency() ?? 'N/A',
-                            'duration' => $pm->getDuration() ?? 'N/A'
+                            'duration' => $pm->getDuration() ?? 'N/A',
+                            'quantity' => $pm->getQuantity() ?? 'N/A'
                         ];
+                    }
+                }
+                
+                // If no prescribed medications found, try to parse from consultation.medications JSON
+                if (empty($medicines) && $consultation->getMedications()) {
+                    $medicationsJson = $consultation->getMedications();
+                    $decoded = json_decode($medicationsJson, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        foreach ($decoded as $med) {
+                            $medicines[] = [
+                                'name' => $med['name'] ?? $med['medication'] ?? 'Unknown Medicine',
+                                'dosage' => $med['dosage'] ?? 'N/A',
+                                'frequency' => $med['frequency'] ?? 'N/A',
+                                'duration' => $med['duration'] ?? 'N/A',
+                                'quantity' => $med['quantity'] ?? 'N/A'
+                            ];
+                        }
                     }
                 }
             }
@@ -310,9 +328,10 @@ class FinancialController extends AbstractController
             $consultation = $payment->getConsultation();
             $processedBy = $payment->getProcessedBy();
             
-            // Get medicines information
+            // Get medicines information - try multiple sources
             $medicines = [];
             if ($consultation) {
+                // First try prescribed medications table
                 $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
                 foreach ($prescribedMeds as $pm) {
                     $medication = $pm->getMedication();
@@ -321,8 +340,26 @@ class FinancialController extends AbstractController
                             'name' => $medication->getName(),
                             'dosage' => $pm->getDosage() ?? 'N/A',
                             'frequency' => $pm->getFrequency() ?? 'N/A',
-                            'duration' => $pm->getDuration() ?? 'N/A'
+                            'duration' => $pm->getDuration() ?? 'N/A',
+                            'quantity' => $pm->getQuantity() ?? 'N/A'
                         ];
+                    }
+                }
+                
+                // If no prescribed medications found, try to parse from consultation.medications JSON
+                if (empty($medicines) && $consultation->getMedications()) {
+                    $medicationsJson = $consultation->getMedications();
+                    $decoded = json_decode($medicationsJson, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        foreach ($decoded as $med) {
+                            $medicines[] = [
+                                'name' => $med['name'] ?? $med['medication'] ?? 'Unknown Medicine',
+                                'dosage' => $med['dosage'] ?? 'N/A',
+                                'frequency' => $med['frequency'] ?? 'N/A',
+                                'duration' => $med['duration'] ?? 'N/A',
+                                'quantity' => $med['quantity'] ?? 'N/A'
+                            ];
+                        }
                     }
                 }
             }
@@ -410,8 +447,9 @@ class FinancialController extends AbstractController
         $consultations = $qb->getQuery()->getResult();
 
         return array_map(function ($consultation) {
-            // Get medicines information
+            // Get medicines information - try multiple sources
             $medicines = [];
+            // First try prescribed medications table
             $prescribedMeds = $this->prescribedMedicationRepository->findBy(['consultation' => $consultation]);
             foreach ($prescribedMeds as $pm) {
                 $medication = $pm->getMedication();
@@ -420,8 +458,26 @@ class FinancialController extends AbstractController
                         'name' => $medication->getName(),
                         'dosage' => $pm->getDosage() ?? 'N/A',
                         'frequency' => $pm->getFrequency() ?? 'N/A',
-                        'duration' => $pm->getDuration() ?? 'N/A'
+                        'duration' => $pm->getDuration() ?? 'N/A',
+                        'quantity' => $pm->getQuantity() ?? 'N/A'
                     ];
+                }
+            }
+            
+            // If no prescribed medications found, try to parse from consultation.medications JSON
+            if (empty($medicines) && $consultation->getMedications()) {
+                $medicationsJson = $consultation->getMedications();
+                $decoded = json_decode($medicationsJson, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    foreach ($decoded as $med) {
+                        $medicines[] = [
+                            'name' => $med['name'] ?? $med['medication'] ?? 'Unknown Medicine',
+                            'dosage' => $med['dosage'] ?? 'N/A',
+                            'frequency' => $med['frequency'] ?? 'N/A',
+                            'duration' => $med['duration'] ?? 'N/A',
+                            'quantity' => $med['quantity'] ?? 'N/A'
+                        ];
+                    }
                 }
             }
 

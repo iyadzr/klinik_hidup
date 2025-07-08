@@ -279,7 +279,6 @@
                       <th>Doctor</th>
                       <th>Status</th>
                       <th>Payment</th>
-                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -316,38 +315,6 @@
                         </div>
                         <span v-else class="text-muted small">-</span>
                       </td>
-                      <td>
-                        <button 
-                          v-if="patient.status === 'waiting'" 
-                          @click="startPatientConsultation(patient)"
-                          class="btn btn-sm btn-success"
-                          title="Start Consultation"
-                        >
-                          <i class="fas fa-play me-1"></i>Start
-                        </button>
-                        <button 
-                          v-else-if="patient.status === 'in_consultation'" 
-                          @click="continuePatientConsultation(patient)"
-                          class="btn btn-sm btn-warning"
-                          title="Continue Consultation"
-                        >
-                          <i class="fas fa-arrow-right me-1"></i>Continue
-                        </button>
-                        <div v-else-if="patient.status === 'completed' || patient.status === 'completed_consultation'" class="d-flex flex-column gap-1">
-                          <span class="badge bg-success">
-                            <i class="fas fa-check me-1"></i>Completed
-                          </span>
-                          <button 
-                            v-if="!patient.isPaid && patient.totalAmount && parseFloat(patient.totalAmount) > 0" 
-                            @click="processPayment(patient)"
-                            class="btn btn-sm btn-outline-primary"
-                            title="Process Payment"
-                          >
-                            <i class="fas fa-credit-card me-1"></i>Pay
-                          </button>
-                        </div>
-                        <span v-else class="text-muted">-</span>
-                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -370,7 +337,7 @@ import axios from 'axios';
 import { getTodayInMYT, formatQueueNumber } from '../../utils/dateUtils';
 import AuthService from '../../services/AuthService';
 import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
-import { makeNavigationRequest } from '../../utils/requestManager.js';
+// Removed complex request manager - using simple axios calls
 
 export default {
   name: 'PatientConsultation',
@@ -503,21 +470,13 @@ export default {
         }
 
         console.log('🔄 Fetching ongoing consultations...');
-        const response = await makeNavigationRequest(
-          'ongoing-consultations',
-          async (signal) => {
-            return await axios.get('/api/consultations/ongoing', {
-              signal: signal || abortController.signal,
-              params: {
-                doctorId: doctorId
-              }
-            });
-          },
-          {
-            timeout: 8000, // Faster timeout for ongoing consultations
-            maxRetries: 1
+        const response = await axios.get('/api/consultations/ongoing', {
+          signal: abortController.signal,
+          timeout: 8000,
+          params: {
+            doctorId: doctorId
           }
-        );
+        });
         
         console.log('✅ Successfully fetched ongoing consultations:', response.data);
         ongoingConsultations.value = response.data.ongoing || [];

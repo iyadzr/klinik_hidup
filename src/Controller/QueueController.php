@@ -1014,21 +1014,21 @@ class QueueController extends AbstractController
     
     private function getQueueSymptoms(Queue $queue): ?string
     {
-        // First check if symptoms are in queue metadata
+        // First check if symptoms/remarks are in queue metadata (per-visit remarks)
         $metadata = $queue->getMetadata();
         if ($metadata) {
             $data = json_decode($metadata, true);
+            // Check for both 'symptoms' and 'remarks' keys for compatibility
             if (isset($data['symptoms'])) {
                 return $data['symptoms'];
             }
+            if (isset($data['remarks'])) {
+                return $data['remarks'];
+            }
         }
         
-        // Fallback to patient's remarks
-        $patient = $queue->getPatient();
-        if ($patient && method_exists($patient, 'getRemarks')) {
-            return $patient->getRemarks();
-        }
-        
+        // DO NOT fallback to patient's general remarks - those are patient-level, not visit-specific
+        // Each queue entry should have its own visit-specific remarks in metadata
         return null;
     }
 

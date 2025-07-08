@@ -454,14 +454,18 @@ export default {
         return;
       }
       try {
-        const response = await axios.get(`/api/consultations/patient/${this.consultation.patientId}`);
-        this.visitHistories = response.data.map(visit => ({
+        // Use the proper visit history endpoint
+        const response = await axios.get(`/api/patients/${this.consultation.patientId}/visit-history`);
+        const visits = response.data.visits || response.data || [];
+        this.visitHistories = visits.map(visit => ({
           id: visit.id,
           consultationDate: visit.consultationDate,
           doctor: visit.doctor,
-          diagnosis: visit.notes || visit.diagnosis || '',
-          notes: visit.notes || ''
+          diagnosis: visit.diagnosis || visit.notes || '',
+          notes: visit.notes || '',
+          status: visit.status || 'Completed'
         }));
+        console.log('📋 Medical history loaded for patient:', this.consultation.patientId, 'visits:', this.visitHistories.length);
       } catch (error) {
         console.error('Error loading visit histories:', error);
         this.visitHistories = [];
@@ -875,5 +879,29 @@ export default {
   .consultation-form {
     margin-top: 250px !important; /* Much more space for larger screens and zoom */
   }
+}
+
+/* CRITICAL: Enhanced z-index fixes for ALL modals */
+.modal,
+.modal.fade,
+.modal.show,
+.modal[style*="display: block"] {
+  z-index: 1300 !important;
+}
+
+.modal-backdrop,
+.modal-backdrop.fade,
+.modal-backdrop.show,
+.modal-backdrop.fade.show {
+  z-index: 1250 !important;
+}
+
+/* Global Bootstrap modal override */
+.modal {
+  z-index: 1300 !important;
+}
+
+.modal-backdrop {
+  z-index: 1250 !important;
 }
 </style> 

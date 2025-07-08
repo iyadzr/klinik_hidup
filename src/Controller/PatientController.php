@@ -476,9 +476,10 @@ class PatientController extends AbstractController
             if (isset($patientData['company'])) {
                 $patient->setCompany($patientData['company']);
             }
-            if (isset($patientData['remarks'])) {
-                $patient->setRemarks($patientData['remarks']);
-            }
+            // DO NOT store remarks in patient entity - they are visit-specific and go in queue metadata
+            // if (isset($patientData['remarks'])) {
+            //     $patient->setRemarks($patientData['remarks']);
+            // }
 
             $this->entityManager->persist($patient);
             $this->entityManager->flush();
@@ -544,6 +545,24 @@ class PatientController extends AbstractController
         $queueDateTime = \App\Service\TimezoneService::nowImmutable();
         $queue->setQueueDateTime($queueDateTime);
         $hour = (int)$queueDateTime->format('G'); // 0-23, e.g., 8, 9, 15
+        
+        // Store visit-specific remarks in queue metadata (NOT in patient entity)
+        $metadata = [];
+        if (isset($patientData['remarks']) && !empty($patientData['remarks'])) {
+            $metadata['remarks'] = $patientData['remarks'];
+            // Also store as 'symptoms' for backward compatibility
+            $metadata['symptoms'] = $patientData['remarks'];
+        }
+        
+        // Store relationship if this is part of a group consultation
+        if (isset($patientData['relationship'])) {
+            $metadata['relationship'] = $patientData['relationship'];
+        }
+        
+        // Set metadata as JSON
+        if (!empty($metadata)) {
+            $queue->setMetadata(json_encode($metadata));
+        }
         
         // Optimized queue number generation with better query
         $qb = $this->entityManager->getRepository(Queue::class)->createQueryBuilder('q');

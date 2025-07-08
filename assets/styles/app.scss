@@ -102,3 +102,18 @@ body {
   z-index: 10001 !important;
   isolation: isolate !important;
 }
+
+/* GLOBAL Z-INDEX FIX: Ensure all modals appear above sticky headers */
+.modal,
+.modal.fade,
+.modal.show,
+.modal[style*="display: block"] {
+  z-index: 1300 !important;
+}
+
+.modal-backdrop,
+.modal-backdrop.fade,
+.modal-backdrop.show,
+.modal-backdrop.fade.show {
+  z-index: 1250 !important;
+}

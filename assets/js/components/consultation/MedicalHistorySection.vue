@@ -40,8 +40,8 @@
       </div>
       <div v-else class="text-center text-muted py-4">
         <i class="fas fa-file-medical-alt fa-2x mb-2"></i>
-        <div>No medical history found</div>
-        <small class="text-muted">This is the patient's first visit</small>
+        <div>No medical history loaded</div>
+        <small class="text-muted">Unable to load previous visit records at this time</small>
       </div>
     </div>
   </div>

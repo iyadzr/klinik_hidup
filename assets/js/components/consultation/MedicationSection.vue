@@ -7,13 +7,21 @@
     
     <!-- Add Medication Button -->
     <div class="mb-3">
-      <button type="button" class="btn btn-outline-primary btn-sm" @click="addMedicationRow">
-        <i class="fas fa-plus me-1"></i>Add Medication
+      <button 
+        type="button" 
+        class="btn btn-outline-primary btn-sm" 
+        @click="addMedicationRow"
+        :disabled="isAddingMedication"
+        :class="{ 'adding-animation': isAddingMedication }"
+      >
+        <i v-if="isAddingMedication" class="fas fa-spinner fa-spin me-1"></i>
+        <i v-else class="fas fa-plus me-1"></i>
+        {{ isAddingMedication ? 'Adding...' : 'Add Medication' }}
       </button>
     </div>
 
     <!-- Medication List -->
-    <div v-for="(medItem, index) in medications" :key="index" class="medication-row mb-3 p-3 border rounded">
+    <div v-for="(medItem, index) in localMedications" :key="index" class="medication-row mb-3 p-3 border rounded">
       <div class="row g-3">
         <div class="col-md-6">
           <div class="form-floating">
@@ -144,17 +152,38 @@ export default {
   emits: ['update:modelValue', 'create-medication'],
   data() {
     return {
-      medicationSearcher: null
+      localMedications: [],
+      medicationSearcher: null,
+      medicationRequests: new Map(),
+      requestTimeout: null,
+      isUpdating: false,
+      isAddingMedication: false, // Prevent spam clicking Add Medication
+      lastClickTime: 0 // Track last click time for throttling
     };
   },
-  computed: {
-    medications: {
-      get() {
-        return this.modelValue;
+  watch: {
+    // Watch for external changes to modelValue
+    modelValue: {
+      handler(newValue) {
+        if (!this.isUpdating && Array.isArray(newValue)) {
+          this.localMedications = [...newValue];
+        }
       },
-      set(value) {
-        this.$emit('update:modelValue', value);
-      }
+      immediate: true,
+      deep: true
+    },
+    // Watch for local changes and emit to parent
+    localMedications: {
+      handler(newValue) {
+        if (!this.isUpdating) {
+          this.isUpdating = true;
+          this.$emit('update:modelValue', [...newValue]);
+          this.$nextTick(() => {
+            this.isUpdating = false;
+          });
+        }
+      },
+      deep: true
     }
   },
   mounted() {
@@ -164,37 +193,67 @@ export default {
     window.addEventListener('resize', this.handleResize);
   },
   beforeUnmount() {
-    if (this.medicationSearcher) {
-      this.medicationSearcher.cleanup();
-    }
+    this.cleanup();
     // Remove event listeners
     window.removeEventListener('scroll', this.handleScroll);
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
     addMedicationRow() {
-      this.medications.push({
-        id: null,
-        name: '',
-        medicationId: null,
-        quantity: 1,
-        actualPrice: 0.00,
-        unitType: 'pieces',
-        unitDescription: '',
-        category: '',
-        instructions: '',
-        showInstructions: false,
-        allSuggestions: [],
-        paginatedSuggestions: [],
-        selectedSuggestionIndex: -1,
-        currentPage: 1,
-        itemsPerPage: 5,
-        totalPages: 1
-      });
+      // Prevent spam clicking with throttling (minimum 500ms between clicks)
+      const now = Date.now();
+      if (this.isAddingMedication || (now - this.lastClickTime) < 500) {
+        console.log('⏩ Add medication button click throttled');
+        return;
+      }
+      
+      this.isAddingMedication = true;
+      this.lastClickTime = now;
+      
+      try {
+        // Add visual feedback
+        console.log('➕ Adding new medication row');
+        
+        this.localMedications.push({
+          id: null,
+          name: '',
+          medicationId: null,
+          quantity: 1,
+          actualPrice: 0.00,
+          unitType: 'pieces',
+          unitDescription: '',
+          category: '',
+          instructions: '',
+          showInstructions: false,
+          allSuggestions: [],
+          paginatedSuggestions: [],
+          selectedSuggestionIndex: -1,
+          currentPage: 1,
+          itemsPerPage: 5,
+          totalPages: 1
+        });
+        
+        // Focus on the new medication input after DOM update
+        this.$nextTick(() => {
+          const newIndex = this.localMedications.length - 1;
+          const newInput = document.querySelector(`#medication-${newIndex}`);
+          if (newInput) {
+            newInput.focus();
+          }
+        });
+        
+      } catch (error) {
+        console.error('❌ Error adding medication row:', error);
+      } finally {
+        // Reset adding state after a short delay
+        setTimeout(() => {
+          this.isAddingMedication = false;
+        }, 300);
+      }
     },
     
     removeMedicationRow(index) {
-      this.medications.splice(index, 1);
+      this.localMedications.splice(index, 1);
     },
     
     async searchMedications(medItem, event) {
@@ -217,11 +276,23 @@ export default {
           return;
         }
 
-        // Use longer debounce time for medication search to reduce API calls
+        // Use robust debounce settings for medication search to reduce API calls
         const results = await this.medicationSearcher.search('medication', searchTerm, this.performMedicationSearch, {
-          debounceMs: 500, // Increased from default 300ms to 500ms
+          debounceMs: 800, // Further increased for stability
           minLength: 2,
-          cacheResults: true
+          cacheResults: true,
+          onLoading: (loading) => {
+            // Add visual feedback for search loading
+            const input = event.target;
+            if (input) {
+              input.style.backgroundImage = loading ? 
+                'url("data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\' fill=\'%23999\'><path d=\'M8 3a5 5 0 1 0 5 5H8V3z\'/></svg>")' : 
+                'none';
+              input.style.backgroundRepeat = 'no-repeat';
+              input.style.backgroundPosition = 'right 8px center';
+              input.style.backgroundSize = '16px';
+            }
+          }
         });
         
         if (results) {
@@ -255,9 +326,43 @@ export default {
     
     async performMedicationSearch(searchTerm) {
       try {
-        const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`);
+        // Cancel any existing request for this search term
+        const existingRequest = this.medicationRequests.get(searchTerm);
+        if (existingRequest) {
+          existingRequest.controller.abort();
+          this.medicationRequests.delete(searchTerm);
+        }
+
+        // Create new AbortController for this request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+          console.warn(`🚨 Medication search timeout for: "${searchTerm}"`);
+        }, 8000); // 8 second timeout
+
+        // Store request info for potential cancellation
+        this.medicationRequests.set(searchTerm, { controller, timeoutId });
+
+        const response = await axios.get(`/api/medications?search=${encodeURIComponent(searchTerm)}`, {
+          signal: controller.signal,
+          timeout: 8000,
+          headers: {
+            'Cache-Control': 'max-age=300' // 5 minute cache
+          }
+        });
+
+        // Clear timeout and request tracking on success
+        clearTimeout(timeoutId);
+        this.medicationRequests.delete(searchTerm);
+
         return response.data;
       } catch (error) {
+        // Don't log aborted requests as errors
+        if (error.name === 'AbortError' || error.message.includes('aborted')) {
+          console.log(`⏩ Search cancelled for: "${searchTerm}"`);
+          return [];
+        }
+        
         console.error('❌ Error in medication search API:', error);
         throw error;
       }
@@ -372,6 +477,27 @@ export default {
     
     handleResize() {
       // No repositioning needed with absolute positioning
+    },
+    
+    // Add cleanup method
+    cleanup() {
+      // Cancel all pending requests
+      for (const [searchTerm, requestInfo] of this.medicationRequests) {
+        requestInfo.controller.abort();
+        clearTimeout(requestInfo.timeoutId);
+      }
+      this.medicationRequests.clear();
+
+      // Clear any pending timeouts
+      if (this.requestTimeout) {
+        clearTimeout(this.requestTimeout);
+        this.requestTimeout = null;
+      }
+
+      // Cleanup debouncer
+      if (this.medicationSearcher) {
+        this.medicationSearcher.cleanup();
+      }
     }
   }
 };
@@ -523,5 +649,17 @@ export default {
 .medication-row .btn-outline-danger:hover {
   background: #dc3545;
   color: white;
+}
+
+/* Add Medication button spam protection */
+.adding-animation {
+  opacity: 0.7;
+  transform: scale(0.98);
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
 }
 </style> 

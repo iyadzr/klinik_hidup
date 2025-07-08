@@ -60,7 +60,7 @@
         </div>
       </div>
       <div class="col-md-3">
-        <div class="card bg-info text-white">
+        <div class="card bg-info text-white clickable-card" @click="filterByCash" style="cursor: pointer;" title="Click to filter cash payments">
           <div class="card-body">
             <div class="d-flex justify-content-between">
               <div>
@@ -73,7 +73,7 @@
         </div>
       </div>
       <div class="col-md-3">
-        <div class="card bg-warning text-white">
+        <div class="card bg-warning text-white clickable-card" @click="filterByCard" style="cursor: pointer;" title="Click to filter card payments">
           <div class="card-body">
             <div class="d-flex justify-content-between">
               <div>
@@ -390,8 +390,18 @@ export default {
       selectedPayment: null,
       detailsModal: null,
       filters: {
-        startDate: new Date().toISOString().split('T')[0], // Today by default
-        endDate: new Date().toISOString().split('T')[0],
+        startDate: new Date().toLocaleDateString('en-CA', { 
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }), // Today by default in Malaysian timezone
+        endDate: new Date().toLocaleDateString('en-CA', { 
+          timeZone: 'Asia/Kuala_Lumpur',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }),
         paymentMethod: ''
       },
       todaysStats: {
@@ -525,8 +535,8 @@ export default {
       this.todaysStats = {
         revenue: completedPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0).toFixed(2),
         count: completedPayments.length,
-        cashCount: completedPayments.filter(p => p.payment_method === 'cash').length,
-        cardCount: completedPayments.filter(p => p.payment_method === 'card').length
+        cashCount: completedPayments.filter(p => p.payment_method?.toLowerCase() === 'cash').length,
+        cardCount: completedPayments.filter(p => p.payment_method?.toLowerCase() === 'card').length
       };
     },
     applyFilters() {
@@ -534,18 +544,34 @@ export default {
       this.loadPayments();
     },
     setToday() {
-      const today = new Date().toISOString().split('T')[0];
+      // Use Malaysia timezone to get the correct current date
+      const malaysianDate = new Date().toLocaleDateString('en-CA', { 
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      console.log('🕐 Setting Today button to Malaysian date:', malaysianDate);
+      
       this.filters = {
-        startDate: today,
-        endDate: today,
+        startDate: malaysianDate,
+        endDate: malaysianDate,
         paymentMethod: this.filters.paymentMethod // Keep the payment method filter
       };
       this.applyFilters();
     },
     clearFilters() {
+      // Use Malaysia timezone to get the correct current date
+      const malaysianDate = new Date().toLocaleDateString('en-CA', { 
+        timeZone: 'Asia/Kuala_Lumpur',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      
       this.filters = {
-        startDate: new Date().toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
+        startDate: malaysianDate,
+        endDate: malaysianDate,
         paymentMethod: ''
       };
       this.applyFilters();
@@ -558,6 +584,16 @@ export default {
     },
     refreshData() {
       this.loadPayments();
+    },
+    filterByCash() {
+      this.filters.paymentMethod = 'cash';
+      this.applyFilters();
+      this.$toast?.info('Filtered to show only cash payments');
+    },
+    filterByCard() {
+      this.filters.paymentMethod = 'card';
+      this.applyFilters();
+      this.$toast?.info('Filtered to show only card payments');
     },
     viewPaymentDetails(payment) {
       this.selectedPayment = payment;
@@ -883,6 +919,20 @@ code {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+}
+
+/* Clickable card hover effects */
+.clickable-card {
+  transition: all 0.3s ease;
+}
+
+.clickable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2) !important;
+}
+
+.clickable-card:active {
+  transform: translateY(0);
 }
 
 @media (max-width: 768px) {

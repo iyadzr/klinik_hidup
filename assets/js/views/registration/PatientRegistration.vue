@@ -273,7 +273,8 @@
             <div class="row mb-3">
               <div class="col-md-12">
                 <label class="form-label">NRIC</label>
-                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 123456-12-1234)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'"> <!-- NRIC is readonly for existing only -->
+                <input type="text" v-model="patient.nric" class="form-control" required placeholder="Enter NRIC (e.g., 123456-12-1234)" maxlength="14" @input="handleNRICInput($event, patient)" :readonly="patientType === 'existing'" :class="{ 'is-invalid': nricError }"> <!-- NRIC is readonly for existing only -->
+                <div v-if="nricError" class="invalid-feedback">{{ nricError }}</div>
                 <div class="form-check-container mt-2" style="font-size: 0.75rem;">
                   <div class="form-check form-check-inline">
                     <input class="form-check-input" type="radio" name="nricFormat" id="newNric" value="new" v-model="nricFormatType" @change="handleNRICFormatChange" style="transform: scale(0.85);">
@@ -418,6 +419,7 @@ export default {
         this.searchQuery = '';
         this.searchResults = [];
         this.searchPerformed = false;
+        this.nricError = null; // Clear NRIC error when switching to new patient
         // Keep the doctor selection (don't reset to maintain first doctor default)
       }
     }
@@ -447,6 +449,7 @@ export default {
       },
       doctors: [],
       isLoading: false,
+      nricError: null, // Track NRIC validation errors
       
       // Formatting options
       nricFormatType: 'new', // Default to new NRIC format
@@ -479,6 +482,7 @@ export default {
   computed: {
     isSubmitDisabled() {
       if (this.isLoading) return true;
+      if (this.nricError) return true; // Prevent submission if there's an NRIC error
       if (this.multiplePatients && this.patientType === 'new') {
         return this.patients.length === 0 || !this.queueInfo.doctorId;
       }
@@ -515,6 +519,11 @@ export default {
       
       // Calculate DOB and gender if it's a valid NRIC
       this.calculateDOBFromNRIC(targetPatient);
+      
+      // Check for NRIC duplication if this is a new patient registration
+      if (this.patientType === 'new' && cleanNric.length === 12) {
+        this.checkNricDuplication(targetPatient.nric);
+      }
     },
     
     calculateDOBFromNRIC(patient = null) {
@@ -596,6 +605,45 @@ export default {
         }
       } catch (error) {
         console.error('Error loading doctors:', error);
+      }
+    },
+
+    async checkNricDuplication(nric) {
+      if (!nric || this.patientType !== 'new') {
+        this.nricError = null;
+        return;
+      }
+      
+      try {
+        // Format NRIC consistently for checking
+        const cleanNric = cleanNRIC(nric);
+        if (cleanNric.length !== 12) {
+          this.nricError = null;
+          return;
+        }
+        
+        // Check if NRIC already exists by searching for it
+        const response = await axios.get('/api/patients/search', {
+          params: { query: nric }
+        });
+        
+        if (response.data && response.data.data && Array.isArray(response.data.data)) {
+          const existingPatient = response.data.data.find(patient => 
+            cleanNRIC(patient.nric || '') === cleanNric
+          );
+          
+          if (existingPatient) {
+            this.nricError = `This NRIC is already registered to: ${existingPatient.name}`;
+          } else {
+            this.nricError = null;
+          }
+        } else {
+          this.nricError = null;
+        }
+      } catch (error) {
+        console.error('Error checking NRIC duplication:', error);
+        // Don't show error to user for this check, just log it
+        this.nricError = null;
       }
     },
     async searchPatients() {
