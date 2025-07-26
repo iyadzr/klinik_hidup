@@ -609,12 +609,21 @@ class PatientController extends AbstractController
                 'queue_list_' . $today . '_waiting_page_1_limit_50',
                 'queue_list_' . $today . '_in_consultation_page_1_limit_50',
                 'queue_list_' . $today . '_completed_page_1_limit_50',
+                'queue_list_' . $today . '_completed_consultation_page_1_limit_50',
                 'queue_stats',
                 'queue_counts'
             ];
             
             foreach ($patterns as $pattern) {
                 $this->cache->delete($pattern);
+                $this->logger->info('Cache invalidated', ['pattern' => $pattern]);
+            }
+            
+            // Also clear any other potential cache entries with different page/limit combinations
+            for ($page = 1; $page <= 5; $page++) {
+                for ($limit = 10; $limit <= 100; $limit += 10) {
+                    $this->cache->delete("queue_list_{$today}_all_page_{$page}_limit_{$limit}");
+                }
             }
         }
     }
@@ -646,6 +655,18 @@ class PatientController extends AbstractController
                 ]
             ];
             
+            // Also broadcast queue count update
+            $countUpdateData = [
+                'type' => 'queue_count_update',
+                'timestamp' => time(),
+                'data' => [
+                    'action' => 'patient_registered',
+                    'queueId' => $queue->getId(),
+                    'date' => $queue->getQueueDateTime()->format('Y-m-d'),
+                    'newStatus' => $queue->getStatus()
+                ]
+            ];
+            
             // Write to temporary file in a non-blocking way
             $tempDir = sys_get_temp_dir();
             $updateFile = $tempDir . '/queue_updates.json';
@@ -664,12 +685,19 @@ class PatientController extends AbstractController
                     }
                 }
                 
-                // Add new update and keep only last 10
+                // Add both updates and keep only last 10
                 $updates[] = $updateData;
+                $updates[] = $countUpdateData;
                 $updates = array_slice($updates, -10);
                 
                 // Write back to file
                 file_put_contents($updateFile, json_encode($updates), LOCK_EX);
+                
+                $this->logger->info('Queue update broadcasted', [
+                    'queueId' => $queue->getId(),
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'status' => $queue->getStatus()
+                ]);
                 
                 flock($lockHandle, LOCK_UN);
             }

@@ -7,7 +7,7 @@
           class="form-control" 
           placeholder="Search by name, NRIC, or phone (min 2 characters)" 
           v-model="searchQuery" 
-          @input="onInput"
+          @keyup.enter="search"
           :disabled="loading"
         >
         <button class="btn btn-outline-primary" @click="search" :disabled="loading || (searchQuery && searchQuery.trim().length < 2)">
@@ -45,12 +45,7 @@ export default {
       default: ''
     }
   },
-  emits: ['update:modelValue', 'search', 'clear', 'input'],
-  data() {
-    return {
-      searchTimeout: null
-    };
-  },
+  emits: ['update:modelValue', 'search', 'clear'],
   computed: {
     searchQuery: {
       get() {
@@ -61,22 +56,7 @@ export default {
       }
     }
   },
-  beforeUnmount() {
-    if (this.searchTimeout) {
-      clearTimeout(this.searchTimeout);
-    }
-  },
   methods: {
-    onInput() {
-      if (this.searchTimeout) {
-        clearTimeout(this.searchTimeout);
-      }
-      
-      // Debounced search with 300ms delay
-      this.searchTimeout = setTimeout(() => {
-        this.$emit('input', this.searchQuery);
-      }, 300);
-    },
     search() {
       this.$emit('search', this.searchQuery);
     },

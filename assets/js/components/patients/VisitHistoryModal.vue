@@ -199,7 +199,7 @@ export default {
 .modal.show {
   display: block;
   z-index: 1200 !important; /* Higher than sticky patient header (1100) */
-  /* Remove backdrop styling to prevent dimming */
+  background-color: rgba(0, 0, 0, 0.5); /* Add backdrop dimming to modal itself */
 }
 
 .clickable-row {

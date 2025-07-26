@@ -18,12 +18,11 @@
       :result-count="patients.length"
       @search="onSearch"
       @clear="clearSearch"
-      @input="onSearchInput"
     />
 
     <!-- Patient Table Component -->
     <PatientTable
-      :patients="patients"
+      :patients="paginatedPatients"
       :loading="loading"
       :current-page="currentPage"
       :per-page="itemsPerPage"
@@ -56,6 +55,8 @@
     <VisitHistoryModal
       :visible="showVisitHistoryModal"
       :patient="selectedPatient"
+      :visit-histories="visitHistories"
+      :loading="visitHistoryLoading"
       @close="onVisitHistoryModalClose"
     />
   </div>
@@ -82,7 +83,6 @@ export default {
     data() {
         return {
             patients: [],
-            filteredPatients: [],
             loading: false,
             searchQuery: '',
             currentPage: 1,
@@ -92,7 +92,9 @@ export default {
             showPatientModal: false,
             showVisitHistoryModal: false,
             error: null,
-            clickProtection: false // Simple click protection
+            clickProtection: false, // Simple click protection
+            visitHistories: [],
+            visitHistoryLoading: false
         };
     },
     computed: {
@@ -102,7 +104,7 @@ export default {
         paginatedPatients() {
             const start = (this.currentPage - 1) * this.itemsPerPage;
             const end = start + this.itemsPerPage;
-            return this.filteredPatients.slice(start, end);
+            return this.patients.slice(start, end);
         }
     },
     created() {
@@ -147,7 +149,7 @@ export default {
 
             try {
                 const url = searchQuery 
-                    ? `/api/patients/search?q=${encodeURIComponent(searchQuery)}`
+                    ? `/api/patients/search?query=${encodeURIComponent(searchQuery)}`
                     : '/api/patients';
 
                 console.log('Fetching patients from:', url);
@@ -157,15 +159,12 @@ export default {
                 // Handle both array and object responses
                 if (Array.isArray(data)) {
                     this.patients = data;
-                    this.filteredPatients = data;
                     this.totalPatients = data.length;
                 } else if (data.patients && Array.isArray(data.patients)) {
                     this.patients = data.patients;
-                    this.filteredPatients = data.patients;
                     this.totalPatients = data.total || data.patients.length;
                 } else {
                     this.patients = data.data || [];
-                    this.filteredPatients = this.patients;
                     this.totalPatients = data.total || this.patients.length;
                 }
 
@@ -186,7 +185,6 @@ export default {
                     // Keep existing data on error
                     if (this.patients.length === 0) {
                         this.patients = [];
-                        this.filteredPatients = [];
                         this.totalPatients = 0;
                     }
                 }
@@ -220,13 +218,19 @@ export default {
         async onViewHistory(patient) {
             const result = await this.safeApiCall(async () => {
                 this.selectedPatient = patient;
+                this.visitHistoryLoading = true;
+                this.visitHistories = [];
                 
                 // Simple axios call for visit history
                 try {
                     const response = await axios.get(`/api/patients/${patient.id}/visit-history`);
                     console.log('Visit history loaded:', response.data);
+                    this.visitHistories = response.data || [];
                 } catch (error) {
                     console.warn('Could not load visit history:', error);
+                    this.visitHistories = [];
+                } finally {
+                    this.visitHistoryLoading = false;
                 }
                 
                 this.showVisitHistoryModal = true;
@@ -273,16 +277,6 @@ export default {
             }, 'Failed to delete patient');
         },
 
-        onSearchInput() {
-            // Simple debounced search - no complex debouncing system
-            clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                if (this.searchQuery.length >= 2 || this.searchQuery.length === 0) {
-                    this.onSearch(this.searchQuery);
-                }
-            }, 300);
-        },
-
         updatePerPage(newPerPage) {
             this.itemsPerPage = newPerPage;
             this.currentPage = 1;
@@ -293,13 +287,6 @@ export default {
             this.searchQuery = '';
             this.currentPage = 1;
             this.fetchPatients();
-        }
-    },
-
-    beforeUnmount() {
-        // Clear any pending timeouts
-        if (this.searchTimeout) {
-            clearTimeout(this.searchTimeout);
         }
     }
 };

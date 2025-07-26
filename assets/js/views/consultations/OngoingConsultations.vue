@@ -360,8 +360,7 @@ export default {
     // SSE connection status
     const sseConnected = ref(false);
     
-    // Request cancellation
-    let currentRequest = null;
+    // Request management
     let refreshInterval = null;
     let retryTimeout = null;
     let rateLimitTimeout = null;
@@ -458,10 +457,6 @@ export default {
       loading.value = true;
       error.value = null;
       
-      // Create abort controller for this specific request
-      const abortController = new AbortController();
-      currentRequest = abortController;
-      
       try {
         let doctorId = null;
         if (isDoctor.value && currentUser.value) {
@@ -471,8 +466,7 @@ export default {
 
         console.log('🔄 Fetching ongoing consultations...');
         const response = await axios.get('/api/consultations/ongoing', {
-          signal: abortController.signal,
-          timeout: 8000,
+          timeout: 12000, // Increased timeout
           params: {
             doctorId: doctorId
           }
@@ -490,70 +484,28 @@ export default {
         cache.value.timestamp = Date.now();
         
       } catch (err) {
-        // Only handle error if this request wasn't aborted
-        if (currentRequest === abortController) {
-          if (axios.isCancel(err)) {
-            console.log('Request was canceled');
-          } else {
-            // Enhanced error handling with specific messages
-            let errorMessage = 'Failed to load ongoing consultations.';
-            
-            console.error('🔍 API Error Details:', {
-              status: err.response?.status,
-              statusText: err.response?.statusText,
-              data: err.response?.data,
-              url: err.config?.url,
-              method: err.config?.method,
-              headers: err.config?.headers ? Object.keys(err.config.headers) : 'none',
-              hasAuthHeader: !!err.config?.headers?.Authorization
-            });
-            
-            if (err.response?.status === 401) {
-              errorMessage = 'Authentication required. Please log in again.';
-              console.log('🔐 401 Unauthorized - checking authentication status...');
-              console.log('🔐 Current user:', AuthService.getCurrentUser());
-              console.log('🔐 Is authenticated:', AuthService.isAuthenticated());
-              console.log('🔐 Token valid:', !AuthService.isTokenExpired(AuthService.getCurrentUser()?.token));
-              
-              // Check if user is still authenticated
-              if (!AuthService.isAuthenticated()) {
-                console.log('🔐 User is not authenticated, forcing logout...');
-                // Force logout and redirect to login
-                AuthService.logout();
-                router.push('/login');
-                return;
-              } else {
-                console.log('🔐 User appears authenticated but got 401 - token might be expired');
-                // Token might be expired, try to refresh
-                console.log('🔄 Token might be expired, attempting to refresh data...');
-                setTimeout(() => {
-                  fetchOngoingConsultations(false, false);
-                }, 1000);
-              }
-            } else if (err.response?.status === 429) {
-              errorMessage = 'Too many requests. Please wait before refreshing.';
-            } else if (err.response?.status >= 500) {
-              errorMessage = 'Server error occurred. Retrying automatically...';
-              retryCount.value++;
-              if (retryCount.value < 3) {
-                setTimeout(() => retryWithBackoff(), 2000);
-              }
-            } else if (err.response?.status === 404) {
-              errorMessage = 'Consultation data not found.';
-            } else if (err.code === 'NETWORK_ERROR' || !err.response) {
-              errorMessage = 'Network connection error. Check your internet connection.';
-            }
-            
-            error.value = errorMessage;
-            console.error('Fetch ongoing consultations error:', err);
-          }
+        // Simplified error handling
+        let errorMessage = 'Failed to load ongoing consultations.';
+        
+        if (err.response?.status === 401) {
+          errorMessage = 'Authentication required. Please log in again.';
+          AuthService.logout();
+          router.push('/login');
+          return;
+        } else if (err.response?.status === 429) {
+          errorMessage = 'Too many requests. Please wait before refreshing.';
+        } else if (err.response?.status >= 500) {
+          errorMessage = 'Server error occurred. Please try again later.';
+        } else if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+          errorMessage = 'Request timeout. Please check your connection and try again.';
+        } else if (err.code === 'NETWORK_ERROR' || !err.response) {
+          errorMessage = 'Network connection error. Check your internet connection.';
         }
+        
+        error.value = errorMessage;
+        console.error('Fetch ongoing consultations error:', err);
       } finally {
-        // Only clear loading if this is still the current request
-        if (currentRequest === abortController) {
-          loading.value = false;
-          currentRequest = null;
-        }
+        loading.value = false;
       }
     };
     
@@ -689,14 +641,14 @@ export default {
         clearInterval(refreshInterval);
       }
       
-      // Auto-refresh every 60 seconds (less frequent to reduce load)
+      // Auto-refresh every 2 minutes (less frequent to reduce load)
       // Only refresh if SSE is not connected (fallback mechanism)
       refreshInterval = setInterval(() => {
         if (!loading.value && !isRateLimited.value && !error.value && !sseConnected.value) {
           console.log('🔄 Auto-refresh triggered (SSE not connected)');
           fetchOngoingConsultations(true, false); // Allow cache usage, not manual
         }
-      }, 60000);
+      }, 120000); // 2 minutes
     };
 
     // Initialize SSE connection for real-time updates
@@ -879,9 +831,6 @@ export default {
 
     onUnmounted(() => {
       // Cleanup
-      if (currentRequest) {
-        currentRequest.abort();
-      }
       if (refreshInterval) {
         clearInterval(refreshInterval);
       }

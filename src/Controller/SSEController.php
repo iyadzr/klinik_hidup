@@ -64,8 +64,8 @@ class SSEController extends AbstractController
             $lastHeartbeat = 0;
             $connectionId = uniqid('sse_', true);
             $maxConnectionTime = 1800; // Reduced from 3600 to 30 minutes
-            $heartbeatInterval = 30; // Increased from 15 to 30 seconds to reduce load
-            $checkInterval = 2; // Increased from 1 to 2 seconds for better performance
+            $heartbeatInterval = 60; // Increased from 30 to 60 seconds to reduce server load
+            $checkInterval = 5; // Increased from 2 to 5 seconds to prevent deadlocks
             
             $tempDir = sys_get_temp_dir();
             $updateFile = $tempDir . '/queue_updates.json';
@@ -112,8 +112,8 @@ class SSEController extends AbstractController
                         clearstatcache(true, $updateFile); // Clear file stat cache
                         $fileTime = filemtime($updateFile);
                         
-                        // Only process if file was modified recently (within last 5 minutes)
-                        if ($fileTime > ($currentTime - 300) && $fileTime > $lastUpdateTime) {
+                        // Only process if file was modified recently (within last 2 minutes) and avoid excessive checks
+                        if ($fileTime > ($currentTime - 120) && $fileTime > $lastUpdateTime) {
                             $content = file_get_contents($updateFile);
                             if ($content !== false) {
                                 $updates = json_decode($content, true) ?: [];
@@ -150,8 +150,8 @@ class SSEController extends AbstractController
                         clearstatcache(true, $paymentUpdateFile);
                         $paymentFileTime = filemtime($paymentUpdateFile);
                         
-                        // Only process if file was modified recently
-                        if ($paymentFileTime > ($currentTime - 300) && $paymentFileTime > $lastUpdateTime) {
+                        // Only process if file was modified recently (within last 2 minutes)
+                        if ($paymentFileTime > ($currentTime - 120) && $paymentFileTime > $lastUpdateTime) {
                             $content = file_get_contents($paymentUpdateFile);
                             if ($content !== false) {
                                 $paymentUpdates = json_decode($content, true) ?: [];

@@ -278,6 +278,7 @@ import axios from 'axios';
 import * as bootstrap from 'bootstrap';
 // Removed complex request manager - using simple axios calls
 import timezoneUtils from '../../utils/timezoneUtils.js';
+import { cancelAllRequests } from '../../utils/requestManager.js';
 
 export default {
   name: 'QueueManagement',
@@ -308,6 +309,9 @@ export default {
       reconnectAttempts: 0,
       maxReconnectAttempts: 5,
       reconnectDelay: 1000,
+      
+      // Request cancellation
+      abortController: null,
       
       // Modal instances
       showPaymentModal: false,
@@ -451,6 +455,14 @@ export default {
         console.log('⏩ Queue list loading already in progress');
         return;
       }
+      
+      // Cancel any existing request
+      if (this.abortController) {
+        this.abortController.abort();
+      }
+      
+      // Create new abort controller
+      this.abortController = new AbortController();
 
       try {
         this.isLoading = true;
@@ -466,7 +478,8 @@ export default {
             limit: this.pageSize,
             _t: Date.now() // Cache-busting timestamp
           },
-          timeout: 15000
+          timeout: 15000,
+          signal: this.abortController.signal
         });
 
         // Filter and organize queue data to show all relevant statuses
@@ -520,6 +533,12 @@ export default {
         });
 
       } catch (error) {
+        // Handle cancellation gracefully
+        if (error.name === 'AbortError' || error.message?.includes('canceled')) {
+          console.log('⏹️ Queue list request cancelled');
+          return;
+        }
+        
         // Enhanced error handling with specific error types
         if (error.circuitBreakerOpen) {
           console.log('🔌 Circuit breaker open for queue list - using cached data if available');
@@ -551,6 +570,7 @@ export default {
         this.queueList = [];
       } finally {
         this.isLoading = false;
+        this.abortController = null;
       }
     },
 
@@ -583,7 +603,8 @@ export default {
             status: this.selectedStatus,
             _refresh: Date.now() // Cache busting
           },
-          timeout: 15000
+          timeout: 15000,
+          signal: this.abortController?.signal
         });
         
         // Process the refresh response directly instead of calling loadQueueList again
@@ -644,12 +665,33 @@ export default {
         return;
       }
 
+      // Check if payment already processed (local state check)
+      if (this.selectedQueue.isPaid) {
+        this.$toast?.error?.('Payment has already been processed for this queue');
+        this.closePaymentModal();
+        return;
+      }
+
+      // Create a unique request key to prevent duplicate payments
+      const requestKey = `payment_${this.selectedQueue.id}_${Date.now()}`;
+      
       try {
         this.processing = true;
         
+        // Double-check payment status before processing
+        const queueCheckResponse = await axios.get(`/api/queue/${this.selectedQueue.id}`);
+        if (queueCheckResponse.data.isPaid) {
+          this.$toast?.error?.('Payment has already been processed for this queue');
+          this.closePaymentModal();
+          return;
+        }
+        
+        console.log(`💳 Processing payment for queue ${this.selectedQueue.id} with key: ${requestKey}`);
+        
         await axios.post(`/api/queue/${this.selectedQueue.id}/payment`, {
           amount: this.calculateAmount(this.selectedQueue),
-          paymentMethod: this.paymentMethod
+          paymentMethod: this.paymentMethod,
+          requestKey: requestKey // Add request key for backend deduplication
         }, { 
           timeout: 20000
         });
@@ -662,6 +704,7 @@ export default {
         if (queueIndex !== -1) {
           this.queueList[queueIndex].isPaid = true;
           this.queueList[queueIndex].paidAt = new Date().toISOString();
+          this.queueList[queueIndex].paymentMethod = this.paymentMethod;
         }
         
         // Notify other components about payment
@@ -692,6 +735,7 @@ export default {
         
         if (error.response?.status === 409) {
           this.$toast?.error?.('Payment has already been processed for this queue');
+          this.closePaymentModal();
         } else if (error.response?.status === 400) {
           this.$toast?.error?.('Invalid payment amount or method');
         } else {
@@ -781,6 +825,12 @@ export default {
     // Component cleanup
     cleanup() {
       console.log('🧹 Cleaning up QueueManagement component...');
+      
+      // Cancel any pending requests
+      if (this.abortController) {
+        this.abortController.abort();
+        this.abortController = null;
+      }
       
       // Close SSE connection
       if (this.eventSource) {

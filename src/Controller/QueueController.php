@@ -800,9 +800,28 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Payment method and amount are required'], 400);
             }
             
-            // Check if payment already processed
+            // Enhanced duplicate payment prevention
             if ($queue->getIsPaid()) {
+                $this->logger->warning('Duplicate payment attempt detected', [
+                    'queueId' => $id,
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'requestKey' => $data['requestKey'] ?? 'unknown'
+                ]);
                 return new JsonResponse(['error' => 'Payment already processed for this queue'], 409);
+            }
+            
+            // Check for existing Payment records for this queue
+            $existingPayment = $this->entityManager->getRepository(\App\Entity\Payment::class)
+                ->findOneBy(['queue' => $queue]);
+            
+            if ($existingPayment) {
+                $this->logger->warning('Existing payment record found for queue', [
+                    'queueId' => $id,
+                    'queueNumber' => $queue->getQueueNumber(),
+                    'existingPaymentId' => $existingPayment->getId(),
+                    'requestKey' => $data['requestKey'] ?? 'unknown'
+                ]);
+                return new JsonResponse(['error' => 'Payment record already exists for this queue'], 409);
             }
             
             // Get current user (who is processing the payment)

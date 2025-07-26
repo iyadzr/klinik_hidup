@@ -270,7 +270,7 @@ export default {
   },
   created() {
     this.loadData();
-    this.refreshInterval = setInterval(this.loadData, 2000);
+    this.refreshInterval = setInterval(this.loadData, 10000); // Reduced from 2s to 10s to prevent deadlocks
     this.initializeSSE();
   },
   mounted() {
@@ -457,6 +457,8 @@ export default {
             
             if (update.type === 'queue_status_update') {
               this.handleQueueUpdate(update.data);
+            } else if (update.type === 'queue_count_update') {
+              this.handleQueueCountUpdate(update.data);
             }
           } catch (error) {
             console.error('Error parsing SSE message:', error);
@@ -495,6 +497,15 @@ export default {
     handleQueueUpdate(queueData) {
       // Always refresh the list for any update to ensure consistency and avoid double refresh/blink
       this.loadData();
+    },
+    handleQueueCountUpdate(updateData) {
+      console.log('Queue count update received:', updateData);
+      
+      // For patient registration or status changes, refresh the queue list
+      if (updateData.action === 'patient_registered' || updateData.newStatus) {
+        console.log('Patient registered or status changed, refreshing queue data');
+        this.loadData();
+      }
     },
     enterFullscreen() {
       this.isFullscreen = true;
