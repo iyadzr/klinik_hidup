@@ -369,6 +369,117 @@
         </div>
       </div>
     </div>
+
+    <!-- Payment Processing Modal -->
+    <div v-if="showPaymentModal" class="vue-modal-overlay" @click="closePaymentModal">
+      <div class="vue-modal-dialog" @click.stop>
+        <div class="vue-modal-content">
+          <div class="vue-modal-header">
+            <h5 class="vue-modal-title">
+              <i class="fas fa-credit-card me-2"></i>Process Payment
+            </h5>
+            <button type="button" class="vue-btn-close" @click="closePaymentModal" aria-label="Close">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="vue-modal-body">
+            <div v-if="selectedPaymentQueue">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <h6 class="text-muted mb-2">Patient Information</h6>
+                  <div class="card bg-light">
+                    <div class="card-body py-2 px-3">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                          <div class="fw-bold">{{ selectedPaymentQueue.patient?.name || 'N/A' }}</div>
+                          <small class="text-muted">{{ selectedPaymentQueue.patient?.nric || '' }}</small>
+                        </div>
+                        <span class="badge bg-primary">Queue #{{ selectedPaymentQueue.queue_number }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <h6 class="text-muted mb-2">Doctor</h6>
+                  <div class="card bg-light">
+                    <div class="card-body py-2 px-3">
+                      <div class="fw-bold">{{ selectedPaymentQueue.doctor?.name || 'N/A' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <h6 class="text-muted mb-2">Payment Amount</h6>
+                  <div class="card bg-light">
+                    <div class="card-body py-2 px-3">
+                      <div class="fw-bold text-success">
+                        <i class="fas fa-dollar-sign me-1"></i>
+                        RM {{ parseFloat(paymentAmount || 0).toFixed(2) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <h6 class="text-muted mb-2">Payment Method</h6>
+                  <div class="payment-methods">
+                    <div class="form-check form-check-inline">
+                      <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="paymentMethod" 
+                        id="paymentCash" 
+                        value="cash" 
+                        v-model="paymentMethod"
+                      >
+                      <label class="form-check-label fw-medium" for="paymentCash">
+                        <i class="fas fa-money-bill-wave me-2 text-success"></i>Cash
+                      </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                      <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="paymentMethod" 
+                        id="paymentCard" 
+                        value="card" 
+                        v-model="paymentMethod"
+                      >
+                      <label class="form-check-label fw-medium" for="paymentCard">
+                        <i class="fas fa-credit-card me-2 text-primary"></i>Card
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="selectedPaymentQueue.medicines_count > 0" class="mb-3">
+                <h6 class="text-muted mb-2">Prescribed Medicines</h6>
+                <div class="alert alert-info">
+                  <i class="fas fa-pills me-2"></i>
+                  <strong>{{ selectedPaymentQueue.medicines_count }} medicines prescribed</strong>
+                  <div class="small mt-1">{{ selectedPaymentQueue.medicines_summary }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="vue-modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closePaymentModal">Cancel</button>
+            <button 
+              type="button" 
+              class="btn btn-success fw-bold"
+              @click="acceptPayment"
+              :disabled="!paymentMethod || processing || paymentAmount <= 0"
+            >
+              <i v-if="processing" class="fas fa-spinner fa-spin me-1"></i>
+              <i v-else class="fas fa-check me-1"></i>
+              {{ processing ? 'Processing...' : 'Accept Payment' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -376,6 +487,7 @@
 import axios from 'axios';
 import { Modal } from 'bootstrap';
 import { formatDate } from '../../utils/dateUtils';
+import requestDebouncer from '../../utils/requestDebouncer';
 
 export default {
   name: 'PaymentsDashboard',
@@ -415,7 +527,13 @@ export default {
       eventSource: null,
       sseConnected: false,
       reconnectAttempts: 0,
-      maxReconnectAttempts: 5
+      maxReconnectAttempts: 5,
+      // Payment modal data
+      showPaymentModal: false,
+      selectedPaymentQueue: null,
+      paymentAmount: 0,
+      paymentMethod: 'cash',
+      processing: false
     };
   },
   computed: {
@@ -605,9 +723,13 @@ export default {
       this.$toast?.info('Receipt printing not implemented yet');
     },
     processPayment(payment) {
-      // For pending payments, redirect to queue management to process payment
+      // For pending payments, show payment modal instead of redirecting
       if (payment.type === 'pending' && payment.queue_number) {
-        this.$router.push(`/queue?payment=${payment.queue_number}`);
+        this.selectedPaymentQueue = payment;
+        this.paymentAmount = parseFloat(payment.amount);
+        this.paymentMethod = 'cash'; // Default to cash
+        this.processing = false;
+        this.showPaymentModal = true;
       } else {
         this.$toast?.warning('Unable to process payment - queue information not available');
       }
@@ -791,6 +913,120 @@ export default {
         this.eventSource = null;
         this.sseConnected = false;
       }
+    },
+    
+    // Payment modal methods
+    closePaymentModal() {
+      this.showPaymentModal = false;
+      this.selectedPaymentQueue = null;
+      this.paymentAmount = 0;
+      this.paymentMethod = 'cash';
+      this.processing = false;
+    },
+    
+    async acceptPayment() {
+      if (!this.paymentMethod || !this.selectedPaymentQueue) {
+        this.$toast?.error('Please select a payment method');
+        return;
+      }
+
+      // Prevent double-processing
+      if (this.processing) {
+        console.log('⚠️ Payment already processing, ignoring duplicate request');
+        return;
+      }
+
+      // Determine queue ID from the payment data structure
+      let queueId;
+      
+      if (this.selectedPaymentQueue.type === 'pending') {
+        // For pending payments, use the queue_id field added to the response
+        queueId = this.selectedPaymentQueue.queue_id;
+      } else {
+        // For completed payments, use the standard id field
+        queueId = this.selectedPaymentQueue.id;
+      }
+      
+      if (!queueId) {
+        this.$toast?.error('Queue ID not found - cannot process payment');
+        return;
+      }
+
+      this.processing = true;
+
+      try {
+        console.log(`💳 Processing payment for queue ${this.selectedPaymentQueue.queue_number}`);
+        
+        // Use request debouncer to prevent duplicate payment requests
+        const paymentKey = `payment_${queueId}`;
+        
+        const result = await requestDebouncer.debounce(
+          paymentKey,
+          async (signal) => {
+            const paymentData = {
+              amount: this.paymentAmount,
+              paymentMethod: this.paymentMethod,
+              requestKey: `payment_${queueId}_${Date.now()}` // Add request key for backend deduplication
+            };
+            
+            console.log('🔍 Payment data:', paymentData);
+            
+            return axios.post(`/api/queue/${queueId}/payment`, paymentData, {
+              timeout: 20000,
+              signal // Pass abort signal for cancellation
+            });
+          },
+          500 // 500ms debounce to prevent rapid clicks
+        );
+        
+        console.log('✅ Payment API response:', result.data);
+        
+        // The QueueController returns { message, isPaid, paidAt, status, paymentId, reference }
+        // It doesn't have a 'success' field, so check for the message field instead
+        if (result.data.message && result.data.message.includes('successfully')) {
+          this.$toast?.success('Payment processed successfully');
+          
+          // Trigger localStorage event for cross-tab communication
+          localStorage.setItem('paymentsUpdated', Date.now().toString());
+          
+          // Close modal and refresh data
+          this.closePaymentModal();
+          this.loadPayments();
+        } else {
+          throw new Error(result.data.error || result.data.message || 'Payment processing failed');
+        }
+        
+      } catch (error) {
+        console.error('❌ Payment processing failed:', error);
+        console.error('❌ Error response data:', error.response?.data);
+        console.error('❌ Error status:', error.response?.status);
+        
+        if (error.response?.status === 409) {
+          this.$toast?.error('Payment has already been processed for this queue');
+          this.closePaymentModal();
+          // Refresh data to reflect current payment status
+          this.loadPayments();
+        } else if (error.response?.status === 400) {
+          this.$toast?.error('Invalid payment amount or method');
+        } else if (error.response?.status === 404) {
+          this.$toast?.error('Queue not found. Payment cannot be processed.');
+        } else if (error.name === 'AbortError') {
+          console.log('🛑 Payment request was cancelled');
+          // Don't show error for cancelled requests
+        } else {
+          const errorMsg = error.response?.data?.error || error.message || 'Payment processing failed. Please try again.';
+          this.$toast?.error(errorMsg);
+        }
+      } finally {
+        this.processing = false;
+      }
+    },
+    
+    // Handle keyboard events
+    handleKeydown(event) {
+      if (event.key === 'Escape' && this.showPaymentModal) {
+        this.closePaymentModal();
+      }
     }
   },
   mounted() {
@@ -814,6 +1050,9 @@ export default {
     
     // Listen for storage events (cross-tab communication)
     window.addEventListener('storage', this.handleStorageEvent);
+    
+    // Listen for keyboard events
+    window.addEventListener('keydown', this.handleKeydown);
   },
   beforeUnmount() {
     // Cleanup intervals and event listeners
@@ -826,6 +1065,10 @@ export default {
     
     window.removeEventListener('paymentProcessed', this.handlePaymentEvent);
     window.removeEventListener('storage', this.handleStorageEvent);
+    window.removeEventListener('keydown', this.handleKeydown);
+    
+    // Cancel any pending payment requests when component unmounts
+    requestDebouncer.cancelAll();
   }
 };
 </script>
@@ -935,6 +1178,82 @@ code {
   transform: translateY(0);
 }
 
+/* Vue Modal Styles */
+.vue-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1055;
+  backdrop-filter: blur(2px);
+}
+
+.vue-modal-dialog {
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.vue-modal-content {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.vue-modal-header {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: between;
+  align-items: center;
+  border-bottom: none;
+}
+
+.vue-modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  flex-grow: 1;
+}
+
+.vue-btn-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.vue-btn-close:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.vue-modal-body {
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.vue-modal-footer {
+  background-color: #f8f9fa;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 @media (max-width: 768px) {
   .table-responsive {
     font-size: 0.875rem;
@@ -951,6 +1270,20 @@ code {
   .badge-payment-method {
     font-size: 0.7rem;
     padding: 0.3rem 0.6rem;
+  }
+  
+  .vue-modal-dialog {
+    width: 95%;
+    margin: 1rem;
+  }
+  
+  .vue-modal-body {
+    padding: 1rem;
+    max-height: 70vh;
+  }
+  
+  .vue-modal-footer {
+    padding: 1rem;
   }
 }
 </style> 

@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import AuthService from '../services/AuthService';
+import globalRequestManager from '../utils/GlobalRequestManager.js';
+import requestKiller from '../utils/AggressiveRequestKiller.js';
 import Dashboard from '../views/Dashboard.vue';
 import PatientList from '../views/patients/PatientList.vue';
 import DoctorList from '../views/doctors/DoctorList.vue';
@@ -46,24 +48,7 @@ const routes = [
     path: '/dashboard',
     name: 'Dashboard',
     component: Dashboard,
-    meta: { requiresAuth: true },
-    beforeEnter: (to, from, next) => {
-      // If user comes to dashboard directly, redirect based on role
-      if (from.path === '/' || from.path === '/login') {
-        const user = AuthService.getCurrentUser();
-        const roles = user?.roles || [];
-        
-        if (roles.includes('ROLE_ASSISTANT')) {
-          next('/registration');
-        } else if (roles.includes('ROLE_DOCTOR')) {
-          next('/consultations/ongoing');
-        } else {
-          next();
-        }
-      } else {
-        next();
-      }
-    }
+    meta: { requiresAuth: true }
   },
   {
     path: '/registration',
@@ -205,14 +190,61 @@ const router = createRouter({
   routes
 });
 
+// Navigation throttling to prevent rapid navigation deadlocks
+let lastNavigationTime = 0;
+const NAVIGATION_THROTTLE_MS = 300; // Reduced to 300ms for faster login response
+
 router.beforeEach((to, from, next) => {
+  const now = Date.now();
+  
+  // Skip throttling and request killing for login/auth related navigations
+  const isAuthNavigation = ['/login', '/register'].includes(to.path) || ['/login', '/register'].includes(from.path);
+  
+  // Throttle rapid navigation (but not for auth)
+  if (!isAuthNavigation && from.path && from.path !== to.path && (now - lastNavigationTime) < NAVIGATION_THROTTLE_MS) {
+    console.log('🚨 NAVIGATION THROTTLED - Too fast');
+    return; // Block the navigation
+  }
+  
+  // NUCLEAR OPTION: Kill ALL pending requests on navigation (but not for auth)
+  if (!isAuthNavigation && from.path && from.path !== to.path) {
+    console.log(`🚨 NAVIGATION: ${from.path} → ${to.path} - KILLING ALL REQUESTS`);
+    lastNavigationTime = now;
+    
+    // Immediate nuclear cleanup
+    requestKiller.killAllRequests();
+    
+    // Also use existing cleanup methods as backup
+    globalRequestManager.cancelRouteRequests(from.path);
+    
+    // Force close specific EventSource connections (backup)
+    if (window._queueDisplayEventSource) {
+      window._queueDisplayEventSource.close();
+      window._queueDisplayEventSource = null;
+    }
+    
+    if (window._queueManagementEventSource) {
+      window._queueManagementEventSource.close();
+      window._queueManagementEventSource = null;
+    }
+  }
+
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
   const requiredRoles = to.meta.roles;
   const isAuthenticated = AuthService.isAuthenticated();
 
-  // If user is authenticated and trying to access login/register, redirect to dashboard
+  // If user is authenticated and trying to access login/register, redirect based on role
   if (isAuthenticated && ['/login', '/register'].includes(to.path)) {
-    next('/dashboard');
+    const user = AuthService.getCurrentUser();
+    const roles = user?.roles || [];
+    
+    if (roles.includes('ROLE_ASSISTANT')) {
+      next('/registration');
+    } else if (roles.includes('ROLE_DOCTOR')) {
+      next('/consultations/ongoing');
+    } else {
+      next('/dashboard');
+    }
     return;
   }
 

@@ -73,34 +73,50 @@
                   <td>Dr. {{ visit.doctor?.name || 'Unknown' }}</td>
                   <td>{{ visit.diagnosis || 'No diagnosis recorded' }}</td>
                   <td>
-                    <div v-if="visit.medicines && visit.medicines.length > 0">
-                      <div v-for="(medicine, index) in getMedicinesList(visit.medicines).slice(0, 2)" :key="index">
-                        <strong>{{ medicine.name }}</strong>
-                        <span v-if="medicine.quantity" class="text-muted">({{ medicine.quantity }})</span>
+                    <div v-if="(visit.prescribedMedications && visit.prescribedMedications.length > 0) || (visit.medications && visit.medications.length > 0)">
+                      <!-- Show prescribed medications first if available -->
+                      <div v-if="visit.prescribedMedications && visit.prescribedMedications.length > 0">
+                        <div v-for="(medicine, index) in visit.prescribedMedications.slice(0, 2)" :key="'prescribed-' + index">
+                          <strong>{{ medicine.medication?.name || medicine.name || 'Unknown Medicine' }}</strong>
+                          <span v-if="medicine.quantity" class="text-muted">({{ medicine.quantity }})</span>
+                        </div>
+                        <small v-if="visit.prescribedMedications.length > 2" class="text-muted">
+                          +{{ visit.prescribedMedications.length - 2 }} more...
+                        </small>
                       </div>
-                      <small v-if="getMedicinesList(visit.medicines).length > 2" class="text-muted">
-                        +{{ getMedicinesList(visit.medicines).length - 2 }} more...
-                      </small>
+                      <!-- Fallback to legacy medications format -->
+                      <div v-else-if="visit.medications && visit.medications.length > 0">
+                        <div v-for="(medicine, index) in getMedicinesList(visit.medications).slice(0, 2)" :key="'legacy-' + index">
+                          <strong>{{ medicine.name || medicine.medicationName || 'Unknown Medicine' }}</strong>
+                          <span v-if="medicine.quantity" class="text-muted">({{ medicine.quantity }})</span>
+                        </div>
+                        <small v-if="getMedicinesList(visit.medications).length > 2" class="text-muted">
+                          +{{ getMedicinesList(visit.medications).length - 2 }} more...
+                        </small>
+                      </div>
                     </div>
                     <span v-else class="text-muted">No medicines</span>
                   </td>
                   <td>
                     <span v-if="visit.mcRequired" class="badge bg-warning text-dark">
-                      <i class="fas fa-clock me-1"></i>MC Required
+                      <i class="fas fa-certificate me-1"></i>MC Required
                     </span>
                     <span v-else class="badge bg-secondary">
                       <i class="fas fa-times me-1"></i>No MC
                     </span>
                   </td>
                   <td>
-                    <div v-if="visit.totalAmount">
+                    <div v-if="visit.totalAmount && visit.totalAmount > 0">
                       <strong>RM {{ formatCurrency(visit.totalAmount) }}</strong>
                       <br>
                       <small :class="visit.isPaid ? 'text-success' : 'text-danger'">
+                        <i :class="visit.isPaid ? 'fas fa-check' : 'fas fa-exclamation-triangle'" class="me-1"></i>
                         {{ visit.isPaid ? 'Paid' : 'Unpaid' }}
                       </small>
                     </div>
-                    <span v-else class="text-muted">No payment info</span>
+                    <div v-else class="text-muted">
+                      <small>No payment required</small>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -185,7 +201,11 @@ export default {
           medicineList = [medicines];
         }
         
-        return medicineList.filter(med => med && (med.name || med.medicationName));
+        // Filter out empty entries and ensure we have valid medicine data
+        return medicineList.filter(med => {
+          if (!med) return false;
+          return med.name || med.medicationName || med.medication;
+        });
       } catch (error) {
         console.error('Error parsing medicines:', error);
         return [];

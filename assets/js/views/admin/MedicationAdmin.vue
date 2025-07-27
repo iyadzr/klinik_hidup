@@ -612,18 +612,40 @@ export default {
     },
     
     editMedication(medication) {
+      console.log('Editing medication:', medication);
       this.editingMedication = medication;
+      
+      // Reset form first to ensure clean state
       this.medicationForm = {
-        name: medication.name,
-        unitType: medication.unitType,
-        unitDescription: medication.unitDescription || '',
-        costPrice: medication.costPrice || 0.00,
-        sellingPrice: medication.sellingPrice || 0.00,
-        category: medication.category || '',
+        name: '',
+        unitType: '',
+        unitDescription: '',
+        costPrice: 0.00,
+        sellingPrice: 0.00,
+        category: '',
         customCategory: '',
-        description: medication.description || ''
+        description: ''
       };
-      this.medicationModal.show();
+      
+      // Wait for Vue to process the reset, then populate with medication data
+      this.$nextTick(() => {
+        this.medicationForm = {
+          name: medication.name || '',
+          unitType: medication.unitType || '',
+          unitDescription: medication.unitDescription || '',
+          costPrice: medication.costPrice || 0.00,
+          sellingPrice: medication.sellingPrice || 0.00,
+          category: medication.category || '',
+          customCategory: '',
+          description: medication.description || ''
+        };
+        console.log('Medication form populated:', this.medicationForm);
+        console.log('Unit type set to:', this.medicationForm.unitType);
+        console.log('Category set to:', this.medicationForm.category);
+        
+        // Show modal after data is properly set
+        this.medicationModal.show();
+      });
     },
     
     async saveMedication() {

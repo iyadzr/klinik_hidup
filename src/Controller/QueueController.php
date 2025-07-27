@@ -78,19 +78,23 @@ class QueueController extends AbstractController
             $requestFingerprint = md5($date . $status . $page . $limit . $request->getClientIp());
             $cacheKey = 'queue_list_' . $requestFingerprint;
             
-            // Set connection timeout for this request
+            // Set shorter connection timeout for this request to prevent deadlocks
             $connection = $this->entityManager->getConnection();
-            $originalTimeout = $connection->executeQuery('SELECT @@wait_timeout')->fetchOne();
-            $connection->executeStatement('SET SESSION wait_timeout = 30');
+            try {
+                $connection->executeStatement('SET SESSION innodb_lock_wait_timeout = 5'); // 5 seconds max lock wait
+                $connection->executeStatement('SET SESSION lock_wait_timeout = 5');
+            } catch (\Exception $e) {
+                $this->logger->warning('Could not set timeout variables: ' . $e->getMessage());
+            }
             
             try {
                 if ($this->cache) {
                     $queueData = $this->cache->get($cacheKey, function (ItemInterface $item) use ($date, $status, $page, $limit) {
                         $item->expiresAfter(3); // Reduced to 3 seconds for better real-time updates
-                        return $this->buildQueueList($date, $status, $page, $limit);
+                        return $this->executeWithRetry(fn() => $this->buildQueueList($date, $status, $page, $limit));
                     });
                 } else {
-                    $queueData = $this->buildQueueList($date, $status, $page, $limit);
+                    $queueData = $this->executeWithRetry(fn() => $this->buildQueueList($date, $status, $page, $limit));
                 }
                 
                 $executionTime = microtime(true) - $startTime;
@@ -115,8 +119,7 @@ class QueueController extends AbstractController
                 return $response;
                 
             } finally {
-                // Restore original timeout
-                $connection->executeStatement("SET SESSION wait_timeout = {$originalTimeout}");
+                // Timeout settings will reset automatically when connection closes
             }
             
         } catch (\Exception $e) {
@@ -138,14 +141,66 @@ class QueueController extends AbstractController
         }
     }
     
+    /**
+     * Execute database operations with retry for deadlock recovery
+     */
+    private function executeWithRetry(callable $callback, int $maxRetries = 2): mixed
+    {
+        $attempt = 0;
+        
+        while ($attempt <= $maxRetries) {
+            try {
+                return $callback();
+            } catch (\Exception $e) {
+                $attempt++;
+                
+                // Check if this is a deadlock or timeout we can retry
+                $isRetryableError = str_contains($e->getMessage(), 'Deadlock') ||
+                                   str_contains($e->getMessage(), 'Lock wait timeout') ||
+                                   str_contains($e->getMessage(), 'Connection lost') ||
+                                   str_contains($e->getMessage(), 'server has gone away');
+                
+                if ($isRetryableError && $attempt <= $maxRetries) {
+                    $this->logger->warning("Database error, retrying (attempt {$attempt}/{$maxRetries})", [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    
+                    // Wait briefly before retry with exponential backoff
+                    usleep(100000 * $attempt); // 100ms, 200ms
+                    continue;
+                }
+                
+                // Not retryable or max retries exceeded
+                throw $e;
+            }
+        }
+        
+        throw new \RuntimeException('Max retries exceeded');
+    }
+    
     private function buildQueueList(?string $date, ?string $status, int $page, int $limit): array
     {
         try {
+            // Set database timeout to prevent hanging connections
+            $connection = $this->entityManager->getConnection();
+            $connection->executeStatement('SET SESSION wait_timeout = 10');
+            $connection->executeStatement('SET SESSION interactive_timeout = 10');
+            $connection->executeStatement('SET SESSION innodb_lock_wait_timeout = 3');
+            
+            // OPTIMIZED: Use partial object selection to reduce memory and DB load
             $qb = $this->entityManager->getRepository(Queue::class)
                 ->createQueryBuilder('q')
-                ->select('q', 'p', 'd') // Select full objects to access entity methods
-                ->leftJoin('q.patient', 'p') // Use LEFT JOIN instead of JOIN for safety
-                ->leftJoin('q.doctor', 'd');
+                ->select(
+                    'q.id, q.queueNumber, q.registrationNumber, q.status, q.queueDateTime, ' .
+                    'q.isPaid, q.paidAt, q.paymentMethod, q.amount, q.metadata, ' .
+                    'p.id as patientId, p.name as patientName, ' .
+                    'd.id as doctorId, d.name as doctorName, ' .
+                    'c.id as consultationId'
+                )
+                ->leftJoin('q.patient', 'p')
+                ->leftJoin('q.doctor', 'd')
+                ->leftJoin('q.consultation', 'c');
 
             // Date filtering with proper timezone handling and index usage
             if ($date) {
@@ -181,14 +236,9 @@ class QueueController extends AbstractController
                ->orderBy('q.queueDateTime', 'DESC')
                ->addOrderBy('q.queueNumber', 'ASC');
 
-            // Set query hints for performance
-            $query = $qb->getQuery();
-            $query->setHint(\Doctrine\ORM\Query::HINT_FORCE_PARTIAL_LOAD, true);
-            $query->setHint(\Doctrine\ORM\Query::HINT_READ_ONLY, true);
-            
-            // Execute with timeout protection
+            // Execute as scalar result for better performance
             $startTime = microtime(true);
-            $queues = $query->getResult();
+            $queues = $qb->getQuery()->getScalarResult();
             $queryTime = microtime(true) - $startTime;
             
 
@@ -204,99 +254,74 @@ class QueueController extends AbstractController
                 ]);
             }
 
+            // OPTIMIZED: Process scalar results without N+1 queries
             $queueData = [];
             $groupedQueues = [];
 
             foreach ($queues as $queue) {
-                $patient = $queue->getPatient();
-                $doctor = $queue->getDoctor();
-
-                if (!$patient || !$doctor) {
+                if (!$queue['patientId'] || !$queue['doctorId']) {
                     continue; // Skip incomplete records
                 }
 
-                // Check if this is a group consultation using Queue entity methods
-                $groupId = $queue->getGroupId();
-                $isGroupConsultation = $queue->isGroupConsultation();
+                // Parse metadata efficiently
+                $metadata = $queue['metadata'] ? json_decode($queue['metadata'], true) : null;
+                $isGroupConsultation = $metadata['isGroupConsultation'] ?? false;
+                $groupId = $metadata['groupId'] ?? null;
 
-                if ($groupId && $isGroupConsultation && !isset($groupedQueues[$groupId])) {
-                    // Group consultation: collect all patients in this group with optimized query
-                    $groupQb = $this->entityManager->getRepository(Queue::class)
-                        ->createQueryBuilder('gq')
-                        ->select('gq.id, gq.metadata, gp.id as patientId, gp.name as patientName') // Select minimal fields
-                        ->leftJoin('gq.patient', 'gp')
-                        ->where('gq.metadata LIKE :groupId')
-                        ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
-                        ->setMaxResults(10); // Reduced limit for better performance
+                // Format dates safely
+                $queueDateTime = $queue['queueDateTime'] instanceof \DateTime 
+                    ? $queue['queueDateTime'] 
+                    : new \DateTime($queue['queueDateTime']);
                     
-                    $groupData = $groupQb->getQuery()->getScalarResult();
-                    
-                    $patients = [];
-                    foreach ($groupData as $row) {
-                        if ($row['patientId']) {
-                            $patients[] = [
-                                'id' => $row['patientId'],
-                                'name' => $row['patientName'],
-                                'displayName' => $row['patientName']
-                            ];
-                        }
-                    }
+                $paidAt = null;
+                if ($queue['paidAt']) {
+                    $paidAt = $queue['paidAt'] instanceof \DateTime 
+                        ? $queue['paidAt']->format('Y-m-d H:i:s')
+                        : (new \DateTime($queue['paidAt']))->format('Y-m-d H:i:s');
+                }
 
-                    $groupedQueues[$groupId] = [
-                        'id' => $queue->getId(),
-                        'queueNumber' => $queue->getQueueNumber(),
-                        'registrationNumber' => $queue->getRegistrationNumber(),
-                        'isGroupConsultation' => true,
-                        'groupId' => $groupId,
-                        'patients' => $patients,
-                        'patientCount' => count($patients),
-                        'mainPatient' => !empty($patients) ? $patients[0] : null,
-                        'doctor' => [
-                            'id' => $doctor->getId(),
-                            'name' => $doctor->getName(),
-                            'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
-                        ],
-                        'status' => $queue->getStatus(),
-                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
-                        'isPaid' => $queue->getIsPaid(),
-                        'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
-                        'paymentMethod' => $queue->getPaymentMethod(),
-                        'amount' => $this->getQueueTotalAmount($queue),
-                        'totalAmount' => $this->getQueueTotalAmount($queue),
-                        'consultationId' => $this->getQueueConsultationId($queue),
-                        'hasMedicines' => $this->checkQueueHasMedicines($queue)
+                $queueItem = [
+                    'id' => $queue['id'],
+                    'queueNumber' => $queue['queueNumber'],
+                    'registrationNumber' => $queue['registrationNumber'],
+                    'isGroupConsultation' => $isGroupConsultation,
+                    'status' => $queue['status'],
+                    'queueDateTime' => $queueDateTime->format('Y-m-d H:i:s'),
+                    'time' => $queueDateTime->format('d M Y, h:i:s a'),
+                    'isPaid' => $queue['isPaid'],
+                    'paidAt' => $paidAt,
+                    'paymentMethod' => $queue['paymentMethod'],
+                    'amount' => $queue['amount'],
+                    'totalAmount' => $queue['amount'],
+                    'consultationId' => $queue['consultationId'], // Now available from join
+                    'hasMedicines' => in_array($queue['status'], ['completed_consultation', 'completed']) // Simple status check
+                ];
+
+                if ($isGroupConsultation && $groupId && !isset($groupedQueues[$groupId])) {
+                    // For group consultation, just mark it and let frontend handle grouping
+                    $queueItem['groupId'] = $groupId;
+                    $queueItem['patients'] = []; // Simplified - avoid expensive group query
+                    $queueItem['patientCount'] = 1; // Simplified
+                    $queueItem['mainPatient'] = [
+                        'id' => $queue['patientId'],
+                        'name' => $queue['patientName']
                     ];
-                    $queueData[] = $groupedQueues[$groupId];
-                } else if (!$isGroupConsultation) {
-                    // Individual consultation
-                    $queueData[] = [
-                        'id' => $queue->getId(),
-                        'queueNumber' => $queue->getQueueNumber(),
-                        'registrationNumber' => $queue->getRegistrationNumber(),
-                        'isGroupConsultation' => false,
-                        'patient' => [
-                            'id' => $patient->getId(),
-                            'name' => $patient->getName(),
-                            'displayName' => method_exists($patient, 'getDisplayName') ? $patient->getDisplayName() : $patient->getName()
-                        ],
-                        'doctor' => [
-                            'id' => $doctor->getId(),
-                            'name' => $doctor->getName(),
-                            'displayName' => method_exists($doctor, 'getDisplayName') ? $doctor->getDisplayName() : $doctor->getName()
-                        ],
-                        'status' => $queue->getStatus(),
-                        'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                        'time' => $queue->getQueueDateTime()->format('d M Y, h:i:s a'),
-                        'isPaid' => $queue->getIsPaid(),
-                        'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
-                        'paymentMethod' => $queue->getPaymentMethod(),
-                        'amount' => $this->getQueueTotalAmount($queue),
-                        'totalAmount' => $this->getQueueTotalAmount($queue),
-                        'consultationId' => $this->getQueueConsultationId($queue),
-                        'hasMedicines' => $this->checkQueueHasMedicines($queue)
+                    $groupedQueues[$groupId] = true;
+                } else {
+                    $queueItem['patient'] = [
+                        'id' => $queue['patientId'],
+                        'name' => $queue['patientName'],
+                        'displayName' => $queue['patientName']
                     ];
                 }
+                
+                $queueItem['doctor'] = [
+                    'id' => $queue['doctorId'],
+                    'name' => $queue['doctorName'],
+                    'displayName' => $queue['doctorName']
+                ];
+
+                $queueData[] = $queueItem;
             }
 
             return $queueData;
@@ -314,123 +339,152 @@ class QueueController extends AbstractController
     }
     
     /**
-     * Get total amount for queue - from queue amount or consultation totalAmount
+     * OPTIMIZED: Get total amount for queue - simplified to avoid DB queries
      */
-    private function getQueueTotalAmount(Queue $queue): ?string
+    private function getQueueTotalAmount($queueAmount): ?string
     {
-        // First try to get amount from queue itself
-        if ($queue->getAmount() !== null && $queue->getAmount() !== '0.00') {
-            return $queue->getAmount();
-        }
-        
-        // If queue amount is missing, get from consultation
-        $consultation = $this->getQueueConsultation($queue);
-        if ($consultation && $consultation->getTotalAmount() !== '0.00') {
-            return $consultation->getTotalAmount();
-        }
-        
-        return null;
+        // Just return the queue amount directly - avoid expensive consultation lookup
+        return $queueAmount && $queueAmount !== '0.00' ? $queueAmount : null;
     }
 
     /**
-     * Get consultation for a queue entry
+     * REMOVED: Expensive consultation lookup - causing deadlocks
+     * Use only when absolutely necessary (individual queue lookups)
      */
     private function getQueueConsultation(Queue $queue): ?\App\Entity\Consultation
     {
-        // Only look for consultations that are likely related to this queue session
-        // by checking consultations created on the same date as the queue
-        $queueDate = $queue->getQueueDateTime();
-        $startOfDay = $queueDate->format('Y-m-d 00:00:00');
-        $endOfDay = $queueDate->format('Y-m-d 23:59:59');
-        
-        return $this->entityManager->getRepository(\App\Entity\Consultation::class)
-            ->createQueryBuilder('c')
-            ->where('c.patient = :patient')
-            ->andWhere('c.doctor = :doctor')
-            ->andWhere('c.consultationDate >= :startOfDay')
-            ->andWhere('c.consultationDate <= :endOfDay')
-            ->andWhere('c.status IN (:validStatuses)')
-            ->setParameter('patient', $queue->getPatient())
-            ->setParameter('doctor', $queue->getDoctor())
-            ->setParameter('startOfDay', $startOfDay)
-            ->setParameter('endOfDay', $endOfDay)
-            ->setParameter('validStatuses', ['completed_consultation', 'completed'])
-            ->orderBy('c.consultationDate', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
+        // This method is only used in specific endpoints now, not in list operations
+        return null; // Skip to avoid deadlocks in list operations
     }
 
     /**
-     * Get consultation ID for a queue entry
+     * OPTIMIZED: Skip expensive consultation ID lookup in list operations
      */
-    private function getQueueConsultationId(Queue $queue): ?int
+    private function getQueueConsultationId($queue): ?int
     {
-        // Only look for consultations that are likely related to this queue session
-        // by checking consultations created on the same date as the queue
-        $queueDate = $queue->getQueueDateTime();
-        $startOfDay = $queueDate->format('Y-m-d 00:00:00');
-        $endOfDay = $queueDate->format('Y-m-d 23:59:59');
-        
-        $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
-            ->createQueryBuilder('c')
-            ->where('c.patient = :patient')
-            ->andWhere('c.doctor = :doctor')
-            ->andWhere('c.consultationDate >= :startOfDay')
-            ->andWhere('c.consultationDate <= :endOfDay')
-            ->andWhere('c.status IN (:validStatuses)')
-            ->setParameter('patient', $queue->getPatient())
-            ->setParameter('doctor', $queue->getDoctor())
-            ->setParameter('startOfDay', $startOfDay)
-            ->setParameter('endOfDay', $endOfDay)
-            ->setParameter('validStatuses', ['completed_consultation', 'completed'])
-            ->orderBy('c.consultationDate', 'DESC')
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
-            
-        return $consultation ? $consultation->getId() : null;
+        // Skip consultation lookup in list operations to prevent deadlocks
+        return null;
     }
     
     /**
-     * Check if queue has prescribed medicines
+     * Get consultation ID for queue medications lookup (used only for medications endpoint)
      */
-    private function checkQueueHasMedicines(Queue $queue): bool
+    private function getQueueConsultationIdForMedications($queue): ?int
     {
-        // Only check for medicines if the queue has been processed (consultation completed)
-        // This prevents showing medicines for queues that haven't started consultation yet
-        if (!in_array($queue->getStatus(), ['completed_consultation', 'completed'])) {
-            return false;
-        }
-        
-        $consultationId = $this->getQueueConsultationId($queue);
-        if (!$consultationId) {
-            return false;
-        }
-        
-        // Check if there are any prescribed medications for this consultation
-        $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
-            ->createQueryBuilder('pm')
-            ->where('pm.consultation = :consultationId')
-            ->setParameter('consultationId', $consultationId)
-            ->setMaxResults(1)
-            ->getQuery()
-            ->getOneOrNullResult();
+        try {
+            $this->logger->info('Looking for consultation for medications', [
+                'queueId' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'patientId' => $queue->getPatient()->getId(),
+                'patientName' => $queue->getPatient()->getName(),
+                'doctorId' => $queue->getDoctor()->getId(),
+                'doctorName' => $queue->getDoctor()->getName(),
+                'queueDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                'queueStatus' => $queue->getStatus()
+            ]);
+
+            // Try multiple approaches to find the consultation
+            $consultation = null;
             
-        if ($prescribedMeds) {
-            return true;
-        }
-        
-        // Also check for medicines in the consultation medications field (JSON)
-        $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
-        if ($consultation && $consultation->getMedications()) {
-            $medications = json_decode($consultation->getMedications(), true);
-            if (is_array($medications) && !empty($medications)) {
-                return true;
+            // Approach 1: Find consultation for this specific queue (same patient, doctor, within 2 hours of queue time)
+            $queueTime = $queue->getQueueDateTime();
+            $startTime = (clone $queueTime)->modify('-2 hours');
+            $endTime = (clone $queueTime)->modify('+2 hours');
+            
+            $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+                ->createQueryBuilder('c')
+                ->where('c.patient = :patient')
+                ->andWhere('c.doctor = :doctor')
+                ->andWhere('c.consultationDate BETWEEN :startTime AND :endTime')
+                ->setParameter('patient', $queue->getPatient())
+                ->setParameter('doctor', $queue->getDoctor())
+                ->setParameter('startTime', $startTime)
+                ->setParameter('endTime', $endTime)
+                ->orderBy('c.consultationDate', 'DESC')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+                
+            if ($consultation) {
+                $this->logger->info('Found consultation (Approach 1 - within 2 hours of queue time)', [
+                    'consultationId' => $consultation->getId(),
+                    'consultationStatus' => $consultation->getStatus(),
+                    'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d H:i:s')
+                ]);
+                return $consultation->getId();
             }
+            
+            // Approach 2: Same day fallback (any consultation today for this patient/doctor)
+            $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+                ->createQueryBuilder('c')
+                ->where('c.patient = :patient')
+                ->andWhere('c.doctor = :doctor')
+                ->andWhere('DATE(c.consultationDate) = DATE(:queueDate)')
+                ->setParameter('patient', $queue->getPatient())
+                ->setParameter('doctor', $queue->getDoctor())
+                ->setParameter('queueDate', $queue->getQueueDateTime())
+                ->orderBy('c.consultationDate', 'DESC')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+                
+            if ($consultation) {
+                $this->logger->info('Found consultation (Approach 2 - same day fallback)', [
+                    'consultationId' => $consultation->getId(),
+                    'consultationStatus' => $consultation->getStatus(),
+                    'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d H:i:s')
+                ]);
+                return $consultation->getId();
+            }
+
+            // Approach 3: Most recent consultation for this patient/doctor (within last 24 hours)
+            $oneDayAgo = (clone $queue->getQueueDateTime())->modify('-1 day');
+            $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+                ->createQueryBuilder('c')
+                ->where('c.patient = :patient')
+                ->andWhere('c.doctor = :doctor')
+                ->andWhere('c.consultationDate >= :oneDayAgo')
+                ->setParameter('patient', $queue->getPatient())
+                ->setParameter('doctor', $queue->getDoctor())
+                ->setParameter('oneDayAgo', $oneDayAgo)
+                ->orderBy('c.consultationDate', 'DESC')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+                
+            if ($consultation) {
+                $this->logger->info('Found consultation (Approach 3 - recent within 24h)', [
+                    'consultationId' => $consultation->getId(),
+                    'consultationStatus' => $consultation->getStatus(),
+                    'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d H:i:s')
+                ]);
+                return $consultation->getId();
+            }
+            
+            $this->logger->warning('No consultation found with any approach for queue medications', [
+                'queueId' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'searchedDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+            ]);
+            return null;
+                
+        } catch (\Exception $e) {
+            $this->logger->error('Error finding consultation for queue medications: ' . $e->getMessage(), [
+                'queueId' => $queue->getId(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
         }
-        
-        return false;
+    }
+    
+    /**
+     * OPTIMIZED: Simple status-based medicine check to avoid DB queries
+     */
+    private function checkQueueHasMedicines($status): bool
+    {
+        // Simple assumption: if consultation is completed, it might have medicines
+        // Detailed checking happens only when user clicks to view medicines
+        return in_array($status, ['completed_consultation', 'completed']);
     }
 
     #[Route('', name: 'app_queue_create', methods: ['POST'])]
@@ -839,19 +893,37 @@ class QueueController extends AbstractController
             $payment->setQueueNumber($queue->getQueueNumber());
             $payment->setReference('Q-' . $queue->getQueueNumber() . '-' . date('YmdHis'));
             
-            // Link to consultation if exists
-            $consultation = $this->getQueueConsultation($queue);
+            // Link to consultation if exists - use direct query for payment processing
+            $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+                ->findOneBy([
+                    'patient' => $queue->getPatient(),
+                    'doctor' => $queue->getDoctor()
+                ], ['id' => 'DESC']);
+            
             if ($consultation) {
                 $payment->setConsultation($consultation);
+                $this->logger->info('Linked payment to consultation', [
+                    'paymentId' => 'pending',
+                    'consultationId' => $consultation->getId(),
+                    'queueId' => $queue->getId()
+                ]);
+            } else {
+                $this->logger->warning('No consultation found for payment', [
+                    'queueId' => $queue->getId(),
+                    'patientId' => $queue->getPatient()->getId(),
+                    'doctorId' => $queue->getDoctor()->getId()
+                ]);
             }
             
-            // Add notes with medicines information
-            $medicines = $this->getQueueMedicinesInfo($queue);
-            if ($medicines) {
-                $medicinesText = implode(', ', array_map(function($med) {
-                    return $med['name'] . ' (' . ($med['dosage'] ?? 'N/A') . ')';
-                }, $medicines));
-                $payment->setNotes('Medicines: ' . $medicinesText);
+            // Add notes with medicines information from the consultation
+            if ($consultation) {
+                $medicines = $this->getMedicinesForConsultation($consultation);
+                if (!empty($medicines)) {
+                    $medicinesText = implode(', ', array_map(function($med) {
+                        return $med['name'] . ' (' . ($med['dosage'] ?? 'N/A') . ')';
+                    }, $medicines));
+                    $payment->setNotes('Medicines: ' . $medicinesText);
+                }
             }
             
             // Update queue payment status
@@ -862,6 +934,16 @@ class QueueController extends AbstractController
             
             // CRITICAL: Update the payment method in the Payment entity too
             $payment->setPaymentMethod($data['paymentMethod']);
+            
+            // CRITICAL: Update consultation payment status if linked
+            if ($consultation) {
+                $consultation->setIsPaid(true);
+                $consultation->setPaidAt(\App\Service\TimezoneService::nowImmutable());
+                $this->logger->info('Updated consultation payment status', [
+                    'consultationId' => $consultation->getId(),
+                    'queueId' => $queue->getId()
+                ]);
+            }
             
             // If status is 'completed_consultation', change it to 'completed'
             if ($queue->getStatus() === 'completed_consultation') {
@@ -939,6 +1021,51 @@ class QueueController extends AbstractController
             }, $medications);
         } catch (\Exception $e) {
             $this->logger->warning('Error fetching medicines info for payment: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Get medicines information for a specific consultation (used for payment processing)
+     */
+    private function getMedicinesForConsultation(\App\Entity\Consultation $consultation): array
+    {
+        try {
+            // First try prescribed medications table
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->findBy(['consultation' => $consultation]);
+            
+            if (!empty($prescribedMeds)) {
+                return array_map(function($prescribedMed) {
+                    $medication = $prescribedMed->getMedication();
+                    return [
+                        'name' => $medication ? $medication->getName() : 'Unknown Medicine',
+                        'dosage' => $prescribedMed->getDosage() ?? 'N/A',
+                        'frequency' => $prescribedMed->getFrequency() ?? 'N/A',
+                        'duration' => $prescribedMed->getDuration() ?? 'N/A'
+                    ];
+                }, $prescribedMeds);
+            }
+            
+            // Fallback to consultation medications JSON field
+            if ($consultation->getMedications()) {
+                $medicationsJson = $consultation->getMedications();
+                $decoded = json_decode($medicationsJson, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return array_map(function($med) {
+                        return [
+                            'name' => $med['name'] ?? $med['medication'] ?? 'Unknown Medicine',
+                            'dosage' => $med['dosage'] ?? 'N/A',
+                            'frequency' => $med['frequency'] ?? 'N/A',
+                            'duration' => $med['duration'] ?? 'N/A'
+                        ];
+                    }, $decoded);
+                }
+            }
+            
+            return [];
+        } catch (\Exception $e) {
+            $this->logger->warning('Error fetching medicines for consultation: ' . $e->getMessage());
             return [];
         }
     }
@@ -1152,12 +1279,9 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Incomplete queue data'], 400);
             }
             
-            // Get the most current remarks for the patient
-            $patientRemarks = $this->getQueueSymptoms($queue);
-            if (empty($patientRemarks) && method_exists($patient, 'getRemarks')) {
-                $patientRemarks = $patient->getRemarks();
-            }
-            $patientRemarks = $patientRemarks ?: null;
+            // Get the latest patient remarks directly from database
+            $freshPatient = $this->entityManager->getRepository(Patient::class)->find($patient->getId());
+            $patientRemarks = $freshPatient ? $freshPatient->getRemarks() : null;
             
             $queueData = [
                 'id' => $queue->getId(),
@@ -1186,8 +1310,8 @@ class QueueController extends AbstractController
                 'isPaid' => $queue->getIsPaid(),
                 'paidAt' => $queue->getPaidAt()?->format('Y-m-d H:i:s'),
                 'paymentMethod' => $queue->getPaymentMethod(),
-                'amount' => $this->getQueueTotalAmount($queue),
-                'totalAmount' => $this->getQueueTotalAmount($queue),
+                'amount' => $this->getQueueTotalAmount($queue->getAmount() ?? '0.00'),
+                'totalAmount' => $this->getQueueTotalAmount($queue->getAmount() ?? '0.00'),
                 'metadata' => $queue->getMetadata()
             ];
             
@@ -1216,11 +1340,9 @@ class QueueController extends AbstractController
                             $relationship = $metadataArray['relationship'] ?? 'N/A';
                         }
                         
-                        // Get the most current remarks - check queue metadata first, then patient
-                        $remarks = $this->getQueueSymptoms($memberQueue);
-                        if (!$remarks && method_exists($memberPatient, 'getRemarks')) {
-                            $remarks = $memberPatient->getRemarks();
-                        }
+                        // Get the latest patient remarks directly from database
+                        $freshMemberPatient = $this->entityManager->getRepository(Patient::class)->find($memberPatient->getId());
+                        $remarks = $freshMemberPatient ? $freshMemberPatient->getRemarks() : null;
                         
                         $groupPatients[] = [
                             'id' => $memberPatient->getId(),
@@ -1264,20 +1386,64 @@ class QueueController extends AbstractController
                 return new JsonResponse(['message' => 'Queue entry not found'], 404);
             }
             
-            $consultationId = $this->getQueueConsultationId($queue);
-            if (!$consultationId) {
+            // Get consultation directly from queue relationship
+            $consultation = $queue->getConsultation();
+            if (!$consultation) {
+                $this->logger->info('No consultation ID found for queue medications', [
+                    'queueId' => $id,
+                    'queueNumber' => $queue->getQueueNumber()
+                ]);
+                
+                // DEBUG: Let's see what consultations exist for this patient/doctor
+                $allConsultations = $this->entityManager->getRepository(\App\Entity\Consultation::class)
+                    ->createQueryBuilder('c')
+                    ->where('c.patient = :patient')
+                    ->andWhere('c.doctor = :doctor')
+                    ->setParameter('patient', $queue->getPatient())
+                    ->setParameter('doctor', $queue->getDoctor())
+                    ->orderBy('c.consultationDate', 'DESC')
+                    ->getQuery()
+                    ->getResult();
+                    
+                $this->logger->info('DEBUG: All consultations for this patient/doctor', [
+                    'queueId' => $id,
+                    'patientName' => $queue->getPatient()->getName(),
+                    'doctorName' => $queue->getDoctor()->getName(),
+                    'consultationsCount' => count($allConsultations),
+                    'consultations' => array_map(function($c) {
+                        return [
+                            'id' => $c->getId(),
+                            'date' => $c->getConsultationDate()->format('Y-m-d H:i:s'),
+                            'status' => $c->getStatus(),
+                            'createdAt' => $c->getCreatedAt()->format('Y-m-d H:i:s')
+                        ];
+                    }, $allConsultations)
+                ]);
+                
                 return new JsonResponse([]); // Return empty array if no consultation found
             }
+            
+            $consultationId = $consultation->getId();
+            
+            $this->logger->info('Fetching prescribed medications', [
+                'consultationId' => $consultationId,
+                'queueId' => $id
+            ]);
             
             // Get prescribed medications from PrescribedMedication entities
             $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
                 ->createQueryBuilder('pm')
                 ->leftJoin('pm.medication', 'm')
-                ->where('pm.consultation = :consultationId')
-                ->setParameter('consultationId', $consultationId)
+                ->where('pm.consultation = :consultation')
+                ->setParameter('consultation', $consultation)
                 ->orderBy('pm.prescribedAt', 'ASC')
                 ->getQuery()
                 ->getResult();
+                
+            $this->logger->info('Found prescribed medications', [
+                'consultationId' => $consultationId,
+                'medicationsCount' => count($prescribedMeds)
+            ]);
             
             $medicationsData = [];
             
@@ -1299,8 +1465,7 @@ class QueueController extends AbstractController
                 }
             } else {
                 // Fallback to medications JSON field
-                $consultation = $this->entityManager->getRepository(\App\Entity\Consultation::class)->find($consultationId);
-                if ($consultation && $consultation->getMedications()) {
+                if ($consultation->getMedications()) {
                     $medications = json_decode($consultation->getMedications(), true);
                     if (is_array($medications)) {
                         foreach ($medications as $med) {

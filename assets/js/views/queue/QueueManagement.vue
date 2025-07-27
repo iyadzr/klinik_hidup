@@ -98,7 +98,7 @@
                     <span v-if="queue.isPaid" class="badge bg-success">
                       <i class="fas fa-check me-1"></i>Paid
                     </span>
-                    <button v-else class="btn btn-sm fw-bold premium-payment-btn" @click="processPayment(queue)">
+                    <button v-else class="btn btn-sm fw-bold premium-payment-btn" @click.stop.prevent="processPayment(queue)">
                       <i class="fas fa-credit-card me-1"></i>
                       <span class="d-none d-md-inline">Payment</span>
                       <span class="d-md-none">Pay</span>
@@ -137,45 +137,70 @@
           <div v-if="selectedQueue">
             <div class="row mb-3">
               <div class="col-md-6">
-                <h6><i class="fas fa-user me-2"></i>Patient: {{ selectedQueue.patient?.name }}</h6>
+                <h6 class="text-muted mb-2">Patient Information</h6>
+                <div class="card bg-light">
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <div class="fw-bold">{{ selectedQueue.patient?.name || 'N/A' }}</div>
+                        <small class="text-muted">{{ selectedQueue.patient?.nric || '' }}</small>
+                      </div>
+                      <span class="badge bg-primary">Queue #{{ formatQueueNumber(selectedQueue.queueNumber) }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div class="col-md-6">
-                <h6><i class="fas fa-list-ol me-2"></i>Queue: {{ formatQueueNumber(selectedQueue.queueNumber) }}</h6>
+                <h6 class="text-muted mb-2">Doctor</h6>
+                <div class="card bg-light">
+                  <div class="card-body py-2 px-3">
+                    <div class="fw-bold">{{ selectedQueue.doctor?.name || 'N/A' }}</div>
+                  </div>
+                </div>
               </div>
             </div>
-            
-            <div class="mb-3">
-              <h6 class="text-primary"><i class="fas fa-money-bill-wave me-2"></i>Total Amount: RM {{ calculateAmount(selectedQueue) }}</h6>
-            </div>
-            
-            <div class="mt-3">
-              <label class="form-label fw-bold">Payment Method:</label>
-              <div class="d-flex gap-3 mt-2">
-                <div class="form-check">
-                  <input 
-                    class="form-check-input" 
-                    type="radio" 
-                    name="paymentMethod" 
-                    id="cash" 
-                    value="Cash"
-                    v-model="paymentMethod"
-                  >
-                  <label class="form-check-label" for="cash">
-                    <i class="fas fa-money-bill-wave me-2 text-success"></i>Cash
-                  </label>
+
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <h6 class="text-muted mb-2">Payment Amount</h6>
+                <div class="card bg-light">
+                  <div class="card-body py-2 px-3">
+                    <div class="fw-bold text-success">
+                      <i class="fas fa-dollar-sign me-1"></i>
+                      RM {{ parseFloat(calculateAmount(selectedQueue) || 0).toFixed(2) }}
+                    </div>
+                  </div>
                 </div>
-                <div class="form-check">
-                  <input 
-                    class="form-check-input" 
-                    type="radio" 
-                    name="paymentMethod" 
-                    id="card" 
-                    value="Card"
-                    v-model="paymentMethod"
-                  >
-                  <label class="form-check-label" for="card">
-                    <i class="fas fa-credit-card me-2 text-primary"></i>Card
-                  </label>
+              </div>
+              <div class="col-md-6">
+                <h6 class="text-muted mb-2">Payment Method</h6>
+                <div class="payment-methods">
+                  <div class="form-check form-check-inline">
+                    <input 
+                      class="form-check-input" 
+                      type="radio" 
+                      name="paymentMethod" 
+                      id="paymentCash" 
+                      value="cash" 
+                      v-model="paymentMethod"
+                    >
+                    <label class="form-check-label fw-medium" for="paymentCash">
+                      <i class="fas fa-money-bill-wave me-2 text-success"></i>Cash
+                    </label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input 
+                      class="form-check-input" 
+                      type="radio" 
+                      name="paymentMethod" 
+                      id="paymentCard" 
+                      value="card" 
+                      v-model="paymentMethod"
+                    >
+                    <label class="form-check-label fw-medium" for="paymentCard">
+                      <i class="fas fa-credit-card me-2 text-primary"></i>Card
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -185,12 +210,12 @@
           <button type="button" class="btn btn-secondary" @click="closePaymentModal">Cancel</button>
           <button 
             type="button" 
-            class="btn btn-success fw-bold premium-accept-btn"
+            class="btn btn-success fw-bold"
             @click="acceptPayment"
             :disabled="!paymentMethod || processing"
           >
-            <span v-if="processing" class="spinner-border spinner-border-sm me-2"></span>
-            <i v-if="!processing" class="fas fa-check me-2"></i>
+            <i v-if="processing" class="fas fa-spinner fa-spin me-1"></i>
+            <i v-else class="fas fa-check me-1"></i>
             {{ processing ? 'Processing...' : 'Accept Payment' }}
           </button>
         </div>
@@ -279,6 +304,8 @@ import * as bootstrap from 'bootstrap';
 // Removed complex request manager - using simple axios calls
 import timezoneUtils from '../../utils/timezoneUtils.js';
 import { cancelAllRequests } from '../../utils/requestManager.js';
+import requestDebouncer from '../../utils/requestDebouncer.js';
+import sseMonitor from '../../utils/SSEMonitor.js';
 
 export default {
   name: 'QueueManagement',
@@ -451,18 +478,12 @@ export default {
     },
 
     async loadQueueList() {
-      if (this.isLoading) {
-        console.log('⏩ Queue list loading already in progress');
-        return;
-      }
-      
-      // Cancel any existing request
-      if (this.abortController) {
-        this.abortController.abort();
-      }
-      
-      // Create new abort controller
-      this.abortController = new AbortController();
+      // Use debounced request to prevent overlapping calls - most effective anti-deadlock measure
+      return requestDebouncer.debounce('queue-management-list', async (signal) => {
+        if (this.isLoading) {
+          console.log('⏩ Queue list loading already in progress');
+          return;
+        }
 
       try {
         this.isLoading = true;
@@ -478,8 +499,8 @@ export default {
             limit: this.pageSize,
             _t: Date.now() // Cache-busting timestamp
           },
-          timeout: 15000,
-          signal: this.abortController.signal
+          timeout: 30000, // Increased to 30 seconds to prevent timeouts
+          signal // Use the debouncer's signal
         });
 
         // Filter and organize queue data to show all relevant statuses
@@ -568,10 +589,11 @@ export default {
         }
         
         this.queueList = [];
+        throw error; // Re-throw for debouncer to handle
       } finally {
         this.isLoading = false;
-        this.abortController = null;
       }
+      }, 500); // 500ms debounce - prevents rapid-fire requests
     },
 
     async manualRefresh() {
@@ -765,15 +787,44 @@ export default {
       }
     },
 
-    initializeSSE() {
-      // Close existing connection
+    cleanupAllSSEConnections() {
+      console.log('🧹 QueueManagement: Cleaning up ALL SSE connections');
+      
+      // Unregister from SSE monitor
+      sseMonitor.unregister('queue-management');
+      
+      // Close current instance connection
       if (this.eventSource) {
+        console.log('🧹 Closing current eventSource');
         this.eventSource.close();
+        this.eventSource = null;
       }
+      
+      // Close global reference
+      if (window._queueManagementEventSource) {
+        console.log('🧹 Closing global _queueManagementEventSource');
+        window._queueManagementEventSource.close();
+        window._queueManagementEventSource = null;
+      }
+      
+      // Kill any remaining EventSource connections via requestKiller
+      if (window.requestKiller) {
+        window.requestKiller.killAllEventSources();
+      }
+    },
+    initializeSSE() {
+      // AGGRESSIVE CLEANUP: Close ANY existing connections first
+      this.cleanupAllSSEConnections();
 
       try {
-        console.log('🔌 Initializing SSE connection for queue updates...');
+        console.log('🔌 QueueManagement: Initializing new SSE connection');
         this.eventSource = new EventSource('/api/sse/queue-updates');
+        
+        // Register with SSE monitor for tracking
+        sseMonitor.register('queue-management', this.eventSource, 'QueueManagement');
+        
+        // Store globally for emergency cleanup
+        window._queueManagementEventSource = this.eventSource;
         
         this.eventSource.onopen = () => {
           console.log('✅ SSE connection established');
@@ -783,9 +834,19 @@ export default {
         
         this.eventSource.onmessage = (event) => {
           try {
-            const queueData = JSON.parse(event.data);
-            console.log('📡 SSE queue update received:', queueData);
-            this.handleQueueUpdate(queueData);
+            const update = JSON.parse(event.data);
+            console.log('📡 SSE update received:', update);
+            
+            if (update.type === 'refresh_needed') {
+              console.log('🔄 SSE refresh signal received, updating queue data');
+              // Use debounced refresh to prevent conflicts
+              this.loadQueueList().catch(error => {
+                console.warn('Failed to refresh data after SSE signal:', error);
+              });
+            } else {
+              // Handle legacy update format
+              this.handleQueueUpdate(update);
+            }
           } catch (error) {
             console.error('❌ Error parsing SSE data:', error);
           }
@@ -832,11 +893,8 @@ export default {
         this.abortController = null;
       }
       
-      // Close SSE connection
-      if (this.eventSource) {
-        this.eventSource.close();
-        this.eventSource = null;
-      }
+      // Use aggressive SSE cleanup
+      this.cleanupAllSSEConnections();
       
       // Cancel all pending requests
       cancelAllRequests();
@@ -869,13 +927,36 @@ export default {
       this.loadQueueList();
     },
     processPayment(queue) {
-      console.log('processPayment called with queue:', queue);
-      this.selectedQueue = queue;
-      this.paymentMethod = '';
-      this.processing = false;
+      console.log('💰 processPayment called with queue:', queue);
+      console.log('💰 Current showPaymentModal state:', this.showPaymentModal);
       
-      // Show Vue modal (no Bootstrap JS)
-      this.showPaymentModal = true;
+      try {
+        this.selectedQueue = queue;
+        this.paymentMethod = 'cash'; // Set default payment method
+        this.processing = false;
+        
+        // Show Vue modal (no Bootstrap JS)
+        this.showPaymentModal = true;
+        
+        console.log('💰 Payment modal should now be visible:', this.showPaymentModal);
+        console.log('💰 Selected queue:', this.selectedQueue);
+        
+        // Force Vue to update
+        this.$nextTick(() => {
+          console.log('💰 Next tick: showPaymentModal =', this.showPaymentModal);
+          const modalElement = document.querySelector('.vue-modal-overlay');
+          console.log('💰 Modal element found:', !!modalElement);
+          if (modalElement) {
+            console.log('💰 Modal element styles:', window.getComputedStyle(modalElement).display);
+            console.log('💰 Modal element visibility:', window.getComputedStyle(modalElement).visibility);
+            console.log('💰 Modal element opacity:', window.getComputedStyle(modalElement).opacity);
+          }
+        });
+        
+      } catch (error) {
+        console.error('💰 Error in processPayment:', error);
+        alert('Error opening payment modal: ' + error.message);
+      }
     },
     
     calculateAmount(queue) {
@@ -1001,22 +1082,35 @@ export default {
         // Show loading state
         this.showMedicinesModal = true;
         
+        console.log('🔍 Fetching medicines for queue:', {
+          queueId: queue.id,
+          queueNumber: queue.queueNumber,
+          consultationId: queue.consultationId,
+          patientName: queue.patient?.name,
+          status: queue.status,
+          fullQueueObject: queue
+        });
+        
         // Fetch medicines based on consultation ID or queue ID
         let response;
         if (queue.consultationId) {
+          console.log('📋 Using consultation endpoint:', `/api/consultations/${queue.consultationId}/medications`);
           response = await axios.get(`/api/consultations/${queue.consultationId}/medications`);
         } else {
+          console.log('🔢 Using queue endpoint:', `/api/queue/${queue.id}/medications`);
           // Fallback to queue-based lookup
           response = await axios.get(`/api/queue/${queue.id}/medications`);
         }
         
         this.medicinesList = response.data || [];
         console.log('💊 Fetched medicines:', this.medicinesList);
+        console.log('💊 Full API response:', response);
         
         // Show success message if medicines found
         if (this.medicinesList.length > 0) {
           this.$toast?.success?.(`Found ${this.medicinesList.length} prescribed medicine(s)`);
         } else {
+          console.log('⚠️ No medicines found for queue:', queue.queueNumber);
           this.$toast?.info?.('No medicines prescribed for this patient');
         }
         
@@ -1700,7 +1794,7 @@ export default {
   width: 100%;
   height: 100%;
   background-color: rgba(0, 0, 0, 0.5);
-  z-index: 1050;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;

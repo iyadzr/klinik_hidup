@@ -14,7 +14,7 @@ class Payment
     private ?int $id = null;
 
     #[ORM\ManyToOne]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: true)]
     private ?Consultation $consultation = null;
 
     #[ORM\Column]

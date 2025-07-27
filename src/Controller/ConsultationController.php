@@ -151,6 +151,20 @@ class ConsultationController extends AbstractController
                 $consultation->setDoctor($doctor);
             }
             
+            // Link to queue if queueId is provided
+            $queue = null;
+            if (!empty($data['queueId'])) {
+                $queue = $this->entityManager->getRepository(Queue::class)->find($data['queueId']);
+                if ($queue) {
+                    $queue->setConsultation($consultation);
+                    $this->logger->info('Linked consultation to queue', [
+                        'consultationId' => 'will_be_set_after_persist',
+                        'queueId' => $queue->getId(),
+                        'queueNumber' => $queue->getQueueNumber()
+                    ]);
+                }
+            }
+            
             // Set consultation date to now in Malaysia timezone
             $now = \App\Service\TimezoneService::now();
             $consultation->setConsultationDate($now);
@@ -185,7 +199,21 @@ class ConsultationController extends AbstractController
                 if (isset($data['mcStartDate'])) $consultation->setMcStartDate(new \DateTime($data['mcStartDate']));
                 if (isset($data['mcEndDate'])) $consultation->setMcEndDate(new \DateTime($data['mcEndDate']));
                 if (isset($data['mcNumber'])) $consultation->setMcNumber($data['mcNumber']);
-                if (isset($data['mcRunningNumber'])) $consultation->setMcRunningNumber($data['mcRunningNumber']);
+                
+                // Auto-generate MC running number if not provided
+                if (isset($data['mcRunningNumber']) && !empty($data['mcRunningNumber'])) {
+                    $consultation->setMcRunningNumber($data['mcRunningNumber']);
+                } else {
+                    // Generate new MC running number using counter
+                    $receiptCounterRepo = $this->entityManager->getRepository(\App\Entity\ReceiptCounter::class);
+                    $nextMCNumber = $receiptCounterRepo->getNextMCNumber();
+                    $consultation->setMcRunningNumber((string)$nextMCNumber);
+                    
+                    $this->logger->info('Generated MC running number', [
+                        'mcRunningNumber' => $nextMCNumber,
+                        'consultationId' => $consultation->getId()
+                    ]);
+                }
             }
             
             try {
@@ -194,6 +222,12 @@ class ConsultationController extends AbstractController
                     'status_length' => $consultation->getStatus() ? strlen($consultation->getStatus()) : 0
                 ]);
                 $this->entityManager->persist($consultation);
+                
+                // Persist queue if it was linked
+                if ($queue) {
+                    $this->entityManager->persist($queue);
+                }
+                
                 $this->entityManager->flush();
                 $this->logger->info('Consultation persisted successfully');
                 
@@ -218,26 +252,14 @@ class ConsultationController extends AbstractController
                 foreach ($data['prescribedMedications'] as $medData) {
                     if (!empty($medData['name']) && !empty($medData['quantity'])) {
                         
-                        // Validate required medication fields
-                        $validationErrors = [];
-                        if (empty(trim($medData['dosage'] ?? ''))) {
-                            $validationErrors[] = 'Dosage is required';
-                        }
-                        if (empty(trim($medData['frequency'] ?? ''))) {
-                            $validationErrors[] = 'Frequency is required';
-                        }
-                        if (empty(trim($medData['duration'] ?? ''))) {
-                            $validationErrors[] = 'Duration is required';
-                        }
-                        
-                        if (!empty($validationErrors)) {
-                            $this->logger->warning('Prescribed medication validation failed', [
-                                'medication' => $medData['name'],
-                                'errors' => $validationErrors
-                            ]);
-                            // Skip this medication but continue with others
-                            continue;
-                        }
+                        // Log medication info for debugging (medication fields are optional)
+                        $this->logger->info('Processing prescribed medication', [
+                            'medication' => $medData['name'],
+                            'dosage' => $medData['dosage'] ?? 'not provided',
+                            'frequency' => $medData['frequency'] ?? 'not provided',
+                            'duration' => $medData['duration'] ?? 'not provided',
+                            'quantity' => $medData['quantity'] ?? 'not provided'
+                        ]);
                         
                         // Find or create medication
                         $medication = null;
@@ -270,10 +292,10 @@ class ConsultationController extends AbstractController
                             $prescribedMed->setQuantity((int)$medData['quantity']);
                             $prescribedMed->setInstructions($medData['instructions'] ?? null);
                             
-                            // Set dosage, frequency, and duration fields with validation
-                            $prescribedMed->setDosage(trim($medData['dosage']));
-                            $prescribedMed->setFrequency(trim($medData['frequency']));
-                            $prescribedMed->setDuration(trim($medData['duration']));
+                            // Set dosage, frequency, and duration fields (optional, allow empty values)
+                            $prescribedMed->setDosage(!empty($medData['dosage']) ? trim($medData['dosage']) : null);
+                            $prescribedMed->setFrequency(!empty($medData['frequency']) ? trim($medData['frequency']) : null);
+                            $prescribedMed->setDuration(!empty($medData['duration']) ? trim($medData['duration']) : null);
                             
                             // Handle actual price - allow 0 prices, use medication's selling price as fallback
                             if (isset($medData['actualPrice']) && is_numeric($medData['actualPrice'])) {
@@ -294,10 +316,22 @@ class ConsultationController extends AbstractController
                             }
                             
                             $this->entityManager->persist($prescribedMed);
+                            
+                            $this->logger->info('Persisted prescribed medication', [
+                                'consultationId' => $consultation->getId(),
+                                'medicationName' => $medData['name'],
+                                'quantity' => $medData['quantity'],
+                                'dosage' => $medData['dosage'] ?? null,
+                                'frequency' => $medData['frequency'] ?? null,
+                                'duration' => $medData['duration'] ?? null
+                            ]);
                         }
                     }
                 }
                 $this->entityManager->flush();
+                $this->logger->info('Flushed prescribed medications to database', [
+                    'consultationId' => $consultation->getId()
+                ]);
             }
             
             // Update queue status to 'completed_consultation' for this patient/doctor combination
@@ -625,10 +659,20 @@ class ConsultationController extends AbstractController
                 $medicationsArray = [];
                 foreach ($prescribedMeds as $med) {
                     $medicationsArray[] = [
+                        'id' => $med->getId(),
                         'name' => $med->getName(),
                         'quantity' => $med->getQuantity(),
+                        'dosage' => $med->getDosage(),
+                        'frequency' => $med->getFrequency(),
+                        'duration' => $med->getDuration(),
                         'instructions' => $med->getInstructions(),
-                        'actualPrice' => $med->getActualPrice()
+                        'actualPrice' => $med->getActualPrice(),
+                        'medication' => $med->getMedication() ? [
+                            'id' => $med->getMedication()->getId(),
+                            'name' => $med->getMedication()->getName(),
+                            'category' => $med->getMedication()->getCategory(),
+                            'unitType' => $med->getMedication()->getUnitType()
+                        ] : null
                     ];
                 }
                 
@@ -952,7 +996,7 @@ class ConsultationController extends AbstractController
                           ->setParameter('doctorId', $doctorId);
         }
 
-        $consultations = $consultationQb->orderBy('c.consultationDate', 'ASC')
+        $consultations = $consultationQb->orderBy('c.consultationDate', 'DESC')
             ->getQuery()
             ->getResult();
 
@@ -1002,7 +1046,7 @@ class ConsultationController extends AbstractController
                     ->setParameter('queueDoctorId', $doctorId);
         }
         
-        $queueEntries = $queueQb->orderBy('q.queueNumber', 'ASC')
+        $queueEntries = $queueQb->orderBy('q.queueDateTime', 'DESC')
             ->getQuery()
             ->getResult();
 
@@ -1065,6 +1109,31 @@ class ConsultationController extends AbstractController
             $patient = $consultation->getPatient();
             $doctor = $consultation->getDoctor();
             
+            // Get prescribed medications
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->createQueryBuilder('pm')
+                ->leftJoin('pm.medication', 'm')
+                ->where('pm.consultation = :consultationId')
+                ->setParameter('consultationId', $id)
+                ->orderBy('pm.prescribedAt', 'ASC')
+                ->getQuery()
+                ->getResult();
+            
+            $medicationsData = [];
+            foreach ($prescribedMeds as $prescribedMed) {
+                $medication = $prescribedMed->getMedication();
+                $medicationsData[] = [
+                    'name' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                    'medicationName' => $medication ? $medication->getName() : $prescribedMed->getName(),
+                    'dosage' => $prescribedMed->getDosage(),
+                    'frequency' => $prescribedMed->getFrequency(),
+                    'duration' => $prescribedMed->getDuration(),
+                    'instructions' => $prescribedMed->getInstructions(),
+                    'quantity' => $prescribedMed->getQuantity(),
+                    'unitType' => $medication ? $medication->getUnitType() : 'pieces',
+                ];
+            }
+            
             return new JsonResponse([
                 'id' => $consultation->getId(),
                 'patientId' => $patient->getId(),
@@ -1080,7 +1149,8 @@ class ConsultationController extends AbstractController
                 'totalAmount' => $consultation->getTotalAmount(),
                 'isPaid' => $consultation->getIsPaid(),
                 'paidAt' => $consultation->getPaidAt() ? $consultation->getPaidAt()->format('Y-m-d H:i:s') : null,
-                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null
+                'receiptNumber' => method_exists($consultation, 'getReceiptNumber') ? $consultation->getReceiptNumber() : null,
+                'prescribedMedications' => $medicationsData
             ]);
         } catch (\Exception $e) {
             $this->logger->error('Error fetching consultation: ' . $e->getMessage());
@@ -1185,6 +1255,8 @@ class ConsultationController extends AbstractController
                 return new JsonResponse(['message' => 'Consultation not found'], 404);
             }
             
+            $this->logger->info('Fetching medications for consultation ID: ' . $id);
+            
             // Get prescribed medications from PrescribedMedication entities
             $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
                 ->createQueryBuilder('pm')
@@ -1196,6 +1268,8 @@ class ConsultationController extends AbstractController
                 ->getResult();
             
             $medicationsData = [];
+            
+            $this->logger->info('Found ' . count($prescribedMeds) . ' prescribed medications for consultation ID: ' . $id);
             
             if (!empty($prescribedMeds)) {
                 // Use prescribed medications entities
@@ -1234,6 +1308,8 @@ class ConsultationController extends AbstractController
                     }
                 }
             }
+            
+            $this->logger->info('Returning ' . count($medicationsData) . ' medications for consultation ID: ' . $id);
             
             return new JsonResponse($medicationsData);
             

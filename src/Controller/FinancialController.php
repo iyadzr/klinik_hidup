@@ -487,6 +487,7 @@ class FinancialController extends AbstractController
 
             return [
                 'id' => $consultation->getId(),
+                'queue_id' => $queue ? $queue->getId() : null,
                 'type' => 'pending',
                 'amount' => number_format($consultation->getTotalAmount(), 2),
                 'payment_method' => null,

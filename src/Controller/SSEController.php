@@ -60,16 +60,9 @@ class SSEController extends AbstractController
             }
             
             $startTime = time();
-            $lastUpdateTime = 0;
-            $lastHeartbeat = 0;
             $connectionId = uniqid('sse_', true);
-            $maxConnectionTime = 1800; // Reduced from 3600 to 30 minutes
-            $heartbeatInterval = 60; // Increased from 30 to 60 seconds to reduce server load
-            $checkInterval = 5; // Increased from 2 to 5 seconds to prevent deadlocks
-            
-            $tempDir = sys_get_temp_dir();
-            $updateFile = $tempDir . '/queue_updates.json';
-            $paymentUpdateFile = $tempDir . '/payment_updates.json';
+            $maxConnectionTime = 3600; // 1 hour max connection time
+            $checkInterval = 10; // Check for updates every 10 seconds only when needed
             
             // Log connection start
             $this->logger->info('SSE connection started', ['connection_id' => $connectionId]);
@@ -107,98 +100,44 @@ class SSEController extends AbstractController
                         break;
                     }
                     
-                    // Check for queue updates with better caching
-                    if (file_exists($updateFile)) {
-                        clearstatcache(true, $updateFile); // Clear file stat cache
-                        $fileTime = filemtime($updateFile);
-                        
-                        // Only process if file was modified recently (within last 2 minutes) and avoid excessive checks
-                        if ($fileTime > ($currentTime - 120) && $fileTime > $lastUpdateTime) {
-                            $content = file_get_contents($updateFile);
-                            if ($content !== false) {
-                                $updates = json_decode($content, true) ?: [];
+                    // Simplified approach: just send a refresh signal
+                    // Let the frontend decide what to refresh
+                    static $lastCheck = 0;
+                    if (($currentTime - $lastCheck) >= 15) { // Check every 15 seconds
+                        try {
+                            // Simple query to check if anything changed
+                            $hasChanges = $this->hasRecentChanges();
+                            
+                            if ($hasChanges) {
+                                echo "data: " . json_encode([
+                                    'type' => 'refresh_needed',
+                                    'timestamp' => $currentTime
+                                ]) . "\n\n";
                                 
-                                // Send only new updates and limit to last 5 updates
-                                $recentUpdates = array_slice($updates, -5);
-                                $sentUpdates = 0;
-                                
-                                foreach ($recentUpdates as $update) {
-                                    if (isset($update['timestamp']) && $update['timestamp'] > $lastUpdateTime) {
-                                        echo "data: " . json_encode($update) . "\n\n";
-                                        $sentUpdates++;
-                                    }
+                                if (ob_get_level()) {
+                                    ob_flush();
                                 }
+                                flush();
                                 
-                                if ($sentUpdates > 0) {
-                                    if (ob_get_level()) {
-                                        ob_flush();
-                                    }
-                                    flush();
-                                    $this->logger->debug('SSE queue updates sent', [
-                                        'connection_id' => $connectionId,
-                                        'updates_sent' => $sentUpdates
-                                    ]);
-                                }
-                                
-                                $lastUpdateTime = $fileTime;
+                                $this->logger->debug('SSE refresh signal sent', [
+                                    'connection_id' => $connectionId
+                                ]);
                             }
+                        } catch (\Exception $e) {
+                            $this->logger->warning('SSE query failed', [
+                                'error' => $e->getMessage(),
+                                'connection_id' => $connectionId
+                            ]);
                         }
+                        
+                        $lastCheck = $currentTime;
                     }
                     
-                    // Check for payment updates
-                    if (file_exists($paymentUpdateFile)) {
-                        clearstatcache(true, $paymentUpdateFile);
-                        $paymentFileTime = filemtime($paymentUpdateFile);
-                        
-                        // Only process if file was modified recently (within last 2 minutes)
-                        if ($paymentFileTime > ($currentTime - 120) && $paymentFileTime > $lastUpdateTime) {
-                            $content = file_get_contents($paymentUpdateFile);
-                            if ($content !== false) {
-                                $paymentUpdates = json_decode($content, true) ?: [];
-                                
-                                // Send only new payment updates
-                                $recentPaymentUpdates = array_slice($paymentUpdates, -5);
-                                $sentPaymentUpdates = 0;
-                                
-                                foreach ($recentPaymentUpdates as $update) {
-                                    if (isset($update['timestamp']) && $update['timestamp'] > $lastUpdateTime) {
-                                        echo "data: " . json_encode($update) . "\n\n";
-                                        $sentPaymentUpdates++;
-                                    }
-                                }
-                                
-                                if ($sentPaymentUpdates > 0) {
-                                    if (ob_get_level()) {
-                                        ob_flush();
-                                    }
-                                    flush();
-                                    $this->logger->debug('SSE payment updates sent', [
-                                        'connection_id' => $connectionId,
-                                        'payment_updates_sent' => $sentPaymentUpdates
-                                    ]);
-                                }
-                                
-                                $lastUpdateTime = max($lastUpdateTime, $paymentFileTime);
-                            }
-                        }
-                    }
+                    // Payment updates are handled in the same refresh signal above
+                    // This eliminates the need for separate complex queries
                     
-                    // Send heartbeat to keep connection alive (less frequent)
-                    if (($currentTime - $lastHeartbeat) >= $heartbeatInterval) {
-                        echo "event: heartbeat\n";
-                        echo "data: " . json_encode([
-                            'timestamp' => $currentTime,
-                            'connection_id' => $connectionId,
-                            'uptime' => $currentTime - $startTime
-                        ]) . "\n\n";
-                        
-                        if (ob_get_level()) {
-                            ob_flush();
-                        }
-                        flush();
-                        
-                        $lastHeartbeat = $currentTime;
-                    }
+                    // No more heartbeats - only send actual data changes
+                    // This eliminates unnecessary network traffic and CPU usage
                     
                     // Sleep to reduce CPU usage
                     sleep($checkInterval);
@@ -245,6 +184,33 @@ class SSEController extends AbstractController
         } catch (\Exception $e) {
             $this->logger->error('Error getting pending actions count: ' . $e->getMessage());
             return 0;
+        }
+    }
+    
+    private function hasRecentChanges(): bool
+    {
+        try {
+            // Simple, fast query to check if there are any recent changes
+            $today = \App\Service\TimezoneService::now();
+            $startOfDay = (clone $today)->setTime(0, 0, 0);
+            $endOfDay = (clone $today)->setTime(23, 59, 59);
+            $fiveMinutesAgo = new \DateTime('-5 minutes');
+            
+            $count = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('COUNT(q.id)')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->andWhere('q.updatedAt > :recent')
+                ->setParameter('start', $startOfDay)
+                ->setParameter('end', $endOfDay)
+                ->setParameter('recent', $fiveMinutesAgo)
+                ->getQuery()
+                ->getSingleScalarResult();
+            
+            return $count > 0;
+        } catch (\Exception $e) {
+            $this->logger->error('Error checking for recent changes: ' . $e->getMessage());
+            return false;
         }
     }
     

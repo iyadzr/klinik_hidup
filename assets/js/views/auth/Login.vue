@@ -86,16 +86,35 @@ export default {
       try {
         const response = await AuthService.login(email.value, password.value);
         if (response && (response.token || response.user)) {
-          // Small delay to ensure authentication state is set
-          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('✅ Login successful, user data:', response);
           
-          // Emit login success event to parent App component
+          // Emit login success event to parent App component first
           emit('login-success');
           
-          // Use Vue router for navigation
-          await router.push('/dashboard');
+          // Small delay to ensure authentication state is updated
+          await new Promise(resolve => setTimeout(resolve, 150));
+          
+          // Get user roles for appropriate redirection
+          const user = AuthService.getCurrentUser();
+          const roles = user?.roles || [];
+          
+          // Redirect based on user role
+          let redirectPath = '/dashboard';
+          if (roles.includes('ROLE_ASSISTANT')) {
+            redirectPath = '/registration';
+          } else if (roles.includes('ROLE_DOCTOR')) {
+            redirectPath = '/consultations/ongoing';
+          }
+          
+          console.log('🚀 Redirecting to:', redirectPath);
+          
+          // Use router.replace instead of push to avoid back button issues
+          await router.replace(redirectPath);
+          
+          console.log('✅ Navigation completed');
         }
       } catch (error) {
+        console.error('❌ Login error:', error);
         loginError.value = error.response?.data?.message || 'Login failed. Please try again.';
       } finally {
         loading.value = false;

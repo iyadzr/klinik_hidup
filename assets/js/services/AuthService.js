@@ -22,22 +22,37 @@ class AuthService {
   }
 
   async login(email, password) {
-    const response = await axios.post('/api/login', { email, password });
-    
-    if (response.data) {
-      // Store both user and token data
-      const userData = {
-        token: response.data.token,
-        user: response.data.user || response.data,
-        ...response.data.user
-      };
+    try {
+      const response = await axios.post('/api/login', { 
+        email, 
+        password 
+      }, {
+        timeout: 10000 // 10 second timeout
+      });
       
-      localStorage.setItem('user', JSON.stringify(userData));
-      this.setAuthHeader(response.data.token);
-      
-      return userData;
+      if (response.data && response.data.token) {
+        // Store both user and token data
+        const userData = {
+          token: response.data.token,
+          user: response.data.user || response.data,
+          ...response.data.user
+        };
+        
+        localStorage.setItem('user', JSON.stringify(userData));
+        this.setAuthHeader(response.data.token);
+        
+        console.log('🔐 AuthService: Login successful, user data stored');
+        return userData;
+      } else {
+        console.error('🔐 AuthService: Invalid response data', response.data);
+        throw new Error('Invalid login response');
+      }
+    } catch (error) {
+      console.error('🔐 AuthService: Login failed', error);
+      // Clear any partial authentication state
+      this.logout();
+      throw error;
     }
-    return response.data;
   }
 
   logout() {

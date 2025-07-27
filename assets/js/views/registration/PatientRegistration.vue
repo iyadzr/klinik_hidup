@@ -698,10 +698,15 @@ export default {
         }
         
       } catch (error) {
+        // Don't log errors for canceled requests (user typed fast or navigated away)
+        if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+          console.log('🔍 Patient search request was canceled (user typed again or navigated away)');
+          return; // Don't show error for canceled requests
+        }
+        
         console.error('❌ Error searching patients:', error);
         console.error('❌ Error details:', error.response?.data || error.message);
         console.error('❌ Error status:', error.response?.status);
-        console.error('❌ Full error object:', error);
         
         this.searchResults = [];
         
@@ -966,26 +971,30 @@ export default {
               controller.abort();
             }, 30000); // 30 second timeout
             
-            // TEMPORARILY REMOVED TRY-CATCH TO DEBUG
-            const response = await axios.post('/api/patients/register', {
-              patient: this.patient,
-              doctorId: this.queueInfo.doctorId
-            }, {
-              signal: controller.signal,
-              timeout: 30000
-            });
-            
-            clearTimeout(timeoutId);
-            patientId = response.data.patientId;
-            regNumber = response.data.registrationNumber;
-            
-            // Patient is already queued by the registration endpoint
-            if (response.data) {
-              alert('Patient registered and added to queue successfully!');
-              this.resetForm();
-              this.$router.push('/queue?refresh=' + Date.now());
+            try {
+              const response = await axios.post('/api/patients/register', {
+                patient: this.patient,
+                doctorId: this.queueInfo.doctorId
+              }, {
+                signal: controller.signal,
+                timeout: 30000
+              });
+              
+              clearTimeout(timeoutId);
+              patientId = response.data.patientId;
+              regNumber = response.data.registrationNumber;
+              
+              // Patient is already queued by the registration endpoint
+              if (response.data) {
+                alert('Patient registered and added to queue successfully!');
+                this.resetForm();
+                this.$router.push('/queue?refresh=' + Date.now());
+              }
+              return; // Exit early since registration endpoint handles both patient creation and queueing
+            } catch (registrationError) {
+              clearTimeout(timeoutId);
+              throw registrationError; // Re-throw to be handled by outer catch
             }
-            return; // Exit early since registration endpoint handles both patient creation and queueing
           } else if (this.selectedPatient) {
             // For existing patients, update with remarks and add to queue
             const updatedPatient = { ...this.selectedPatient, ...this.patient };
@@ -995,23 +1004,27 @@ export default {
               controller.abort();
             }, 30000);
             
-            // TEMPORARILY REMOVED TRY-CATCH TO DEBUG
-            const response = await axios.post('/api/patients/register', {
-              patient: updatedPatient,
-              doctorId: this.queueInfo.doctorId
-            }, {
-              signal: controller.signal,
-              timeout: 30000
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (response.data) {
-              alert('Existing patient added to queue successfully!');
-              this.resetForm();
-              this.$router.push('/queue?refresh=' + Date.now());
+            try {
+              const response = await axios.post('/api/patients/register', {
+                patient: updatedPatient,
+                doctorId: this.queueInfo.doctorId
+              }, {
+                signal: controller.signal,
+                timeout: 30000
+              });
+              
+              clearTimeout(timeoutId);
+              
+              if (response.data) {
+                alert('Existing patient added to queue successfully!');
+                this.resetForm();
+                this.$router.push('/queue?refresh=' + Date.now());
+              }
+              return; // Exit early since registration endpoint handles queueing
+            } catch (registrationError) {
+              clearTimeout(timeoutId);
+              throw registrationError; // Re-throw to be handled by outer catch
             }
-            return; // Exit early since registration endpoint handles queueing
           } else {
             alert('Please select an existing patient before proceeding.');
             return;

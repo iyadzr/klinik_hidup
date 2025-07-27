@@ -4,6 +4,8 @@ import App from './App.vue';
 import router from './router';
 import { createPinia } from 'pinia';
 import enterSubmitDirective from './enterSubmitDirective.js';
+import globalRequestManager from './utils/GlobalRequestManager.js';
+import requestKiller from './utils/AggressiveRequestKiller.js';
 
 const app = createApp(App);
 
@@ -45,22 +47,25 @@ window.clinicDebug = {
     clearConsole: () => console.clear(),
     reloadPage: () => window.location.reload(),
     getCurrentRoute: () => router.currentRoute.value,
+    getRequestStatus: () => globalRequestManager.getStatus(),
+    cancelAllRequests: () => globalRequestManager.cancelAllRequests(),
+    getKillerStats: () => requestKiller.getStats(),
+    killAllRequests: () => requestKiller.killAllRequests(),
     
     // Emergency reset function
     emergencyReset: () => {
         console.log('🚨 Emergency reset initiated');
         
-        // Clear all timeouts and intervals
-        let id = window.setTimeout(() => {}, 0);
-        while (id--) {
-            window.clearTimeout(id);
-            window.clearInterval(id);
-        }
+        // NUCLEAR OPTION: Kill everything immediately
+        requestKiller.killAllRequests();
+        
+        // Also use existing cleanup methods as backup
+        globalRequestManager.cancelAllRequests();
         
         // Reset click protection
         lastClickTime = 0;
         
-        console.log('✅ Emergency reset completed');
+        console.log('✅ Emergency reset completed - ALL REQUESTS KILLED');
     }
 };
 

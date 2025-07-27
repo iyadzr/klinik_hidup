@@ -69,7 +69,6 @@
                         <th>Medication</th>
                         <th>Quantity</th>
                         <th>Instructions</th>
-                        <th>Price</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -77,10 +76,16 @@
                         <td>
                           <div class="fw-bold">{{ med.medication?.name || med.name }}</div>
                           <small class="text-muted">{{ med.medication?.category || med.category }}</small>
+                          <div v-if="med.dosage || med.frequency || med.duration" class="mt-1">
+                            <small class="badge bg-light text-dark me-1" v-if="med.dosage">{{ med.dosage }}</small>
+                            <small class="badge bg-light text-dark me-1" v-if="med.frequency">{{ med.frequency }}</small>
+                            <small class="badge bg-light text-dark" v-if="med.duration">{{ med.duration }}</small>
+                          </div>
                         </td>
                         <td>{{ med.quantity }} {{ med.medication?.unitType || med.unitType || 'pcs' }}</td>
-                        <td>{{ med.instructions || 'No instructions' }}</td>
-                        <td class="text-success fw-bold">RM {{ parseFloat(med.actualPrice || 0).toFixed(2) }}</td>
+                        <td>
+                          <div>{{ med.instructions || 'No instructions' }}</div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>

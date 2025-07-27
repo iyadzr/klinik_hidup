@@ -25,41 +25,9 @@ class MedicalCertificateController extends AbstractController
     public function getNextNumber(): JsonResponse
     {
         try {
-            $startingNumber = 1; // Default starting number
-            
-            // Try to get starting number from settings
-            try {
-                $settingRepo = $this->entityManager->getRepository(\App\Entity\Setting::class);
-                $startingSetting = $settingRepo->findOneBy(['settingKey' => 'system.mc_number_start']);
-                if ($startingSetting && $startingSetting->getSettingValue()) {
-                    $startingNumber = max(1, (int)$startingSetting->getSettingValue());
-                }
-            } catch (\Exception $settingError) {
-                // Settings table might not exist or have issues, use default
-                error_log('MC Settings error: ' . $settingError->getMessage());
-            }
-            
-            $nextNumber = $startingNumber;
-            
-            // Try to check existing MC numbers in consultations
-            try {
-                $consultationRepo = $this->entityManager->getRepository(\App\Entity\Consultation::class);
-                $existingMC = $consultationRepo->createQueryBuilder('c')
-                    ->select('MAX(CAST(c.mcRunningNumber AS UNSIGNED)) as maxMC')
-                    ->where('c.mcRunningNumber IS NOT NULL')
-                    ->andWhere('c.mcRunningNumber REGEXP \'^[0-9]+$\'') // Only numeric values
-                    ->getQuery()
-                    ->getSingleScalarResult();
-                
-                if ($existingMC && $existingMC > 0) {
-                    $nextNumber = max($nextNumber, (int)$existingMC + 1);
-                }
-            } catch (\Exception $queryError) {
-                error_log('MC Query error: ' . $queryError->getMessage());
-            }
-            
-            // Ensure we always have a valid number
-            $nextNumber = max(1, $nextNumber);
+            // Use the counter system for consistent MC number generation
+            $receiptCounterRepo = $this->entityManager->getRepository(\App\Entity\ReceiptCounter::class);
+            $nextNumber = $receiptCounterRepo->getNextMCNumber();
             
             return new JsonResponse([
                 'runningNumber' => (string)$nextNumber,

@@ -48,6 +48,10 @@ class Queue
     #[ORM\Column(type: "decimal", precision: 10, scale: 2, nullable: true)]
     private ?string $amount = null;
 
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?Consultation $consultation = null;
+
     public function getRegistrationNumber(): ?int
     {
         return $this->registrationNumber;
@@ -191,6 +195,17 @@ class Queue
     public function setAmount(?string $amount): self
     {
         $this->amount = $amount;
+        return $this;
+    }
+
+    public function getConsultation(): ?Consultation
+    {
+        return $this->consultation;
+    }
+
+    public function setConsultation(?Consultation $consultation): self
+    {
+        $this->consultation = $consultation;
         return $this;
     }
 }

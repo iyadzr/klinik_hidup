@@ -27,7 +27,7 @@
               <h5 class="mb-0 d-flex align-items-center justify-content-between">
                 <span>
                   <i class="fas fa-clipboard-check text-warning me-2"></i>
-                  Remarks
+                  Remarks during Registration
                 </span>
                 <button 
                   type="button" 
@@ -255,22 +255,39 @@ export default {
   },
   computed: {
     selectedPatient() {
+      let selectedPatient = null;
+      
+      // First priority: Group consultation data (has visit-specific remarks from queue metadata)
       if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
         if (groupPatient) {
-          return groupPatient;
+          selectedPatient = groupPatient;
+          console.log('✅ Using groupPatient data with queue remarks:', groupPatient.remarks);
         }
       }
       
-      if (this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
-        return this.fullPatientDetails;
+      // Second priority: Full patient details (general patient info)
+      if (!selectedPatient && this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
+        selectedPatient = this.fullPatientDetails;
+        console.log('✅ Using fullPatientDetails:', this.fullPatientDetails.remarks);
       }
       
-      if (Array.isArray(this.patients)) {
-        return this.patients.find(p => p.id === this.consultation.patientId) || null;
+      // Fallback: General patients array
+      if (!selectedPatient && Array.isArray(this.patients)) {
+        const fallbackPatient = this.patients.find(p => p.id === this.consultation.patientId);
+        if (fallbackPatient) {
+          selectedPatient = fallbackPatient;
+          console.log('⚠️ Using general patients array fallback:', fallbackPatient.remarks);
+        }
       }
       
-      return null;
+      // If we have queue data with single patient remarks, override the remarks
+      if (selectedPatient && this.singlePatientRemarks && !this.isGroupConsultation) {
+        selectedPatient = { ...selectedPatient, remarks: this.singlePatientRemarks };
+        console.log('✅ Overriding with queue remarks for single patient:', this.singlePatientRemarks);
+      }
+      
+      return selectedPatient;
     }
   },
   async mounted() {
@@ -385,9 +402,10 @@ export default {
       
       if (this.$route.params.id) {
         await this.loadConsultation();
-      } else {
-        await this.fetchPatientDetails();
       }
+      
+      // ALWAYS fetch patient details to ensure we have the latest remarks
+      await this.fetchPatientDetails();
     },
     
     async refreshPatientData() {
@@ -642,6 +660,7 @@ export default {
         mcStartDate: this.consultation.mcStartDate || null,
         mcEndDate: this.consultation.mcEndDate || null,
         queueNumber: this.queueNumber,
+        queueId: this.queueId,
         groupId: null,
         isGroupConsultation: false
       };
@@ -686,6 +705,7 @@ export default {
           mcStartDate: patientData.hasMedicalCertificate ? patientData.mcStartDate : null,
           mcEndDate: patientData.hasMedicalCertificate ? patientData.mcEndDate : null,
           queueNumber: this.queueNumber,
+          queueId: this.queueId,
           groupId: this.groupId,
           isGroupConsultation: true,
           totalAmount: isMainPatient ? (parseFloat(this.consultation.totalAmount) || 0) : 0,

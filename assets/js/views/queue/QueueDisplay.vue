@@ -115,6 +115,15 @@
         </div>
       </div>
       
+      
+      <!-- Real-time Status Indicator -->
+      <div class="realtime-status" :class="{ 'connected': eventSource && eventSource.readyState === 1, 'polling': pollingInterval }">
+        <i class="fas fa-circle"></i>
+        <span v-if="eventSource && eventSource.readyState === 1">Live</span>
+        <span v-else-if="pollingInterval">Polling</span>
+        <span v-else>Offline</span>
+      </div>
+      
       <button v-if="!isFullscreen" @click="enterFullscreen" class="fullscreen-btn">
         <i class="fas fa-expand"></i> Fullscreen
       </button>
@@ -201,6 +210,8 @@
 import axios from 'axios';
 import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
 import soundService from '../../services/SoundService.js';
+import requestDebouncer from '../../utils/requestDebouncer.js';
+import sseMonitor from '../../utils/SSEMonitor.js';
 
 export default {
   name: 'QueueDisplay',
@@ -209,9 +220,13 @@ export default {
       queueList: [],
       doctorList: [],
       lastUpdated: new Date().toLocaleTimeString(),
-      refreshInterval: null,
+      // Removed refreshInterval - using pure SSE instead of polling
       eventSource: null,
+      pollingInterval: null,
+      lastHeartbeat: null,
+      heartbeatMonitor: null,
       isFullscreen: false,
+      isLoading: false,
       currentTime: '',
       currentDate: '',
       
@@ -269,8 +284,9 @@ export default {
     }
   },
   created() {
+    // Load data once on creation
     this.loadData();
-    this.refreshInterval = setInterval(this.loadData, 10000); // Reduced from 2s to 10s to prevent deadlocks
+    // Initialize SSE for real-time updates (no polling needed)
     this.initializeSSE();
   },
   mounted() {
@@ -295,15 +311,19 @@ export default {
     document.addEventListener('click', this.activateSoundSystem, { once: true });
   },
   beforeUnmount() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-    if (this.eventSource) {
-      this.eventSource.close();
-    }
+    console.log('🔄 QueueDisplay: beforeUnmount - starting cleanup');
+    
+    // Cancel all pending requests
+    requestDebouncer.cancelAll();
+    
+    // Use aggressive cleanup method
+    this.cleanupAllSSEConnections();
+    
     if (this.clockInterval) {
       clearInterval(this.clockInterval);
+      this.clockInterval = null;
     }
+    
     document.body.classList.remove('queue-fullscreen');
     window.removeEventListener('keydown', this.handleKeydown);
     
@@ -312,6 +332,8 @@ export default {
     document.removeEventListener('webkitfullscreenchange', this.handleFullscreenChange);
     document.removeEventListener('mozfullscreenchange', this.handleFullscreenChange);
     document.removeEventListener('MSFullscreenChange', this.handleFullscreenChange);
+    
+    console.log('✅ QueueDisplay: beforeUnmount - cleanup completed');
   },
   methods: {
     formatQueueNumber(queueNumber) {
@@ -325,26 +347,38 @@ export default {
       return queueNumber;
     },
     async loadQueueList() {
-      try {
-        // Always request today's queue
-        const now = new Date();
-        const options = { timeZone: MALAYSIA_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' };
-        const todayMYT = now.toLocaleDateString('en-CA', options); // YYYY-MM-DD
-        const response = await axios.get(`/api/queue?date=${todayMYT}`);
-        console.log('Queue API response:', response);
+      // Use debounced request to prevent overlapping calls
+      return requestDebouncer.debounce('queue-list', async (signal) => {
+        this.isLoading = true;
+        try {
+          // Always request today's queue
+          const now = new Date();
+          const options = { timeZone: MALAYSIA_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' };
+          const todayMYT = now.toLocaleDateString('en-CA', options); // YYYY-MM-DD
+          const response = await axios.get(`/api/queue?date=${todayMYT}`, { 
+            signal,
+            timeout: 30000 // Increased to 30 seconds
+          });
+          console.log('Queue API response:', response);
         
-        if (response.data && Array.isArray(response.data)) {
-          this.queueList = response.data;
-          this.lastUpdated = new Date().toLocaleTimeString();
-          console.log('Queue list loaded:', this.queueList.length, 'items');
-        } else {
-          console.error('Unexpected queue data format:', response.data);
+          if (response.data && Array.isArray(response.data)) {
+            this.queueList = response.data;
+            this.lastUpdated = new Date().toLocaleTimeString();
+            console.log('Queue list loaded:', this.queueList.length, 'items');
+            return response.data;
+          } else {
+            console.error('Unexpected queue data format:', response.data);
+            this.queueList = [];
+            return [];
+          }
+        } catch (error) {
+          console.error('Error loading queue:', error);
           this.queueList = [];
+          throw error;
+        } finally {
+          this.isLoading = false;
         }
-      } catch (error) {
-        console.error('Error loading queue:', error);
-        this.queueList = [];
-      }
+      }, 500); // 500ms debounce
     },
     async loadData() {
       await Promise.all([
@@ -352,25 +386,34 @@ export default {
         this.loadDoctors()
       ]);
     },
-    refreshData() {
-      this.loadData();
+    async refreshData() {
+      console.log('🔄 Manual refresh requested');
+      await this.loadData();
     },
     async loadDoctors() {
-      try {
-        const response = await axios.get('/api/doctors');
-        console.log('Doctor API response:', response);
+      return requestDebouncer.debounce('doctors-list', async (signal) => {
+        try {
+          const response = await axios.get('/api/doctors', { 
+            signal,
+            timeout: 20000 // Increased to 20 seconds
+          });
+          console.log('Doctor API response:', response);
         
-        if (response.data && Array.isArray(response.data)) {
-          this.doctorList = response.data;
-          console.log('Doctor list loaded:', this.doctorList.length, 'items');
-        } else {
-          console.error('Unexpected doctor data format:', response.data);
+          if (response.data && Array.isArray(response.data)) {
+            this.doctorList = response.data;
+            console.log('Doctor list loaded:', this.doctorList.length, 'items');
+            return response.data;
+          } else {
+            console.error('Unexpected doctor data format:', response.data);
+            this.doctorList = [];
+            return [];
+          }
+        } catch (error) {
+          console.error('Error loading doctors:', error);
           this.doctorList = [];
+          throw error;
         }
-      } catch (error) {
-        console.error('Error loading doctors:', error);
-        this.doctorList = [];
-      }
+      }, 1000); // 1s debounce for doctors (less frequent changes)
     },
     getFormattedPatientName(patient) {
       if (!patient) return 'Unknown Patient';
@@ -435,6 +478,42 @@ export default {
       // Fallback: use doctor ID to determine room
       return `Room ${((doctor.id - 1) % 10) + 1}`;
     },
+    cleanupAllSSEConnections() {
+      console.log('🧹 QueueDisplay: Cleaning up ALL SSE connections');
+      
+      // Unregister from SSE monitor
+      sseMonitor.unregister('queue-display');
+      
+      // Close current instance connection
+      if (this.eventSource) {
+        console.log('🧹 Closing current eventSource');
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+      
+      // Close global reference
+      if (window._queueDisplayEventSource) {
+        console.log('🧹 Closing global _queueDisplayEventSource');
+        window._queueDisplayEventSource.close();
+        window._queueDisplayEventSource = null;
+      }
+      
+      // Kill any remaining EventSource connections via requestKiller
+      if (window.requestKiller) {
+        window.requestKiller.killAllEventSources();
+      }
+      
+      // Clear any polling intervals
+      if (this.pollingInterval) {
+        clearInterval(this.pollingInterval);
+        this.pollingInterval = null;
+      }
+      
+      if (this.heartbeatMonitor) {
+        clearInterval(this.heartbeatMonitor);
+        this.heartbeatMonitor = null;
+      }
+    },
     initializeSSE() {
       // Skip SSE if not supported or in development
       if (!window.EventSource) {
@@ -442,20 +521,31 @@ export default {
         return;
       }
       
+      // AGGRESSIVE CLEANUP: Close ANY existing connections first
+      this.cleanupAllSSEConnections();
+      
       // Initialize Server-Sent Events for real-time queue updates
       try {
-        // Close existing connection if any
-        if (this.eventSource) {
-          this.eventSource.close();
-        }
-        
+        console.log('🔌 QueueDisplay: Initializing new SSE connection');
         this.eventSource = new EventSource('/api/sse/queue-updates');
+        
+        // Register with SSE monitor for tracking
+        sseMonitor.register('queue-display', this.eventSource, 'QueueDisplay');
+        
+        // Store globally for emergency cleanup
+        window._queueDisplayEventSource = this.eventSource;
         
         this.eventSource.onmessage = (event) => {
           try {
             const update = JSON.parse(event.data);
             
-            if (update.type === 'queue_status_update') {
+            if (update.type === 'refresh_needed') {
+              console.log('🔄 SSE refresh signal received, updating queue data');
+              // Refresh data when server indicates changes
+              this.loadData().catch(error => {
+                console.warn('Failed to refresh data after SSE signal:', error);
+              });
+            } else if (update.type === 'queue_status_update') {
               this.handleQueueUpdate(update.data);
             } else if (update.type === 'queue_count_update') {
               this.handleQueueCountUpdate(update.data);
@@ -468,31 +558,88 @@ export default {
         this.eventSource.addEventListener('heartbeat', (event) => {
           // Just keep the connection alive
           console.log('Queue Display SSE heartbeat received');
+          this.lastHeartbeat = Date.now();
         });
         
         this.eventSource.onerror = (error) => {
-          console.warn('Queue Display SSE connection error, attempting reconnection in 3 seconds:', error);
+          console.warn('Queue Display SSE connection error:', error);
           
           if (this.eventSource) {
             this.eventSource.close();
             this.eventSource = null;
           }
           
-          // Attempt to reconnect after 3 seconds
+          // Smart reconnection with exponential backoff
+          const reconnectDelay = Math.min(1000 * Math.pow(2, this.reconnectAttempts || 0), 30000);
+          this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
+          
+          console.log(`Attempting SSE reconnection in ${reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
+          
           setTimeout(() => {
-            if (!this.eventSource) { // Only reconnect if not already connected
-              console.log('Attempting SSE reconnection...');
+            if (!this.eventSource && this.reconnectAttempts < 10) { // Max 10 attempts
               this.initializeSSE();
             }
-          }, 3000);
+          }, reconnectDelay);
         };
         
         this.eventSource.onopen = () => {
           console.log('Queue Display SSE connection established');
+          this.reconnectAttempts = 0; // Reset on successful connection
+          
+          // Stop fallback polling since SSE is working
+          if (this.pollingInterval) {
+            console.log('SSE working, stopping fallback polling');
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+          }
+          
+          // Start heartbeat monitoring
+          this.lastHeartbeat = Date.now();
+          this.startHeartbeatMonitor();
         };
       } catch (error) {
-        console.warn('SSE initialization failed (using fallback polling):', error);
+        console.warn('SSE initialization failed, setting up fallback polling:', error);
+        this.setupFallbackPolling();
       }
+    },
+    startHeartbeatMonitor() {
+      if (this.heartbeatMonitor) {
+        clearInterval(this.heartbeatMonitor);
+      }
+      
+      // Check for heartbeat every 15 seconds
+      this.heartbeatMonitor = setInterval(() => {
+        const now = Date.now();
+        const timeSinceHeartbeat = now - (this.lastHeartbeat || now);
+        
+        // If no heartbeat for 30 seconds, assume SSE is dead
+        if (timeSinceHeartbeat > 30000) {
+          console.warn('SSE heartbeat timeout, switching to fallback polling');
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+          }
+          this.setupFallbackPolling();
+          
+          // Stop heartbeat monitoring
+          clearInterval(this.heartbeatMonitor);
+          this.heartbeatMonitor = null;
+        }
+      }, 15000);
+    },
+    setupFallbackPolling() {
+      // Set up polling as fallback when SSE fails
+      if (this.pollingInterval) {
+        clearInterval(this.pollingInterval);
+      }
+      
+      console.log('Setting up fallback polling every 5 seconds');
+      this.pollingInterval = setInterval(() => {
+        console.log('🔄 Fallback polling refresh');
+        this.loadData().catch(error => {
+          console.warn('Fallback polling failed:', error);
+        });
+      }, 5000); // Poll every 5 seconds
     },
     handleQueueUpdate(queueData) {
       // Always refresh the list for any update to ensure consistency and avoid double refresh/blink
@@ -939,6 +1086,45 @@ body.queue-fullscreen {
 .fullscreen-btn.exit {
   right: 180px;
   background: rgba(0,0,0,0.4);
+}
+
+
+.realtime-status {
+  position: absolute;
+  top: 20px;
+  right: 220px;
+  z-index: 10001;
+  background: rgba(108, 117, 125, 0.8);
+  color: #fff;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.realtime-status.connected {
+  background: rgba(40, 167, 69, 0.8);
+}
+
+.realtime-status.connected .fa-circle {
+  color: #28a745;
+  animation: pulse 2s infinite;
+}
+
+.realtime-status.polling {
+  background: rgba(255, 193, 7, 0.8);
+}
+
+.realtime-status.polling .fa-circle {
+  color: #ffc107;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 
 .clock-display {

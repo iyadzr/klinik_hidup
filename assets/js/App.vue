@@ -272,6 +272,7 @@ import { useRouter, useRoute } from 'vue-router';
 import AuthService from './services/AuthService';
 import UserProfileMenu from './components/UserProfileMenu.vue';
 import NotificationBadge from './components/NotificationBadge.vue';
+import sseMonitor from './utils/SSEMonitor.js';
 
 export default {
   name: 'App',
@@ -466,12 +467,14 @@ export default {
     
 
     const handleLoginSuccess = () => {
+      console.log('📡 App received login success event');
       // Add a small delay to ensure the login process is complete
       setTimeout(() => {
         loadUserData();
         // Force reactivity update
         currentUser.value = { ...AuthService.getCurrentUser() };
-      }, 100);
+        console.log('✅ App user data updated:', currentUser.value);
+      }, 50);
     };
 
     const handleDataChange = () => {
@@ -500,6 +503,9 @@ export default {
       try {
         console.log('🔌 Initializing SSE for pending actions...');
         eventSource.value = new EventSource('/api/sse/queue-updates');
+        
+        // Register with SSE monitor for tracking
+        sseMonitor.register('app-pending-actions', eventSource.value, 'App');
         
         eventSource.value.onopen = () => {
           console.log('✅ SSE connection established for pending actions');
@@ -555,6 +561,9 @@ export default {
     };
 
     const cleanupSSE = () => {
+      // Unregister from SSE monitor
+      sseMonitor.unregister('app-pending-actions');
+      
       if (eventSource.value) {
         eventSource.value.close();
         eventSource.value = null;

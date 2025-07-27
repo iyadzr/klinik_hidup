@@ -216,24 +216,42 @@ export default {
         },
 
         async onViewHistory(patient) {
+            // Show modal immediately with loading state for better UX
+            this.selectedPatient = patient;
+            this.visitHistoryLoading = true;
+            this.visitHistories = [];
+            this.showVisitHistoryModal = true;
+            
+            // Load data in background
             const result = await this.safeApiCall(async () => {
-                this.selectedPatient = patient;
-                this.visitHistoryLoading = true;
-                this.visitHistories = [];
-                
-                // Simple axios call for visit history
                 try {
                     const response = await axios.get(`/api/patients/${patient.id}/visit-history`);
                     console.log('Visit history loaded:', response.data);
-                    this.visitHistories = response.data || [];
+                    
+                    // Extract visits array from response.data
+                    const visits = response.data.visits || response.data || [];
+                    
+                    // Debug the first visit to see data structure
+                    if (visits.length > 0) {
+                        console.log('First visit data structure:', {
+                            id: visits[0].id,
+                            consultationDate: visits[0].consultationDate,
+                            medications: visits[0].medications,
+                            medicationsType: typeof visits[0].medications,
+                            mcRequired: visits[0].mcRequired,
+                            diagnosis: visits[0].diagnosis,
+                            doctor: visits[0].doctor
+                        });
+                    }
+                    
+                    this.visitHistories = visits;
                 } catch (error) {
                     console.warn('Could not load visit history:', error);
                     this.visitHistories = [];
+                    this.error = 'Failed to load visit history';
                 } finally {
                     this.visitHistoryLoading = false;
                 }
-                
-                this.showVisitHistoryModal = true;
                 return true;
             }, 'Failed to load visit history');
         },
