@@ -1279,9 +1279,9 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Incomplete queue data'], 400);
             }
             
-            // Get the latest patient remarks directly from database
-            $freshPatient = $this->entityManager->getRepository(Patient::class)->find($patient->getId());
-            $patientRemarks = $freshPatient ? $freshPatient->getRemarks() : null;
+            // Get ONLY registration-specific remarks from queue metadata
+            // Do NOT fallback to patient-level remarks - only show what was provided during registration
+            $visitRemarks = $this->getQueueSymptoms($queue);
             
             $queueData = [
                 'id' => $queue->getId(),
@@ -1298,7 +1298,7 @@ class QueueController extends AbstractController
                     'gender' => $patient->getGender(),
                     'phone' => $patient->getPhone(),
                     'address' => $patient->getAddress(),
-                    'remarks' => $patientRemarks
+                    'remarks' => $visitRemarks
                 ],
                 'doctor' => [
                     'id' => $doctor->getId(),
@@ -1340,9 +1340,9 @@ class QueueController extends AbstractController
                             $relationship = $metadataArray['relationship'] ?? 'N/A';
                         }
                         
-                        // Get the latest patient remarks directly from database
-                        $freshMemberPatient = $this->entityManager->getRepository(Patient::class)->find($memberPatient->getId());
-                        $remarks = $freshMemberPatient ? $freshMemberPatient->getRemarks() : null;
+                        // Get ONLY registration-specific remarks from queue metadata
+                        // Do NOT fallback to patient-level remarks - only show what was provided during registration
+                        $remarks = $this->getQueueSymptoms($memberQueue);
                         
                         $groupPatients[] = [
                             'id' => $memberPatient->getId(),

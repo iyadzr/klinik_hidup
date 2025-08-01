@@ -204,6 +204,15 @@
                 </div>
               </div>
             </div>
+
+            <div v-if="selectedQueue && selectedQueue.hasMedicines" class="mb-3">
+              <h6 class="text-muted mb-2">Prescribed Medicines</h6>
+              <div class="alert alert-info">
+                <i class="fas fa-pills me-2"></i>
+                <strong>{{ getMedicinesCount(selectedQueue) }} medicines prescribed</strong>
+                <div class="small mt-1">{{ getMedicinesSummary(selectedQueue) }}</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="vue-modal-footer">
@@ -1275,6 +1284,35 @@ export default {
         printWindow.print();
         printWindow.close();
       }, 300);
+    },
+    
+    // Get medicines count for a queue
+    getMedicinesCount(queue) {
+      if (!queue || !queue.hasMedicines) return 0;
+      
+      // If we have loaded medicines list, use that count
+      if (this.medicinesList && this.medicinesList.length > 0) {
+        return this.medicinesList.length;
+      }
+      
+      // Default to "1" to match existing behavior
+      return 1;
+    },
+    
+    // Generate medicines summary for a queue
+    getMedicinesSummary(queue) {
+      if (!queue || !queue.hasMedicines) return '';
+      
+      // If we have loaded medicines list, create summary from actual data
+      if (this.medicinesList && this.medicinesList.length > 0) {
+        const medicineNames = this.medicinesList.map(medicine => 
+          medicine.name || medicine.medicationName || 'Unknown Medicine'
+        );
+        return medicineNames.join(', ');
+      }
+      
+      // Default summary when medicines list is not loaded
+      return 'View details for complete medicine list';
     }
   },
   watch: {
