@@ -11,9 +11,12 @@ COPY package-lock.json* ./
 RUN npm ci && npm cache clean --force
 
 # Copy source files needed for build
-COPY . .
+COPY webpack.config.js ./
+COPY assets/ ./assets/
+COPY public/ ./public/
 
-# Build frontend assets
+# Set NODE_ENV to production and build frontend assets
+ENV NODE_ENV=production
 RUN npm run build
 
 # Production PHP image
@@ -74,7 +77,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 # Copy application files with proper ownership
 COPY --chown=www:www . .
 
-# Copy built assets from node-builder stage
+# Copy built assets from node-builder stage (overwrite any existing dev assets)
 COPY --from=node-builder --chown=www:www /app/public/build ./public/build
 
 # Create necessary directories and set proper permissions
