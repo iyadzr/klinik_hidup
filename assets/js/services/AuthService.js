@@ -21,10 +21,10 @@ class AuthService {
     );
   }
 
-  async login(email, password) {
+  async login(username, password) {
     try {
       const response = await axios.post('/api/login', { 
-        email, 
+        username, 
         password 
       }, {
         timeout: 10000 // 10 second timeout

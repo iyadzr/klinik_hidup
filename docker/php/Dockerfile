@@ -80,6 +80,10 @@ COPY --chown=www:www . .
 # Copy built assets from node-builder stage (overwrite any existing dev assets)
 COPY --from=node-builder --chown=www:www /app/public/build ./public/build
 
+# Copy startup script and make it executable
+COPY docker/php/startup.sh /usr/local/bin/startup.sh
+RUN chmod +x /usr/local/bin/startup.sh
+
 # Create necessary directories and set proper permissions
 RUN mkdir -p /var/www/html/var/cache \
     && mkdir -p /var/www/html/var/log \
@@ -91,6 +95,9 @@ RUN mkdir -p /var/www/html/var/cache \
 
 # Switch to non-root user
 USER www
+
+# Use startup script as entrypoint
+CMD ["/usr/local/bin/startup.sh"]
 
 # Expose port 9000 for PHP-FPM
 EXPOSE 9000

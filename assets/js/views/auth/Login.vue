@@ -8,17 +8,18 @@
       </div>
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="mb-3">
-          <label for="email" class="form-label">Email</label>
+          <label for="username" class="form-label">Username</label>
           <input
-            type="email"
+            type="text"
             class="form-control"
-            id="email"
-            v-model="email"
+            id="username"
+            v-model="username"
             required
-            :class="{ 'is-invalid': errors.email }"
+            :class="{ 'is-invalid': errors.username }"
+            placeholder="Enter your username"
           >
-          <div class="invalid-feedback" v-if="errors.email">
-            {{ errors.email }}
+          <div class="invalid-feedback" v-if="errors.username">
+            {{ errors.username }}
           </div>
         </div>
         <div class="mb-3">
@@ -58,7 +59,7 @@ export default {
   emits: ['login-success'],
   setup(props, { emit }) {
     const router = useRouter();
-    const email = ref('');
+    const username = ref('');
     const password = ref('');
     const loading = ref(false);
     const loginError = ref('');
@@ -66,10 +67,8 @@ export default {
 
     const validateForm = () => {
       errors.value = {};
-      if (!email.value) {
-        errors.value.email = 'Email is required';
-      } else if (!/\S+@\S+\.\S+/.test(email.value)) {
-        errors.value.email = 'Please enter a valid email';
+      if (!username.value) {
+        errors.value.username = 'Username is required';
       }
       if (!password.value) {
         errors.value.password = 'Password is required';
@@ -84,7 +83,7 @@ export default {
       loginError.value = '';
 
       try {
-        const response = await AuthService.login(email.value, password.value);
+        const response = await AuthService.login(username.value, password.value);
         if (response && (response.token || response.user)) {
           console.log('✅ Login successful, user data:', response);
           
@@ -122,7 +121,7 @@ export default {
     };
 
     return {
-      email,
+      username,
       password,
       loading,
       loginError,
