@@ -22,8 +22,8 @@ services:
       - "0.0.0.0:8090:80"
     volumes:
       - ./docker/nginx/clinic.conf:/etc/nginx/conf.d/default.conf:ro
-    volumes_from:
-      - app:ro
+      - ./public:/var/www/html/public:ro
+      - ./templates:/var/www/html/templates:ro
     depends_on:
       - app
     networks:
