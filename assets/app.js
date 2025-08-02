@@ -25,8 +25,8 @@ import {
   faSignOutAlt 
 } from '@fortawesome/free-solid-svg-icons';
 
-// Set axios baseURL to Symfony backend
-axios.defaults.baseURL = 'http://127.0.0.1:8090';
+// Set axios baseURL to current host (dynamic)
+axios.defaults.baseURL = window.location.protocol + '//' + window.location.host;
 
 // Configure axios defaults
 axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
