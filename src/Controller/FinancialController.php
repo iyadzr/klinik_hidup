@@ -95,32 +95,28 @@ class FinancialController extends AbstractController
             ->leftJoin('p.queue', 'q')
             ->orderBy('p.paymentDate', 'DESC');
 
-        // Apply filters (using date range comparison with timezone handling)
+        // Apply filters (using date range comparison - no timezone conversion needed)
+        // IMPORTANT: Payments are stored in Malaysia timezone, so compare directly
         if ($startDate) {
-            // Convert start date to UTC for comparison
             $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
-            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
             $qb->andWhere('p.paymentDate >= :startDate')
                ->setParameter('startDate', $startDateTime);
         }
         if ($endDate) {
-            // Convert end date to UTC for comparison
             $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
-            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
             $qb->andWhere('p.paymentDate <= :endDate')
                ->setParameter('endDate', $endDateTime);
         }
-        if ($paymentMethod) {
+        if ($paymentMethod && $paymentMethod !== '') {
             $qb->andWhere('p.paymentMethod = :paymentMethod')
                ->setParameter('paymentMethod', $paymentMethod);
         }
 
         // Default to today if no date filter (using Malaysia timezone)
+        // IMPORTANT: Payments are stored in Malaysia timezone, not UTC, so don't convert
         if (!$startDate && !$endDate) {
             $todayStart = \App\Service\TimezoneService::startOfDay();
             $todayEnd = \App\Service\TimezoneService::endOfDay();
-            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
-            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
             
             $qb->andWhere('p.paymentDate BETWEEN :todayStart AND :todayEnd')
                ->setParameter('todayStart', $todayStart)
@@ -236,6 +232,7 @@ class FinancialController extends AbstractController
         return new JsonResponse($this->paymentRepository->getSummary());
     }
 
+
     #[Route('/payments/all', name: 'api_financial_payments_all', methods: ['GET'])]
     public function paymentsAll(Request $request): JsonResponse
     {
@@ -247,6 +244,8 @@ class FinancialController extends AbstractController
 
         $allPayments = [];
 
+        // Removed debugging code - ready for production
+        
         // 1. Get completed payments (from Payment table)
         $completedPayments = $this->getCompletedPayments($startDate, $endDate, $paymentMethod);
         
@@ -292,20 +291,18 @@ class FinancialController extends AbstractController
             ->leftJoin('p.queue', 'q')
             ->orderBy('p.paymentDate', 'DESC');
 
-        // Apply filters
+        // Apply filters - no timezone conversion needed since payments are stored in Malaysia time
         if ($startDate) {
             $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
-            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
             $qb->andWhere('p.paymentDate >= :startDate')
                ->setParameter('startDate', $startDateTime);
         }
         if ($endDate) {
             $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
-            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
             $qb->andWhere('p.paymentDate <= :endDate')
                ->setParameter('endDate', $endDateTime);
         }
-        if ($paymentMethod) {
+        if ($paymentMethod && $paymentMethod !== '') {
             $qb->andWhere('p.paymentMethod = :paymentMethod')
                ->setParameter('paymentMethod', $paymentMethod);
         }
@@ -314,8 +311,6 @@ class FinancialController extends AbstractController
         if (!$startDate && !$endDate) {
             $todayStart = \App\Service\TimezoneService::startOfDay();
             $todayEnd = \App\Service\TimezoneService::endOfDay();
-            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
-            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
             
             $qb->andWhere('p.paymentDate BETWEEN :todayStart AND :todayEnd')
                ->setParameter('todayStart', $todayStart)
@@ -418,16 +413,14 @@ class FinancialController extends AbstractController
             ->setParameter('statuses', ['completed_consultation', 'completed'])
             ->orderBy('c.consultationDate', 'DESC');
 
-        // Apply date filters
+        // Apply date filters - no timezone conversion needed since consultations are stored in Malaysia time
         if ($startDate) {
             $startDateTime = \App\Service\TimezoneService::startOfDay($startDate);
-            $startDateTime = \App\Service\TimezoneService::convertToUtc($startDateTime);
             $qb->andWhere('c.consultationDate >= :startDate')
                ->setParameter('startDate', $startDateTime);
         }
         if ($endDate) {
             $endDateTime = \App\Service\TimezoneService::endOfDay($endDate);
-            $endDateTime = \App\Service\TimezoneService::convertToUtc($endDateTime);
             $qb->andWhere('c.consultationDate <= :endDate')
                ->setParameter('endDate', $endDateTime);
         }
@@ -436,8 +429,6 @@ class FinancialController extends AbstractController
         if (!$startDate && !$endDate) {
             $todayStart = \App\Service\TimezoneService::startOfDay();
             $todayEnd = \App\Service\TimezoneService::endOfDay();
-            $todayStart = \App\Service\TimezoneService::convertToUtc($todayStart);
-            $todayEnd = \App\Service\TimezoneService::convertToUtc($todayEnd);
             
             $qb->andWhere('c.consultationDate BETWEEN :todayStart AND :todayEnd')
                ->setParameter('todayStart', $todayStart)
