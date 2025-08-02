@@ -37,12 +37,6 @@ RUN apt-get update && apt-get install -y \
 # Install PHP extensions
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd opcache
 
-# Install Node.js and npm
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
 # Set timezone
 ENV TZ=Asia/Kuala_Lumpur
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -77,25 +71,20 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
     && composer dump-autoload --optimize \
     && composer clear-cache
 
-# Copy package.json for runtime dependencies
-COPY package.json package-lock.json* ./
-
-# Install Node.js dependencies for runtime (production only)
-RUN npm ci --only=production \
-    && npm cache clean --force
-
 # Copy application files with proper ownership
 COPY --chown=www:www . .
 
 # Copy built assets from node-builder stage
 COPY --from=node-builder --chown=www:www /app/public/build ./public/build
 
-# Set proper permissions
-RUN chown -R www:www /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache \
-    && chmod -R 755 /var/www/html/var \
-    && chmod -R 755 /var/www/html/public
+# Create necessary directories and set proper permissions
+RUN mkdir -p /var/www/html/var/cache \
+    && mkdir -p /var/www/html/var/log \
+    && mkdir -p /var/www/html/public/uploads \
+    && chown -R www:www /var/www/html \
+    && find /var/www/html/var -type d -exec chmod 755 {} \; \
+    && find /var/www/html/public -type d -exec chmod 755 {} \; \
+    && find /var/www/html -name "*.php" -type f -exec chmod 644 {} \;
 
 # Switch to non-root user
 USER www
