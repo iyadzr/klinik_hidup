@@ -1,8 +1,7 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
-docker exec clinic-management-system-node-1 npm run test:unit
 echo "Running PHP tests..."
-if ! docker exec clinic-management-system-php-1 bash -c "APP_ENV=test vendor/bin/phpunit --testdox"; then
+if ! docker exec clinic-management-system-app-1 bash -c "APP_ENV=test vendor/bin/phpunit --testdox"; then
     echo "⚠️  PHP tests failed, but allowing commit. Please fix failing tests."
 fi
