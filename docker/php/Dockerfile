@@ -4,13 +4,16 @@ FROM node:18-alpine AS node-builder
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
+COPY package-lock.json* ./
 
-# Install Node.js dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install Node.js dependencies (including dev dependencies for build)
+RUN npm ci && npm cache clean --force
 
-# Copy source files and build assets
+# Copy source files needed for build
 COPY . .
+
+# Build frontend assets
 RUN npm run build
 
 # Production PHP image
@@ -66,20 +69,26 @@ RUN groupadd -g 1000 www && useradd -u 1000 -ms /bin/bash -g www www
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy application files with proper ownership
-COPY --chown=www:www . .
-
-# Copy built assets from node-builder stage
-COPY --from=node-builder --chown=www:www /app/public/build ./public/build
+# Copy composer files first
+COPY composer.json composer.lock* ./
 
 # Install Composer dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts \
     && composer dump-autoload --optimize \
     && composer clear-cache
 
-# Install Node.js dependencies and build assets
+# Copy package.json for runtime dependencies
+COPY package.json package-lock.json* ./
+
+# Install Node.js dependencies for runtime (production only)
 RUN npm ci --only=production \
     && npm cache clean --force
+
+# Copy application files with proper ownership
+COPY --chown=www:www . .
+
+# Copy built assets from node-builder stage
+COPY --from=node-builder --chown=www:www /app/public/build ./public/build
 
 # Set proper permissions
 RUN chown -R www:www /var/www/html \
