@@ -26,6 +26,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 
 // Set axios baseURL to current host (dynamic)
+// In containerized setup, API calls go through nginx proxy to /api/
 axios.defaults.baseURL = window.location.protocol + '//' + window.location.host;
 
 // Configure axios defaults

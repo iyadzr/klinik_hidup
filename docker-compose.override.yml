@@ -1,0 +1,34 @@
+# Development overrides for docker-compose.yml
+# This file is automatically loaded by docker-compose
+
+services:
+  # Development mode for backend
+  app:
+    volumes:
+      # Bind mount for live reloading during development
+      - .:/var/www/html
+      - /var/www/html/vendor
+      - /var/www/html/var
+    environment:
+      - APP_ENV=dev
+      - APP_DEBUG=1
+
+  # Development mode for frontend
+  frontend:
+    # Override for development - use bind mount for live reloading
+    # Comment this out for production builds
+    volumes:
+      - ./assets:/app/assets
+      - ./public:/app/public
+      - ./package.json:/app/package.json
+      - ./webpack.config.js:/app/webpack.config.js
+    
+  # Optional: Development database with data persistence
+  mysql:
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    ports:
+      - "3307:3306"  # Expose for external access during development
+
+volumes:
+  mysql_dev_data:
