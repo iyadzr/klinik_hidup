@@ -24,8 +24,8 @@ class Queue
     #[ORM\Column]
     private ?\DateTimeImmutable $queueDateTime = null;
 
-    #[ORM\Column(length: 20)]
-    private ?string $status = null; // waiting, in_consultation, completed, cancelled
+    #[ORM\Column(length: 50)]
+    private ?string $status = null; // waiting, in_consultation, completed, cancelled, completed_consultation
 
     #[ORM\Column(type: "string", length: 20, nullable: true)]
     private ?string $queueNumber = null;
@@ -51,6 +51,9 @@ class Queue
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: true)]
     private ?Consultation $consultation = null;
+
+    #[ORM\Column(type: 'datetime', nullable: true, options: ['default' => 'CURRENT_TIMESTAMP', 'extra' => 'on update CURRENT_TIMESTAMP'])]
+    private ?\DateTimeInterface $updatedAt = null;
 
     public function getRegistrationNumber(): ?int
     {
@@ -206,6 +209,17 @@ class Queue
     public function setConsultation(?Consultation $consultation): self
     {
         $this->consultation = $consultation;
+        return $this;
+    }
+
+    public function getUpdatedAt(): ?\DateTimeInterface
+    {
+        return $this->updatedAt;
+    }
+
+    public function setUpdatedAt(?\DateTimeInterface $updatedAt): self
+    {
+        $this->updatedAt = $updatedAt;
         return $this;
     }
 }

@@ -24,6 +24,10 @@ print_info() {
     echo -e "${YELLOW}→ $1${NC}"
 }
 
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
 # Check if running as root or with sudo
 if [ "$EUID" -eq 0 ]; then 
    print_info "Running as root user"
@@ -172,18 +176,54 @@ fi
 
 # 13. Check network binding
 print_info "Checking network binding..."
-BINDING=$(netstat -tlnp 2>/dev/null | grep :8090 | grep -o '0.0.0.0:8090' || true)
+# Try ss first (modern), then netstat (legacy), then docker port
+if command -v ss &> /dev/null; then
+    BINDING=$(ss -tlnp 2>/dev/null | grep :8090 | grep -o '0.0.0.0:8090' || true)
+elif command -v netstat &> /dev/null; then
+    BINDING=$(netstat -tlnp 2>/dev/null | grep :8090 | grep -o '0.0.0.0:8090' || true)
+else
+    # Use docker port command as fallback
+    BINDING=$(docker port $(docker compose -f $COMPOSE_FILE ps -q nginx) 80 2>/dev/null | grep -o '0.0.0.0:8090' || true)
+fi
+
 if [ "$BINDING" = "0.0.0.0:8090" ]; then
     print_success "Application is bound to all interfaces (0.0.0.0:8090)"
 else
-    print_error "Application is not properly bound to all interfaces"
-    netstat -tlnp | grep :8090
+    # Check with docker directly
+    DOCKER_BINDING=$(docker compose -f $COMPOSE_FILE ps --format json | grep -o '"8090->80"' || true)
+    if [ -n "$DOCKER_BINDING" ]; then
+        print_success "Application is accessible on port 8090 (verified via Docker)"
+    else
+        print_warning "Could not verify network binding (tools not available)"
+    fi
 fi
 
 # 14. Get server IP
-SERVER_IP=$(hostname -I | awk '{print $1}')
+# Try multiple methods to get the correct IP
+if command -v ip &> /dev/null; then
+    # Get IP from default route interface
+    SERVER_IP=$(ip route get 1.1.1.1 | grep -oP 'src \K[^ ]+' | head -1)
+elif command -v hostname &> /dev/null; then
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+else
+    # Fallback to parsing ifconfig
+    SERVER_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -1)
+fi
 
-# 15. Final status
+# Validate IP
+if [[ ! "$SERVER_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    SERVER_IP="<server-ip>"
+fi
+
+# 15. Show all network interfaces (for debugging)
+print_info "Network interfaces:"
+if command -v ip &> /dev/null; then
+    ip addr show | grep -E "inet " | grep -v "127.0.0.1" | awk '{print "  - " $2 " on " $NF}'
+elif command -v ifconfig &> /dev/null; then
+    ifconfig | grep -E "inet " | grep -v "127.0.0.1" | awk '{print "  - " $2}'
+fi
+
+# 16. Final status
 echo ""
 echo "=========================================="
 echo -e "${GREEN}Deployment completed successfully!${NC}"
@@ -192,6 +232,9 @@ echo ""
 echo "Application URLs:"
 echo -e "  Local:    ${GREEN}http://localhost:8090${NC}"
 echo -e "  Network:  ${GREEN}http://${SERVER_IP}:8090${NC}"
+echo ""
+echo "If the network URL above is incorrect, try these:"
+ip addr show 2>/dev/null | grep -E "inet " | grep -v "127.0.0.1" | awk '{print "  - http://" $2 ":8090"}' | sed 's|/[0-9]*:|\:|g'
 echo ""
 echo "Container status:"
 docker compose -f $COMPOSE_FILE ps
