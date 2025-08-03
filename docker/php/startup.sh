@@ -94,6 +94,19 @@ try {
         }
     }
     
+    // Check prescribed_medication table critical columns
+    \$prescribedMedColumns = ['dosage', 'frequency', 'duration'];
+    foreach (\$prescribedMedColumns as \$column) {
+        \$stmt = \$pdo->query(\"SHOW COLUMNS FROM prescribed_medication LIKE '\$column'\");
+        if (\$stmt->rowCount() == 0) {
+            echo \"Adding missing column: \$column to prescribed_medication table...\n\";
+            \$pdo->exec(\"ALTER TABLE prescribed_medication ADD COLUMN \$column VARCHAR(255) DEFAULT NULL\");
+            echo \"✅ \$column column added successfully!\n\";
+        } else {
+            echo \"✅ \$column column already exists in prescribed_medication table.\n\";
+        }
+    }
+    
 } catch (Exception \$e) {
     echo \"⚠️  Database schema check failed: \" . \$e->getMessage() . \"\n\";
 }
