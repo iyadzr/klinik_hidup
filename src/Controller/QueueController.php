@@ -502,6 +502,18 @@ class QueueController extends AbstractController
                 return new JsonResponse(['error' => 'Invalid JSON data'], 400);
             }
             
+            // Debug: Log the received data
+            $this->logger->info('Queue create request received', [
+                'data' => $data,
+                'hasSymptoms' => isset($data['symptoms']),
+                'hasRemarks' => isset($data['remarks']),
+                'symptoms' => $data['symptoms'] ?? 'not set',
+                'remarks' => $data['remarks'] ?? 'not set'
+            ]);
+            
+            // Temporary debug: var_dump the data
+            error_log('DEBUG: Queue create data: ' . print_r($data, true));
+            
             // Validate required fields
             if (!isset($data['patientId']) || !isset($data['doctorId'])) {
                 return new JsonResponse(['error' => 'Patient ID and Doctor ID are required'], 400);
@@ -555,6 +567,23 @@ class QueueController extends AbstractController
                     'groupId' => $data['groupId'] ?? uniqid()
                 ];
                 $queue->setMetadata(json_encode($metadata));
+            } else {
+                // For single patient consultations, store symptoms/remarks in metadata
+                $metadata = [];
+                if (isset($data['symptoms']) && !empty($data['symptoms'])) {
+                    $metadata['symptoms'] = $data['symptoms'];
+                    $this->logger->info('Storing symptoms in metadata', ['symptoms' => $data['symptoms']]);
+                }
+                if (isset($data['remarks']) && !empty($data['remarks'])) {
+                    $metadata['remarks'] = $data['remarks'];
+                    $this->logger->info('Storing remarks in metadata', ['remarks' => $data['remarks']]);
+                }
+                if (!empty($metadata)) {
+                    $queue->setMetadata(json_encode($metadata));
+                    $this->logger->info('Setting queue metadata', ['metadata' => $metadata]);
+                } else {
+                    $this->logger->info('No symptoms or remarks to store in metadata');
+                }
             }
             
             // Override registration number if provided
