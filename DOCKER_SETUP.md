@@ -69,6 +69,7 @@ The scripts check for critical columns:
 - `is_paid`, `paid_at`, `payment_method`, `amount` in queue table
 - `metadata`, `updated_at` in queue table
 - `dosage`, `frequency`, `duration` in prescribed_medication table
+- `processed_by_id`, `queue_id`, `queue_number` in payment table
 - Queue status column length (ensures VARCHAR(50) for status values like 'completed_consultation')
 
 ### 3. Health Checks
@@ -189,6 +190,11 @@ If you encounter "Column not found" errors:
    docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN dosage VARCHAR(255) DEFAULT NULL;"
    docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN frequency VARCHAR(255) DEFAULT NULL;"
    docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN duration VARCHAR(255) DEFAULT NULL;"
+   
+   # For payment table
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE payment ADD COLUMN processed_by_id INT DEFAULT NULL;"
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE payment ADD COLUMN queue_id INT DEFAULT NULL;"
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE payment ADD COLUMN queue_number VARCHAR(10) DEFAULT NULL;"
    ```
 
 ## Monitoring

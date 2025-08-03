@@ -861,8 +861,8 @@ export default {
         
         await this.soundService.announceQueueCall(
           queueNumber,
-          patientName,
-          doctorName,
+          null, // patientName - not announced
+          null, // doctorName - not announced
           roomNumber
         );
       } catch (error) {
@@ -905,8 +905,8 @@ export default {
       try {
         await this.soundService.announceQueueCall(
           "A001",
-          "Test Patient",
-          "Test Doctor",
+          null, // patientName - not announced
+          null, // doctorName - not announced
           "Room 1"
         );
         console.log('🔊 Queue call test successful');

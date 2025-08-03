@@ -177,17 +177,11 @@ class SoundService {
       // Wait a moment for the beeps to finish
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Construct the announcement text
-      let announcement = `Queue number ${this.formatQueueNumberForSpeech(queueNumber)}, please proceed`;
+      // Construct the announcement text - only queue number and room
+      let announcement = `Queue number ${this.formatQueueNumberForSpeech(queueNumber)}`;
       
-      if (doctorName && roomNumber) {
-        announcement += ` to ${roomNumber} for Doctor ${doctorName}`;
-      } else if (roomNumber) {
-        announcement += ` to ${roomNumber}`;
-      }
-
-      if (patientName) {
-        announcement += `. ${patientName}, please come forward`;
+      if (roomNumber) {
+        announcement += `, ${roomNumber}`;
       }
 
       // Speak the announcement
