@@ -126,6 +126,23 @@ try {
         }
     }
     
+    // Check payment table critical columns
+    \$paymentColumns = ['processed_by_id', 'queue_id', 'queue_number'];
+    foreach (\$paymentColumns as \$column) {
+        \$stmt = \$pdo->query(\"SHOW COLUMNS FROM payment LIKE '\$column'\");
+        if (\$stmt->rowCount() == 0) {
+            echo \"Adding missing column: \$column to payment table...\n\";
+            if (\$column === 'queue_number') {
+                \$pdo->exec(\"ALTER TABLE payment ADD COLUMN \$column VARCHAR(10) DEFAULT NULL\");
+            } else {
+                \$pdo->exec(\"ALTER TABLE payment ADD COLUMN \$column INT DEFAULT NULL\");
+            }
+            echo \"✅ \$column column added successfully!\n\";
+        } else {
+            echo \"✅ \$column column already exists in payment table.\n\";
+        }
+    }
+    
 } catch (Exception \$e) {
     echo \"⚠️  Database schema check failed: \" . \$e->getMessage() . \"\n\";
 }

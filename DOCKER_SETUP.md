@@ -69,6 +69,7 @@ The scripts check for critical columns:
 - `is_paid`, `paid_at`, `payment_method`, `amount` in queue table
 - `metadata`, `updated_at` in queue table
 - `dosage`, `frequency`, `duration` in prescribed_medication table
+- Queue status column length (ensures VARCHAR(50) for status values like 'completed_consultation')
 
 ### 3. Health Checks
 
