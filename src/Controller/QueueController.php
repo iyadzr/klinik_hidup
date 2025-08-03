@@ -1550,7 +1550,9 @@ class QueueController extends AbstractController
                     'id' => $queue->getDoctor()->getId(),
                     'name' => $queue->getDoctor()->getName(),
                 ],
-                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s')
+                'queueDateTime' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                'isGroupConsultation' => $queue->isGroupConsultation(),
+                'groupId' => $queue->getGroupId()
             ]
         ];
         

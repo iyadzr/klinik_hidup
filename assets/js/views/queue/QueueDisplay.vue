@@ -252,17 +252,25 @@ export default {
       // Get all consultations that are currently in progress
       const inConsultation = this.queueList.filter(q => q.status === 'in_consultation');
       
-      // Group by doctor to avoid duplicates and ensure one per doctor
+      // For group consultations, we want to show all group consultations
+      // For single consultations, group by doctor to avoid duplicates
+      const groupConsultations = inConsultation.filter(q => q.isGroupConsultation);
+      const singleConsultations = inConsultation.filter(q => !q.isGroupConsultation);
+      
+      // Group single consultations by doctor to avoid duplicates
       const byDoctor = {};
-      inConsultation.forEach(consultation => {
+      singleConsultations.forEach(consultation => {
         const doctorId = consultation.doctor?.id || 'unknown';
         if (!byDoctor[doctorId]) {
           byDoctor[doctorId] = consultation;
         }
       });
       
+      // Combine group consultations and single consultations
+      const allConsultations = [...groupConsultations, ...Object.values(byDoctor)];
+      
       // Return as array sorted by doctor name
-      return Object.values(byDoctor).sort((a, b) => {
+      return allConsultations.sort((a, b) => {
         const nameA = this.getFormattedDoctorName(a.doctor);
         const nameB = this.getFormattedDoctorName(b.doctor);
         return nameA.localeCompare(nameB);
@@ -642,7 +650,23 @@ export default {
       }, 5000); // Poll every 5 seconds
     },
     handleQueueUpdate(queueData) {
-      // Always refresh the list for any update to ensure consistency and avoid double refresh/blink
+      console.log('📡 SSE queue update received in QueueDisplay:', queueData);
+      
+      // Always refresh the list for status changes to ensure immediate updates
+      if (queueData.status && ['completed_consultation', 'completed', 'in_consultation'].includes(queueData.status)) {
+        console.log('🔄 Status change detected, refreshing queue data immediately');
+        this.loadData();
+        return;
+      }
+      
+      // If this is a group consultation, always refresh the list
+      if (queueData.isGroupConsultation || typeof queueData.patientCount !== 'undefined') {
+        console.log('🔄 Group consultation detected, refreshing queue data immediately');
+        this.loadData();
+        return;
+      }
+      
+      // For other updates, refresh the data
       this.loadData();
     },
     handleQueueCountUpdate(updateData) {
