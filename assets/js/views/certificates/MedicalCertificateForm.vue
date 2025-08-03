@@ -29,12 +29,28 @@
 
           <div class="row mb-3">
             <div class="col-md-6">
-              <label class="form-label">Start Date</label>
-              <input type="date" v-model="certificate.startDate" class="form-control" required>
+              <label class="form-label">Start Date (DD/MM/YYYY)</label>
+              <input 
+                type="text" 
+                v-model="certificate.startDate" 
+                class="form-control" 
+                placeholder="DD/MM/YYYY"
+                maxlength="10"
+                required
+                @input="formatStartDate"
+              >
             </div>
             <div class="col-md-6">
-              <label class="form-label">End Date</label>
-              <input type="date" v-model="certificate.endDate" class="form-control" required>
+              <label class="form-label">End Date (DD/MM/YYYY)</label>
+              <input 
+                type="text" 
+                v-model="certificate.endDate" 
+                class="form-control" 
+                placeholder="DD/MM/YYYY"
+                maxlength="10"
+                required
+                @input="formatEndDate"
+              >
             </div>
           </div>
 
@@ -108,6 +124,7 @@
 <script>
 import axios from 'axios';
 import { Modal } from 'bootstrap';
+import { formatDateForAPI, formatDateOnlyMalaysia } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'MedicalCertificateForm',
@@ -147,7 +164,13 @@ export default {
     },
     async generateCertificate() {
       try {
-        const response = await axios.post('/api/medical-certificates', this.certificate);
+        // Convert dates to API format before sending
+        const certificateData = {
+          ...this.certificate,
+          startDate: this.certificate.startDate ? formatDateForAPI(this.certificate.startDate) : '',
+          endDate: this.certificate.endDate ? formatDateForAPI(this.certificate.endDate) : ''
+        };
+        const response = await axios.post('/api/medical-certificates', certificateData);
         this.certificateId = response.data.id;
         await this.previewCertificate();
       } catch (error) {
@@ -165,6 +188,58 @@ export default {
       } catch (error) {
         console.error('Error loading certificate preview:', error);
       }
+    },
+    formatStartDate(event) {
+      const inputValue = event.target.value;
+      const formattedDate = this.parseAndFormatDate(inputValue);
+      if (formattedDate) {
+        this.certificate.startDate = formatDateOnlyMalaysia(formattedDate);
+      }
+    },
+    formatEndDate(event) {
+      const inputValue = event.target.value;
+      const formattedDate = this.parseAndFormatDate(inputValue);
+      if (formattedDate) {
+        this.certificate.endDate = formatDateOnlyMalaysia(formattedDate);
+      }
+    },
+    parseAndFormatDate(inputValue) {
+      // Remove any non-digit characters
+      const cleanValue = inputValue.replace(/\D/g, '');
+      
+      // Check if we have exactly 8 digits (DDMMYYYY)
+      if (cleanValue.length === 8) {
+        const day = cleanValue.substring(0, 2);
+        const month = cleanValue.substring(2, 4);
+        const year = cleanValue.substring(4, 8);
+        
+        // Validate the date
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() == year && 
+            date.getMonth() == month - 1 && 
+            date.getDate() == day) {
+          return date;
+        }
+      }
+      
+      // Try to parse DD/MM/YYYY format
+      const parts = inputValue.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0]);
+        const month = parseInt(parts[1]);
+        const year = parseInt(parts[2]);
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          const date = new Date(year, month - 1, day);
+          if (date.getFullYear() == year && 
+              date.getMonth() == month - 1 && 
+              date.getDate() == day) {
+            return date;
+          }
+        }
+      }
+      
+      return null;
     },
     formatDate(date) {
       return new Date(date).toLocaleDateString('en-GB', {

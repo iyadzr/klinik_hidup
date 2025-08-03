@@ -96,7 +96,7 @@
 </template>
 
 <script>
-import timezoneUtils from '../../utils/timezoneUtils.js';
+import { formatDateOnlyMalaysia } from '../../utils/timezoneUtils.js';
 import { formatNRIC } from '../../utils/nricFormatter.js';
 
 export default {
@@ -114,7 +114,7 @@ export default {
   methods: {
     formatDate(date) {
       if (!date) return '';
-      return timezoneUtils.formatDateMalaysia(new Date(date));
+      return formatDateOnlyMalaysia(date);
     },
     formatNRIC(nric) {
       return formatNRIC(nric);

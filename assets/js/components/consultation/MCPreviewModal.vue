@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
+import { formatDateOnlyMalaysia } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'MCPreviewModal',
@@ -135,13 +135,7 @@ export default {
     formatDate(dateString) {
       if (!dateString) return 'N/A';
       try {
-        const dateObj = new Date(dateString);
-        return dateObj.toLocaleDateString('en-MY', {
-          timeZone: MALAYSIA_TIMEZONE,
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
+        return formatDateOnlyMalaysia(dateString);
       } catch (error) {
         console.error('Error formatting date:', error);
         return 'Invalid Date';

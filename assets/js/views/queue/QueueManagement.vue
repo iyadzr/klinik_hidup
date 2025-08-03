@@ -49,6 +49,7 @@
                 <th>Status</th>
                 <th>Time</th>
                 <th>Medicines</th>
+                <th>MC</th>
                 <th>Payment Status</th>
               </tr>
             </thead>
@@ -88,6 +89,18 @@
                         <i class="fas fa-check me-1"></i>Ready
                       </span>
                     </div>
+                  </div>
+                  <div v-else>
+                    <span class="text-muted">-</span>
+                  </div>
+                </td>
+                <td>
+                  <div v-if="queue.hasMedicalCertificate">
+                    <button class="btn btn-sm fw-bold premium-mc-btn" @click="viewMedicalCertificate(queue)">
+                      <i class="fas fa-file-medical me-1"></i>
+                      <span class="d-none d-md-inline">MC</span>
+                      <span class="d-md-none">MC</span>
+                    </button>
                   </div>
                   <div v-else>
                     <span class="text-muted">-</span>
@@ -305,6 +318,121 @@
       </div>
     </div>
   </div>
+
+  <!-- MC Preview Modal (Vue-based, No Bootstrap JS) -->
+  <div v-if="showMCPreviewModal" class="vue-modal-overlay" @click="closeMCPreviewModal">
+    <div class="vue-modal-dialog" @click.stop>
+      <div class="vue-modal-content">
+        <div class="vue-modal-header">
+          <h5 class="vue-modal-title">
+            <i class="fas fa-certificate me-2"></i>Medical Certificate Preview
+          </h5>
+          <button type="button" class="vue-btn-close" @click="closeMCPreviewModal" aria-label="Close">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="vue-modal-body">
+          <div v-if="selectedQueue && mcPreviewData" class="mc-preview-container">
+            <!-- Header -->
+            <div class="text-center mb-4">
+              <h3 class="fw-bold">MEDICAL CERTIFICATE</h3>
+              <p class="text-muted">Klinik HiDUP sihat</p>
+              <hr>
+            </div>
+
+            <!-- MC Number and Date -->
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <strong>MC No:</strong> {{ mcPreviewData.mcRunningNumber || 'Auto-generated' }}
+              </div>
+              <div class="col-md-6 text-end">
+                <strong>Date:</strong> {{ formatDate(new Date()) }}
+              </div>
+            </div>
+
+            <!-- Patient Information -->
+            <div class="mb-4">
+              <h5 class="mb-3">Patient Information</h5>
+              <div class="row">
+                <div class="col-md-6">
+                  <p><strong>Name:</strong> {{ getSelectedQueuePatientName() }}</p>
+                  <p><strong>IC/Passport:</strong> {{ selectedQueue.patient?.nric || selectedQueue.patient?.ic || 'N/A' }}</p>
+                </div>
+                <div class="col-md-6">
+                  <p><strong>Age:</strong> {{ calculateAge(selectedQueue.patient?.dateOfBirth) }} years</p>
+                  <p><strong>Gender:</strong> {{ selectedQueue.patient?.gender || 'N/A' }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Medical Certificate Content -->
+            <div class="mb-4">
+              <h5 class="mb-3">Medical Certificate</h5>
+              <div class="mc-content p-3 border rounded bg-light">
+                <p class="mb-3">
+                  This is to certify that <strong>{{ getSelectedQueuePatientName() }}</strong> 
+                  (IC/Passport: <strong>{{ selectedQueue.patient?.nric || selectedQueue.patient?.ic || 'N/A' }}</strong>) 
+                  was examined by me on <strong>{{ formatDate(new Date()) }}</strong> 
+                  and is suffering from illness/injury that requires medical leave.
+                </p>
+                
+                <div class="row mb-3">
+                  <div class="col-md-6">
+                    <p><strong>Period of Medical Leave:</strong></p>
+                    <p>From: <strong>{{ formatDate(mcPreviewData.mcStartDate) }}</strong></p>
+                    <p>To: <strong>{{ formatDate(mcPreviewData.mcEndDate) }}</strong></p>
+                  </div>
+                  <div class="col-md-6">
+                    <p><strong>Total Days:</strong> {{ calculateDaysDifference(mcPreviewData.mcStartDate, mcPreviewData.mcEndDate) }} day(s)</p>
+                  </div>
+                </div>
+
+                <p class="mb-0">
+                  The patient is advised to rest and refrain from work/study during the above period.
+                </p>
+              </div>
+            </div>
+
+            <!-- Doctor Information -->
+            <div class="row">
+              <div class="col-md-6">
+                <!-- Empty space for patient copy -->
+              </div>
+              <div class="col-md-6 text-center">
+                <div class="doctor-signature mt-4">
+                  <div class="signature-line mb-2" style="border-bottom: 1px solid #000; width: 200px; margin: 0 auto;"></div>
+                  <p class="mb-1"><strong>Dr. {{ selectedQueue.doctor?.name || 'Doctor Name' }}</strong></p>
+                  <p class="mb-1">Medical Practitioner</p>
+                  <p class="mb-0">MMC Reg. No: {{ selectedQueue.doctor?.registrationNumber || 'MMC12345' }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-4 pt-3 border-top">
+              <small class="text-muted">
+                This medical certificate is issued based on medical examination and clinical assessment.
+              </small>
+            </div>
+          </div>
+          
+          <div v-else class="text-center py-5">
+            <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+            <h5>Cannot Preview Medical Certificate</h5>
+            <p class="text-muted">Patient information or MC data is missing.</p>
+          </div>
+        </div>
+        <div class="vue-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeMCPreviewModal">
+            <i class="fas fa-times me-2"></i>Close
+          </button>
+          <button type="button" class="btn btn-primary" @click="printMC" v-if="selectedQueue && mcPreviewData">
+            <i class="fas fa-print me-2"></i>Print Certificate
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -340,11 +468,9 @@ export default {
       pageSize: 50,
       totalPages: 1,
       
-      // SSE connection management
+      // SSE connection management - Always online design
       eventSource: null,
       reconnectAttempts: 0,
-      maxReconnectAttempts: 5,
-      reconnectDelay: 1000,
       
       // Request cancellation
       abortController: null,
@@ -352,9 +478,13 @@ export default {
       // Modal instances
       showPaymentModal: false,
       showMedicinesModal: false,
+      showMCPreviewModal: false,
       
       // Medicines data
       medicinesList: [],
+      
+      // MC Preview data
+      mcPreviewData: null,
       
       // Timezone utilities
       timezoneUtils: timezoneUtils
@@ -383,6 +513,9 @@ export default {
     
     // Set up beforeunload handler
     window.addEventListener('beforeunload', this.handleBeforeUnload);
+    
+    // Auto-reconnect when user returns to tab - queue management must always be live
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
     
     // Add keyboard listener for ESC key
     window.addEventListener('keydown', this.handleKeydown);
@@ -864,9 +997,22 @@ export default {
         this.eventSource.onerror = (error) => {
           console.error('❌ SSE connection error:', error);
           
-          if (this.eventSource.readyState === EventSource.CLOSED) {
-            this.handleSSEReconnect();
+          if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
           }
+          
+          // Aggressive reconnection - queue management MUST stay online
+          const reconnectDelay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts || 0), 5000); // Max 5 second delay
+          this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
+          
+          console.log(`🔄 Queue Management reconnecting in ${reconnectDelay}ms (attempt ${this.reconnectAttempts}) - MUST stay online!`);
+          
+          setTimeout(() => {
+            if (!this.eventSource) { // No limit on attempts - keep trying forever
+              this.initializeSSE();
+            }
+          }, reconnectDelay);
         };
         
       } catch (error) {
@@ -874,22 +1020,20 @@ export default {
         this.$toast?.warning?.('Real-time updates unavailable');
       }
     },
-
-    handleSSEReconnect() {
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.warn('⚠️ Max SSE reconnection attempts reached');
-        this.$toast?.warning?.('Real-time updates disconnected. Please refresh manually.');
-        return;
+    handleVisibilityChange() {
+      // When user returns to the queue management tab, ensure connection is active
+      if (!document.hidden) {
+        console.log('🔄 User returned to queue management - ensuring connection is active');
+        
+        // If no active SSE connection, reconnect immediately
+        if (!this.eventSource || this.eventSource.readyState !== 1) {
+          console.log('⚡ No active SSE connection - reconnecting immediately');
+          this.initializeSSE();
+        }
+        
+        // Also refresh data to ensure it's current
+        this.manualRefresh();
       }
-
-      this.reconnectAttempts++;
-      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
-      
-      console.log(`🔄 Attempting SSE reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-      
-      setTimeout(() => {
-        this.initializeSSE();
-      }, delay);
     },
 
     // Component cleanup
@@ -911,6 +1055,7 @@ export default {
       // Remove event listeners
       window.removeEventListener('beforeunload', this.handleBeforeUnload);
       window.removeEventListener('keydown', this.handleKeydown);
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange);
       
       console.log('✅ QueueManagement cleanup completed');
     },
@@ -1115,10 +1260,8 @@ export default {
         console.log('💊 Fetched medicines:', this.medicinesList);
         console.log('💊 Full API response:', response);
         
-        // Show success message if medicines found
-        if (this.medicinesList.length > 0) {
-          this.$toast?.success?.(`Found ${this.medicinesList.length} prescribed medicine(s)`);
-        } else {
+        // Only show notification for "not found" case
+        if (this.medicinesList.length === 0) {
           console.log('⚠️ No medicines found for queue:', queue.queueNumber);
           this.$toast?.info?.('No medicines prescribed for this patient');
         }
@@ -1168,6 +1311,8 @@ export default {
           this.closeMedicinesModal();
         } else if (this.showPaymentModal) {
           this.closePaymentModal();
+        } else if (this.showMCPreviewModal) {
+          this.closeMCPreviewModal();
         }
       }
     },
@@ -1313,6 +1458,153 @@ export default {
       
       // Default summary when medicines list is not loaded
       return 'View details for complete medicine list';
+    },
+
+    // View Medical Certificate for a queue
+    async viewMedicalCertificate(queue) {
+      console.log('🔍 Viewing Medical Certificate for queue:', queue);
+      this.selectedQueue = queue;
+      this.mcPreviewData = null; // Clear previous data
+      this.showMCPreviewModal = true;
+
+      try {
+        const response = await axios.get(`/api/queue/${queue.id}/medical-certificate`);
+        this.mcPreviewData = response.data;
+        console.log('💾 Fetched MC data:', this.mcPreviewData);
+      } catch (error) {
+        console.error('❌ Error fetching MC data:', error);
+        this.mcPreviewData = null;
+        this.$toast?.error?.('Failed to load medical certificate details.');
+      }
+    },
+
+    // Close Medical Certificate preview modal
+    closeMCPreviewModal() {
+      this.showMCPreviewModal = false;
+      this.mcPreviewData = null;
+      this.selectedQueue = null;
+    },
+
+    // Format date for MC preview
+    formatDate(date) {
+      if (!date) return '';
+      return this.timezoneUtils.formatDateOnlyMalaysia(date);
+    },
+
+    // Calculate age
+    calculateAge(dateOfBirth) {
+      if (!dateOfBirth) return 'N/A';
+      const birthDate = new Date(dateOfBirth);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    },
+
+    // Calculate days difference between two dates
+    calculateDaysDifference(startDate, endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const timeDiff = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+      return diffDays;
+    },
+
+    // Print Medical Certificate
+    async printMC() {
+      if (!this.mcPreviewData || !this.selectedQueue) {
+        this.$toast?.error?.('No medical certificate data to print.');
+        return;
+      }
+
+      const printWindow = window.open('', '', 'height=600,width=800');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Medical Certificate - ${this.getSelectedQueuePatientName()}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+              .clinic-name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+              .patient-info { margin: 20px 0; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+              th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+              th { background-color: #f0f0f0; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="clinic-name">KLINIK HIDUPsihat</div>
+              <div>Medical Certificate</div>
+            </div>
+            
+            <div class="patient-info">
+              <p><strong>Patient:</strong> ${this.getSelectedQueuePatientName()}</p>
+              <p><strong>IC/Passport:</strong> ${this.selectedQueue.patient?.nric || this.selectedQueue.patient?.ic || 'N/A'}</p>
+              <p><strong>Age:</strong> ${this.calculateAge(this.selectedQueue.patient?.dateOfBirth)} years</p>
+              <p><strong>Gender:</strong> ${this.selectedQueue.patient?.gender || 'N/A'}</p>
+            </div>
+
+            <div class="mc-content p-3 border rounded bg-light">
+              <p class="mb-3">
+                This is to certify that <strong>${this.getSelectedQueuePatientName()}</strong> 
+                (IC/Passport: <strong>${this.selectedQueue.patient?.nric || this.selectedQueue.patient?.ic || 'N/A'}</strong>) 
+                was examined by me on <strong>${this.formatDate(new Date())}</strong> 
+                and is suffering from illness/injury that requires medical leave.
+              </p>
+              
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <p><strong>Period of Medical Leave:</strong></p>
+                  <p>From: <strong>${this.formatDate(this.mcPreviewData.mcStartDate)}</strong></p>
+                  <p>To: <strong>${this.formatDate(this.mcPreviewData.mcEndDate)}</strong></p>
+                </div>
+                <div class="col-md-6">
+                  <p><strong>Total Days:</strong> ${this.calculateDaysDifference(this.mcPreviewData.mcStartDate, this.mcPreviewData.mcEndDate)} day(s)</p>
+                </div>
+              </div>
+
+              <p class="mb-0">
+                The patient is advised to rest and refrain from work/study during the above period.
+              </p>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6">
+                <!-- Empty space for patient copy -->
+              </div>
+              <div class="col-md-6 text-center">
+                <div class="doctor-signature mt-4">
+                  <div class="signature-line mb-2" style="border-bottom: 1px solid #000; width: 200px; margin: 0 auto;"></div>
+                  <p class="mb-1"><strong>Dr. ${this.selectedQueue.doctor?.name || 'Doctor Name'}</strong></p>
+                  <p class="mb-1">Medical Practitioner</p>
+                  <p class="mb-0">MMC Reg. No: ${this.selectedQueue.doctor?.registrationNumber || 'MMC12345'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-center mt-4 pt-3 border-top">
+              <small class="text-muted">
+                This medical certificate is issued based on medical examination and clinical assessment.
+              </small>
+            </div>
+          </body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+      } else {
+        this.$toast?.error?.('Could not open print window.');
+      }
     }
   },
   watch: {
@@ -1334,6 +1626,10 @@ export default {
       this.handleBodyScrollLock(isVisible);
     },
     showPaymentModal(isVisible) {
+      // Handle body scroll locking
+      this.handleBodyScrollLock(isVisible);
+    },
+    showMCPreviewModal(isVisible) {
       // Handle body scroll locking
       this.handleBodyScrollLock(isVisible);
     }
@@ -1553,6 +1849,47 @@ export default {
   transform: none !important;
   box-shadow: none !important;
   cursor: not-allowed !important;
+}
+
+/* Premium MC button styling */
+.premium-mc-btn {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 0.5rem 1rem !important;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4) !important;
+  transition: all 0.3s ease !important;
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.premium-mc-btn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.premium-mc-btn:hover:before {
+  left: 100%;
+}
+
+.premium-mc-btn:hover {
+  background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%) !important;
+  transform: translateY(-2px) scale(1.05) !important;
+  box-shadow: 0 6px 20px rgba(220, 53, 69, 0.6) !important;
+  color: white !important;
+}
+
+.premium-mc-btn:active {
+  transform: translateY(0) scale(1) !important;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4) !important;
 }
 
 /* Modal fallback styles */
@@ -1947,6 +2284,39 @@ export default {
   
   .vue-modal-title {
     font-size: 1.1rem;
+  }
+}
+
+/* MC Preview Container Styling */
+.mc-preview-container {
+  font-family: 'Times New Roman', serif;
+  line-height: 1.6;
+  color: #000;
+}
+
+.mc-content {
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+.signature-line {
+  height: 50px;
+}
+
+.doctor-signature {
+  margin-top: 2rem;
+}
+
+/* Print styles for MC */
+@media print {
+  .mc-preview-container {
+    margin: 0;
+    padding: 20px;
+  }
+  
+  .mc-content {
+    background: white !important;
+    border: none !important;
   }
 }
 </style>

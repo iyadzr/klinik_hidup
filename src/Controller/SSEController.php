@@ -61,8 +61,8 @@ class SSEController extends AbstractController
             
             $startTime = time();
             $connectionId = uniqid('sse_', true);
-            $maxConnectionTime = 3600; // 1 hour max connection time
-            $checkInterval = 10; // Check for updates every 10 seconds only when needed
+            $maxConnectionTime = PHP_INT_MAX; // Never disconnect - queue display must always be live
+            $checkInterval = 5; // Check for updates every 5 seconds for better responsiveness
             
             // Log connection start
             $this->logger->info('SSE connection started', ['connection_id' => $connectionId]);
@@ -88,11 +88,8 @@ class SSEController extends AbstractController
                 while (true) {
                     $currentTime = time();
                     
-                    // Check maximum connection time to prevent memory leaks
-                    if (($currentTime - $startTime) > $maxConnectionTime) {
-                        $this->logger->info('SSE connection closed - max time reached', ['connection_id' => $connectionId]);
-                        break;
-                    }
+                    // Queue display connections should never timeout
+                    // Removed arbitrary time limit - real-time systems must stay connected
                     
                     // Check if client disconnected
                     if (connection_aborted()) {
@@ -103,7 +100,7 @@ class SSEController extends AbstractController
                     // Simplified approach: just send a refresh signal
                     // Let the frontend decide what to refresh
                     static $lastCheck = 0;
-                    if (($currentTime - $lastCheck) >= 15) { // Check every 15 seconds
+                    if (($currentTime - $lastCheck) >= 10) { // Check every 10 seconds for better responsiveness
                         try {
                             // Simple query to check if anything changed
                             $hasChanges = $this->hasRecentChanges();
@@ -133,11 +130,23 @@ class SSEController extends AbstractController
                         $lastCheck = $currentTime;
                     }
                     
-                    // Payment updates are handled in the same refresh signal above
-                    // This eliminates the need for separate complex queries
-                    
-                    // No more heartbeats - only send actual data changes
-                    // This eliminates unnecessary network traffic and CPU usage
+                    // Send heartbeat every 15 seconds to keep connection alive
+                    static $lastHeartbeat = 0;
+                    if (($currentTime - $lastHeartbeat) >= 15) {
+                        echo "event: heartbeat\n";
+                        echo "data: " . json_encode([
+                            'type' => 'heartbeat',
+                            'timestamp' => $currentTime,
+                            'connection_id' => $connectionId
+                        ]) . "\n\n";
+                        
+                        if (ob_get_level()) {
+                            ob_flush();
+                        }
+                        flush();
+                        
+                        $lastHeartbeat = $currentTime;
+                    }
                     
                     // Sleep to reduce CPU usage
                     sleep($checkInterval);

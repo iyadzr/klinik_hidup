@@ -695,8 +695,10 @@ export default {
         totalAmount: parseFloat(this.consultation.totalAmount) || 0, // ✅ ADD THIS MISSING FIELD!
         medications: medicationsString, // For the database medications column
         prescribedMedications: medicationsArray, // For the prescribed medications relationship
+        hasMedicalCertificate: this.consultation.hasMedicalCertificate || false,
         mcStartDate: this.consultation.mcStartDate || null,
         mcEndDate: this.consultation.mcEndDate || null,
+        mcRunningNumber: this.consultation.mcRunningNumber || null,
         queueNumber: this.queueNumber,
         queueId: this.queueId,
         groupId: null,
@@ -743,8 +745,10 @@ export default {
           consultationFee: parseFloat(this.consultation.consultationFee) || 0,
           medications: medicationsString, // For the database medications column
           prescribedMedications: medicationsArray, // For the prescribed medications relationship
+          hasMedicalCertificate: patientData.hasMedicalCertificate || false,
           mcStartDate: patientData.hasMedicalCertificate ? patientData.mcStartDate : null,
           mcEndDate: patientData.hasMedicalCertificate ? patientData.mcEndDate : null,
+          mcRunningNumber: patientData.mcRunningNumber || null,
           queueNumber: this.queueNumber,
           queueId: this.queueId,
           groupId: this.groupId,

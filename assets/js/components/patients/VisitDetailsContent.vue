@@ -48,10 +48,13 @@
     </div>
 
     <!-- Medications -->
-    <div class="col-12" v-if="visit.medications && visit.medications.length > 0">
+    <div class="col-12">
       <div class="card">
         <div class="card-header">
-          <h6 class="mb-0"><i class="fas fa-pills me-2"></i>Prescribed Medications</h6>
+          <h6 class="mb-0">
+            <i class="fas fa-pills me-2"></i>Prescribed Medications
+            <span class="badge bg-primary ms-2">{{ (visit.medications && visit.medications.length > 0) ? visit.medications.length : 0 }}</span>
+          </h6>
         </div>
         <div class="card-body">
           <div class="table-responsive">
@@ -65,7 +68,13 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(med, index) in visit.medications" :key="index">
+                <tr v-if="!visit.medications || visit.medications.length === 0">
+                  <td><strong>No medications prescribed</strong></td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>-</td>
+                </tr>
+                <tr v-else v-for="(med, index) in visit.medications" :key="index">
                   <td>
                     <strong>{{ med.name }}</strong>
                     <small v-if="med.category" class="text-muted d-block">({{ med.category }})</small>
@@ -140,7 +149,7 @@
 </template>
 
 <script>
-import timezoneUtils from '../../utils/timezoneUtils.js';
+import { formatDateOnlyMalaysia, formatTimeOnlyMalaysia } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'VisitDetailsContent',
@@ -153,11 +162,11 @@ export default {
   methods: {
     formatDate(date) {
       if (!date) return '';
-      return timezoneUtils.formatDateMalaysia(new Date(date));
+      return formatDateOnlyMalaysia(date);
     },
     formatTime(date) {
       if (!date) return '';
-      return timezoneUtils.formatTimeMalaysia(new Date(date));
+      return formatTimeOnlyMalaysia(date);
     },
     getStatusBadgeClass(status) {
       const statusLower = (status || '').toLowerCase();

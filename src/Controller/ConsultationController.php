@@ -549,13 +549,36 @@ class ConsultationController extends AbstractController
 
         $history = [];
         foreach ($consultations as $consultation) {
-            // Parse medications if it's stored as JSON string
-            $medications = $consultation->getMedications();
-            $parsedMedications = [];
-            if ($medications) {
-                $decoded = json_decode($medications, true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    $parsedMedications = $decoded;
+            // Get prescribed medications from the relationship
+            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
+                ->findBy(['consultation' => $consultation]);
+            
+            $medicationsData = [];
+            foreach ($prescribedMeds as $prescribedMed) {
+                $medication = $prescribedMed->getMedication();
+                $medicationsData[] = [
+                    'id' => $prescribedMed->getId(),
+                    'name' => $medication ? $medication->getName() : 'Unknown Medication',
+                    'medicationId' => $medication ? $medication->getId() : null,
+                    'quantity' => $prescribedMed->getQuantity(),
+                    'actualPrice' => $prescribedMed->getActualPrice(),
+                    'unitType' => $medication ? $medication->getUnitType() : 'pieces',
+                    'category' => $medication ? $medication->getCategory() : null,
+                    'dosage' => $prescribedMed->getDosage(),
+                    'frequency' => $prescribedMed->getFrequency(),
+                    'duration' => $prescribedMed->getDuration(),
+                    'instructions' => $prescribedMed->getInstructions(),
+                ];
+            }
+            
+            // Fallback to legacy medications if no prescribed medications found
+            if (empty($medicationsData)) {
+                $medications = $consultation->getMedications();
+                if ($medications) {
+                    $decoded = json_decode($medications, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $medicationsData = $decoded;
+                    }
                 }
             }
 
@@ -598,7 +621,7 @@ class ConsultationController extends AbstractController
                     'id' => $consultation->getId(),
                     'consultationDate' => $consultation->getConsultationDate()->format('Y-m-d\TH:i'),
                     'diagnosis' => $consultation->getDiagnosis(),
-                    'medications' => $parsedMedications, // Parsed medications array
+                    'medications' => $medicationsData, // Prescribed medications array
                     'notes' => $consultation->getNotes(),
                     'symptoms' => $consultation->getSymptoms(),
                     'treatment' => $consultation->getTreatment(),
@@ -1271,21 +1294,8 @@ class ConsultationController extends AbstractController
                 ];
             }
             
-            // If no medications are prescribed, add a message
-            if (empty($medicationsData)) {
-                $medicationsData = [
-                    [
-                        'name' => 'No medications prescribed',
-                        'medicationName' => 'No medications prescribed',
-                        'dosage' => null,
-                        'frequency' => null,
-                        'duration' => null,
-                        'instructions' => 'No medications were prescribed during this consultation.',
-                        'quantity' => null,
-                        'unitType' => null,
-                    ]
-                ];
-            }
+                    // Note: We don't add a "No medications prescribed" entry here
+        // The frontend will handle displaying this message when medicationsData is empty
             
             return new JsonResponse([
                 'id' => $consultation->getId(),

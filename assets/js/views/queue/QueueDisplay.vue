@@ -309,6 +309,9 @@ export default {
     document.addEventListener('mozfullscreenchange', this.handleFullscreenChange);
     document.addEventListener('MSFullscreenChange', this.handleFullscreenChange);
     
+    // Auto-reconnect when user returns to tab - queue display must always be live
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    
     this.updateClock();
     this.clockInterval = setInterval(this.updateClock, 1000);
     
@@ -340,6 +343,9 @@ export default {
     document.removeEventListener('webkitfullscreenchange', this.handleFullscreenChange);
     document.removeEventListener('mozfullscreenchange', this.handleFullscreenChange);
     document.removeEventListener('MSFullscreenChange', this.handleFullscreenChange);
+    
+    // Remove visibility change listener
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     
     console.log('✅ QueueDisplay: beforeUnmount - cleanup completed');
   },
@@ -577,14 +583,14 @@ export default {
             this.eventSource = null;
           }
           
-          // Smart reconnection with exponential backoff
-          const reconnectDelay = Math.min(1000 * Math.pow(2, this.reconnectAttempts || 0), 30000);
+          // Aggressive reconnection - queue display MUST stay online
+          const reconnectDelay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts || 0), 5000); // Max 5 second delay
           this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
           
-          console.log(`Attempting SSE reconnection in ${reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
+          console.log(`🔄 Queue Display reconnecting in ${reconnectDelay}ms (attempt ${this.reconnectAttempts}) - MUST stay online!`);
           
           setTimeout(() => {
-            if (!this.eventSource && this.reconnectAttempts < 10) { // Max 10 attempts
+            if (!this.eventSource) { // No limit on attempts - keep trying forever
               this.initializeSSE();
             }
           }, reconnectDelay);
@@ -615,25 +621,42 @@ export default {
         clearInterval(this.heartbeatMonitor);
       }
       
-      // Check for heartbeat every 15 seconds
+      // Check for heartbeat every 10 seconds
       this.heartbeatMonitor = setInterval(() => {
         const now = Date.now();
         const timeSinceHeartbeat = now - (this.lastHeartbeat || now);
         
-        // If no heartbeat for 30 seconds, assume SSE is dead
-        if (timeSinceHeartbeat > 30000) {
-          console.warn('SSE heartbeat timeout, switching to fallback polling');
+        // If no heartbeat for 20 seconds, assume SSE is dead and reconnect immediately
+        if (timeSinceHeartbeat > 20000) {
+          console.warn('⚠️ SSE heartbeat timeout - queue display must reconnect immediately!');
           if (this.eventSource) {
             this.eventSource.close();
             this.eventSource = null;
           }
-          this.setupFallbackPolling();
+          
+          // Immediately try to reconnect instead of falling back to polling
+          this.initializeSSE();
           
           // Stop heartbeat monitoring
           clearInterval(this.heartbeatMonitor);
           this.heartbeatMonitor = null;
         }
-      }, 15000);
+      }, 10000);
+    },
+    handleVisibilityChange() {
+      // When user returns to the queue display tab, ensure connection is active
+      if (!document.hidden) {
+        console.log('🔄 User returned to queue display - ensuring connection is active');
+        
+        // If no active SSE connection, reconnect immediately
+        if (!this.eventSource || this.eventSource.readyState !== 1) {
+          console.log('⚡ No active SSE connection - reconnecting immediately');
+          this.initializeSSE();
+        }
+        
+        // Also refresh data to ensure it's current
+        this.loadData();
+      }
     },
     setupFallbackPolling() {
       // Set up polling as fallback when SSE fails

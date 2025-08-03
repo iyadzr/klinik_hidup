@@ -31,22 +31,26 @@
       <div v-if="hasMedicalCertificate">
         <div class="row g-3">
           <div class="col-md-6">
-            <label class="form-label">Start Date</label>
+            <label class="form-label">Start Date (DD/MM/YYYY)</label>
             <input 
-              type="date" 
+              type="text" 
               class="form-control" 
-              :value="mcStartDate" 
+              :value="formatDateForDisplay(mcStartDate)" 
               @input="updateMCStartDate"
+              placeholder="DD/MM/YYYY"
+              maxlength="10"
               required
             >
           </div>
           <div class="col-md-6">
-            <label class="form-label">End Date</label>
+            <label class="form-label">End Date (DD/MM/YYYY)</label>
             <input 
-              type="date" 
+              type="text" 
               class="form-control" 
-              :value="mcEndDate" 
+              :value="formatDateForDisplay(mcEndDate)" 
               @input="updateMCEndDate"
+              placeholder="DD/MM/YYYY"
+              maxlength="10"
               required
             >
           </div>
@@ -57,6 +61,8 @@
 </template>
 
 <script>
+import { formatDateForAPI, formatDateOnlyMalaysia } from '../../utils/timezoneUtils.js';
+
 export default {
   name: 'MedicalCertificateSection',
   props: {
@@ -84,10 +90,64 @@ export default {
       this.$emit('mc-checkbox-change', event.target.checked);
     },
     updateMCStartDate(event) {
-      this.$emit('update:mcStartDate', event.target.value);
+      const inputValue = event.target.value;
+      const formattedDate = this.parseAndFormatDate(inputValue);
+      if (formattedDate) {
+        this.$emit('update:mcStartDate', formatDateForAPI(formattedDate));
+      }
     },
     updateMCEndDate(event) {
-      this.$emit('update:mcEndDate', event.target.value);
+      const inputValue = event.target.value;
+      const formattedDate = this.parseAndFormatDate(inputValue);
+      if (formattedDate) {
+        this.$emit('update:mcEndDate', formatDateForAPI(formattedDate));
+      }
+    },
+    formatDateForDisplay(date) {
+      if (!date) return '';
+      try {
+        return formatDateOnlyMalaysia(date);
+      } catch (error) {
+        return '';
+      }
+    },
+    parseAndFormatDate(inputValue) {
+      // Remove any non-digit characters
+      const cleanValue = inputValue.replace(/\D/g, '');
+      
+      // Check if we have exactly 8 digits (DDMMYYYY)
+      if (cleanValue.length === 8) {
+        const day = cleanValue.substring(0, 2);
+        const month = cleanValue.substring(2, 4);
+        const year = cleanValue.substring(4, 8);
+        
+        // Validate the date
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() == year && 
+            date.getMonth() == month - 1 && 
+            date.getDate() == day) {
+          return date;
+        }
+      }
+      
+      // Try to parse DD/MM/YYYY format
+      const parts = inputValue.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0]);
+        const month = parseInt(parts[1]);
+        const year = parseInt(parts[2]);
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          const date = new Date(year, month - 1, day);
+          if (date.getFullYear() == year && 
+              date.getMonth() == month - 1 && 
+              date.getDate() == day) {
+            return date;
+          }
+        }
+      }
+      
+      return null;
     },
     showMCPreview() {
       this.$emit('show-mc-preview');

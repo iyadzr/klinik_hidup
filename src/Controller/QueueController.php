@@ -196,7 +196,7 @@ class QueueController extends AbstractController
                     'q.isPaid, q.paidAt, q.paymentMethod, q.amount, q.metadata, ' .
                     'p.id as patientId, p.name as patientName, ' .
                     'd.id as doctorId, d.name as doctorName, ' .
-                    'c.id as consultationId'
+                    'c.id as consultationId, c.hasMedicalCertificate, c.mcStartDate, c.mcEndDate'
                 )
                 ->leftJoin('q.patient', 'p')
                 ->leftJoin('q.doctor', 'd')
@@ -265,19 +265,19 @@ class QueueController extends AbstractController
 
                 // Parse metadata efficiently
                 $metadata = $queue['metadata'] ? json_decode($queue['metadata'], true) : null;
-                $isGroupConsultation = $metadata['isGroupConsultation'] ?? false;
-                $groupId = $metadata['groupId'] ?? null;
+                $isGroupConsultation = $metadata['is_group_consultation'] ?? false;
+                $groupId = $metadata['group_id'] ?? null;
 
                 // Format dates safely
-                $queueDateTime = $queue['queueDateTime'] instanceof \DateTime 
-                    ? $queue['queueDateTime'] 
-                    : new \DateTime($queue['queueDateTime']);
+                $queueDateTime = $queue['queue_date_time'] instanceof \DateTime 
+                    ? $queue['queue_date_time'] 
+                    : new \DateTime($queue['queue_date_time']);
                     
                 $paidAt = null;
-                if ($queue['paidAt']) {
-                    $paidAt = $queue['paidAt'] instanceof \DateTime 
-                        ? $queue['paidAt']->format('Y-m-d H:i:s')
-                        : (new \DateTime($queue['paidAt']))->format('Y-m-d H:i:s');
+                if ($queue['paid_at']) {
+                    $paidAt = $queue['paid_at'] instanceof \DateTime 
+                        ? $queue['paid_at']->format('Y-m-d H:i:s')
+                        : (new \DateTime($queue['paid_at']))->format('Y-m-d H:i:s');
                 }
 
                 $queueItem = [
@@ -294,7 +294,10 @@ class QueueController extends AbstractController
                     'amount' => $queue['amount'],
                     'totalAmount' => $queue['amount'],
                     'consultationId' => $queue['consultationId'], // Now available from join
-                    'hasMedicines' => in_array($queue['status'], ['completed_consultation', 'completed']) // Simple status check
+                    'hasMedicines' => in_array($queue['status'], ['completed_consultation', 'completed']), // Simple status check
+                    'hasMedicalCertificate' => $queue['hasMedicalCertificate'] ?? false,
+                    'mcStartDate' => $queue['mcStartDate'] ? $queue['mcStartDate']->format('Y-m-d') : null,
+                    'mcEndDate' => $queue['mcEndDate'] ? $queue['mcEndDate']->format('Y-m-d') : null
                 ];
 
                 if ($isGroupConsultation && $groupId && !isset($groupedQueues[$groupId])) {
@@ -303,22 +306,22 @@ class QueueController extends AbstractController
                     $queueItem['patients'] = []; // Simplified - avoid expensive group query
                     $queueItem['patientCount'] = 1; // Simplified
                     $queueItem['mainPatient'] = [
-                        'id' => $queue['patientId'],
-                        'name' => $queue['patientName']
+                        'id' => $queue['patient_id'],
+                        'name' => $queue['patient_name']
                     ];
                     $groupedQueues[$groupId] = true;
                 } else {
                     $queueItem['patient'] = [
-                        'id' => $queue['patientId'],
-                        'name' => $queue['patientName'],
-                        'displayName' => $queue['patientName']
+                        'id' => $queue['patient_id'],
+                        'name' => $queue['patient_name'],
+                        'displayName' => $queue['patient_name']
                     ];
                 }
                 
                 $queueItem['doctor'] = [
-                    'id' => $queue['doctorId'],
-                    'name' => $queue['doctorName'],
-                    'displayName' => $queue['doctorName']
+                    'id' => $queue['doctor_id'],
+                    'name' => $queue['doctor_name'],
+                    'displayName' => $queue['doctor_name']
                 ];
 
                 $queueData[] = $queueItem;
@@ -395,12 +398,12 @@ class QueueController extends AbstractController
                 ->createQueryBuilder('c')
                 ->where('c.patient = :patient')
                 ->andWhere('c.doctor = :doctor')
-                ->andWhere('c.consultationDate BETWEEN :startTime AND :endTime')
+                ->andWhere('c.consultation_date BETWEEN :startTime AND :endTime')
                 ->setParameter('patient', $queue->getPatient())
                 ->setParameter('doctor', $queue->getDoctor())
                 ->setParameter('startTime', $startTime)
                 ->setParameter('endTime', $endTime)
-                ->orderBy('c.consultationDate', 'DESC')
+                ->orderBy('c.consultation_date', 'DESC')
                 ->setMaxResults(1)
                 ->getQuery()
                 ->getOneOrNullResult();
@@ -419,11 +422,11 @@ class QueueController extends AbstractController
                 ->createQueryBuilder('c')
                 ->where('c.patient = :patient')
                 ->andWhere('c.doctor = :doctor')
-                ->andWhere('DATE(c.consultationDate) = DATE(:queueDate)')
+                ->andWhere('DATE(c.consultation_date) = DATE(:queueDate)')
                 ->setParameter('patient', $queue->getPatient())
                 ->setParameter('doctor', $queue->getDoctor())
                 ->setParameter('queueDate', $queue->getQueueDateTime())
-                ->orderBy('c.consultationDate', 'DESC')
+                ->orderBy('c.consultation_date', 'DESC')
                 ->setMaxResults(1)
                 ->getQuery()
                 ->getOneOrNullResult();
@@ -443,11 +446,11 @@ class QueueController extends AbstractController
                 ->createQueryBuilder('c')
                 ->where('c.patient = :patient')
                 ->andWhere('c.doctor = :doctor')
-                ->andWhere('c.consultationDate >= :oneDayAgo')
+                ->andWhere('c.consultation_date >= :oneDayAgo')
                 ->setParameter('patient', $queue->getPatient())
                 ->setParameter('doctor', $queue->getDoctor())
                 ->setParameter('oneDayAgo', $oneDayAgo)
-                ->orderBy('c.consultationDate', 'DESC')
+                ->orderBy('c.consultation_date', 'DESC')
                 ->setMaxResults(1)
                 ->getQuery()
                 ->getOneOrNullResult();
@@ -551,8 +554,8 @@ class QueueController extends AbstractController
             // Handle group consultation
             if (isset($data['isGroupConsultation']) && $data['isGroupConsultation']) {
                 $metadata = [
-                    'isGroupConsultation' => true,
-                    'groupId' => $data['groupId'] ?? uniqid()
+                    'is_group_consultation' => true,
+                    'group_id' => $data['groupId'] ?? uniqid()
                 ];
                 $queue->setMetadata(json_encode($metadata));
             } else {
@@ -695,8 +698,8 @@ class QueueController extends AbstractController
                 
                 // Set group consultation metadata
                 $metadata = [
-                    'isGroupConsultation' => true,
-                    'groupId' => $groupId,
+                    'is_group_consultation' => true,
+                    'group_id' => $groupId,
                     'relationship' => $patientData['relationship'] ?? null,
                     'remarks' => $patientData['remarks'] ?? null
                 ];
@@ -1396,113 +1399,82 @@ class QueueController extends AbstractController
             $queue = $this->entityManager->getRepository(Queue::class)->find($id);
             
             if (!$queue) {
-                return new JsonResponse(['message' => 'Queue entry not found'], 404);
+                return new JsonResponse(['error' => 'Queue not found'], Response::HTTP_NOT_FOUND);
             }
             
-            // Get consultation directly from queue relationship
             $consultation = $queue->getConsultation();
             if (!$consultation) {
-                $this->logger->info('No consultation ID found for queue medications', [
-                    'queueId' => $id,
-                    'queueNumber' => $queue->getQueueNumber()
-                ]);
-                
-                // DEBUG: Let's see what consultations exist for this patient/doctor
-                $allConsultations = $this->entityManager->getRepository(\App\Entity\Consultation::class)
-                    ->createQueryBuilder('c')
-                    ->where('c.patient = :patient')
-                    ->andWhere('c.doctor = :doctor')
-                    ->setParameter('patient', $queue->getPatient())
-                    ->setParameter('doctor', $queue->getDoctor())
-                    ->orderBy('c.consultationDate', 'DESC')
-                    ->getQuery()
-                    ->getResult();
-                    
-                $this->logger->info('DEBUG: All consultations for this patient/doctor', [
-                    'queueId' => $id,
-                    'patientName' => $queue->getPatient()->getName(),
-                    'doctorName' => $queue->getDoctor()->getName(),
-                    'consultationsCount' => count($allConsultations),
-                    'consultations' => array_map(function($c) {
-                        return [
-                            'id' => $c->getId(),
-                            'date' => $c->getConsultationDate()->format('Y-m-d H:i:s'),
-                            'status' => $c->getStatus(),
-                            'createdAt' => $c->getCreatedAt()->format('Y-m-d H:i:s')
-                        ];
-                    }, $allConsultations)
-                ]);
-                
-                return new JsonResponse([]); // Return empty array if no consultation found
+                return new JsonResponse(['error' => 'No consultation found for this queue'], Response::HTTP_NOT_FOUND);
             }
             
-            $consultationId = $consultation->getId();
+            $medications = $this->getMedicinesForConsultation($consultation);
             
-            $this->logger->info('Fetching prescribed medications', [
-                'consultationId' => $consultationId,
-                'queueId' => $id
-            ]);
-            
-            // Get prescribed medications from PrescribedMedication entities
-            $prescribedMeds = $this->entityManager->getRepository(\App\Entity\PrescribedMedication::class)
-                ->createQueryBuilder('pm')
-                ->leftJoin('pm.medication', 'm')
-                ->where('pm.consultation = :consultation')
-                ->setParameter('consultation', $consultation)
-                ->orderBy('pm.prescribedAt', 'ASC')
-                ->getQuery()
-                ->getResult();
-                
-            $this->logger->info('Found prescribed medications', [
-                'consultationId' => $consultationId,
-                'medicationsCount' => count($prescribedMeds)
-            ]);
-            
-            $medicationsData = [];
-            
-            if (!empty($prescribedMeds)) {
-                // Use prescribed medications entities
-                foreach ($prescribedMeds as $prescribedMed) {
-                    $medication = $prescribedMed->getMedication();
-                    $medicationsData[] = [
-                        'name' => $medication ? $medication->getName() : $prescribedMed->getName(),
-                        'medicationName' => $medication ? $medication->getName() : $prescribedMed->getName(),
-                        'dosage' => $prescribedMed->getDosage(),
-                        'frequency' => $prescribedMed->getFrequency(),
-                        'duration' => $prescribedMed->getDuration(),
-                        'instructions' => $prescribedMed->getInstructions(),
-                        'quantity' => $prescribedMed->getQuantity(),
-                        'unitType' => $medication ? $medication->getUnitType() : 'pieces',
-                        'actualPrice' => $prescribedMed->getActualPrice()
-                    ];
-                }
-            } else {
-                // Fallback to medications JSON field
-                if ($consultation->getMedications()) {
-                    $medications = json_decode($consultation->getMedications(), true);
-                    if (is_array($medications)) {
-                        foreach ($medications as $med) {
-                            $medicationsData[] = [
-                                'name' => $med['name'] ?? 'Unknown Medicine',
-                                'medicationName' => $med['name'] ?? 'Unknown Medicine',
-                                'dosage' => $med['dosage'] ?? '-',
-                                'frequency' => $med['frequency'] ?? '-',
-                                'duration' => $med['duration'] ?? '-',
-                                'instructions' => $med['instructions'] ?? '-',
-                                'quantity' => $med['quantity'] ?? 1,
-                                'unitType' => $med['unitType'] ?? 'pieces',
-                                'actualPrice' => $med['actualPrice'] ?? 0
-                            ];
-                        }
-                    }
-                }
-            }
-            
-            return new JsonResponse($medicationsData);
+            return new JsonResponse($medications);
             
         } catch (\Exception $e) {
-            $this->logger->error('Error fetching queue medications: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to fetch medications'], 500);
+            $this->logger->error('Error fetching queue medications', [
+                'queue_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return new JsonResponse(['error' => 'Failed to fetch medications'], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    #[Route('/{id}/medical-certificate', name: 'app_queue_medical_certificate', methods: ['GET'])]
+    public function getQueueMedicalCertificate(int $id, Request $request): JsonResponse
+    {
+        // Rate limiting
+        if (!$this->checkRateLimit($request)) {
+            return new JsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+        
+        try {
+            $queue = $this->entityManager->getRepository(Queue::class)->find($id);
+            
+            if (!$queue) {
+                return new JsonResponse(['error' => 'Queue not found'], Response::HTTP_NOT_FOUND);
+            }
+            
+            $consultation = $queue->getConsultation();
+            if (!$consultation) {
+                return new JsonResponse(['error' => 'No consultation found for this queue'], Response::HTTP_NOT_FOUND);
+            }
+            
+            if (!$consultation->getHasMedicalCertificate()) {
+                return new JsonResponse(['error' => 'No medical certificate issued for this consultation'], Response::HTTP_NOT_FOUND);
+            }
+            
+            // Get MC running number if available
+            $mcRunningNumber = null;
+            try {
+                $mcRepository = $this->entityManager->getRepository(\App\Entity\MedicalCertificate::class);
+                $mc = $mcRepository->findOneBy(['consultation' => $consultation]);
+                if ($mc) {
+                    $mcRunningNumber = $mc->getMcRunningNumber();
+                }
+            } catch (\Exception $e) {
+                // MC entity might not exist, continue without running number
+                $this->logger->warning('Could not fetch MC running number', ['error' => $e->getMessage()]);
+            }
+            
+            $mcData = [
+                'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
+                'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
+                'mcRunningNumber' => $mcRunningNumber,
+                'doctorName' => $queue->getDoctor() ? $queue->getDoctor()->getName() : 'Doctor Name',
+                'doctorRegNo' => $queue->getDoctor() ? $queue->getDoctor()->getRegistrationNumber() : 'MMC12345'
+            ];
+            
+            return new JsonResponse($mcData);
+            
+        } catch (\Exception $e) {
+            $this->logger->error('Error fetching queue medical certificate', [
+                'queue_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return new JsonResponse(['error' => 'Failed to fetch medical certificate data'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 

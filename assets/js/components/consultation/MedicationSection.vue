@@ -300,14 +300,8 @@ export default {
           this.updateMedicationPagination(medItem, results);
           this.positionDropdown(event.target);
           
-          // Show notification for search results
-          if (results.length > 0) {
-            notificationService.success(
-              'Medications Found',
-              `Found ${results.length} medication(s) matching "${searchTerm}"`,
-              2500
-            );
-          } else {
+          // Show notification only for "No matched medications"
+          if (results.length === 0) {
             notificationService.showBottomLeft({
               type: 'warning',
               title: 'No matched medications',
@@ -441,12 +435,7 @@ export default {
       
       console.log(`✅ Selected medication: ${medication.name}, Price: RM${medItem.actualPrice}`);
       
-      // Show success notification for manual selection
-      notificationService.success(
-        'Medication Selected',
-        `"${medication.name}" has been added to the prescription.`,
-        2000
-      );
+      // Success notification removed - only show notifications for "not found" cases
       
       medItem.allSuggestions = [];
       medItem.paginatedSuggestions = [];
@@ -470,11 +459,7 @@ export default {
           
           if (exactMatch) {
             this.selectMedication(medItem, exactMatch);
-            notificationService.success(
-              'Medication Selected',
-              `"${medItem.name}" has been automatically selected.`,
-              2000
-            );
+            // Success notification removed - only show notifications for "not found" cases
           } else {
             // Don't auto-popup create medication modal
             // User can manually click "Add Medication" button if they want to create new

@@ -52,13 +52,13 @@
           </div>
 
           <!-- Prescribed Medications -->
-          <div class="mb-4" v-if="visit.prescribedMedications && visit.prescribedMedications.length > 0">
+          <div class="mb-4">
             <div class="card">
               <div class="card-header bg-light">
                 <h6 class="mb-0">
                   <i class="fas fa-pills me-2"></i>
                   Prescribed Medications
-                  <span class="badge bg-primary ms-2">{{ visit.prescribedMedications.length }}</span>
+                  <span class="badge bg-primary ms-2">{{ (visit.prescribedMedications && visit.prescribedMedications.length > 0) ? visit.prescribedMedications.length : 0 }}</span>
                 </h6>
               </div>
               <div class="card-body p-0">
@@ -72,7 +72,12 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="med in visit.prescribedMedications" :key="med.id">
+                      <tr v-if="!visit.prescribedMedications || visit.prescribedMedications.length === 0">
+                        <td><strong>No medications prescribed</strong></td>
+                        <td>-</td>
+                        <td>-</td>
+                      </tr>
+                      <tr v-else v-for="med in visit.prescribedMedications" :key="med.id">
                         <td>
                           <div class="fw-bold">{{ med.medication?.name || med.name }}</div>
                           <small class="text-muted">{{ med.medication?.category || med.category }}</small>
@@ -154,7 +159,7 @@
 </template>
 
 <script>
-import { MALAYSIA_TIMEZONE } from '../../utils/timezoneUtils.js';
+import { formatDateOnlyMalaysia } from '../../utils/timezoneUtils.js';
 
 export default {
   name: 'VisitDetailsModal',
@@ -168,13 +173,7 @@ export default {
     formatDate(dateString) {
       if (!dateString) return 'N/A';
       try {
-        const dateObj = new Date(dateString);
-        return dateObj.toLocaleDateString('en-MY', {
-          timeZone: MALAYSIA_TIMEZONE,
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
+        return formatDateOnlyMalaysia(dateString);
       } catch (error) {
         console.error('Error formatting date:', error);
         return 'Invalid Date';
