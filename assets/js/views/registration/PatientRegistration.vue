@@ -926,7 +926,8 @@ export default {
                 id: response.data.id,
                 registrationNumber: response.data.registrationNumber,
                 name: patient.name,
-                relationship: patient.relationship
+                relationship: patient.relationship,
+                remarks: patient.remarks
               });
             } catch (error) {
               console.error(`Error registering patient ${patient.name}:`, error);
