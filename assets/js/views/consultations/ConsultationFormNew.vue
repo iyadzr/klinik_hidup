@@ -510,28 +510,42 @@ export default {
     
     async switchToPatient(patientId) {
       try {
+        console.log('🔄 Switching to patient:', patientId);
+        
         if (this.currentPatientId && this.currentPatientId !== patientId) {
+          console.log('💾 Saving form data for previous patient:', this.currentPatientId);
           this.saveFormDataToPatient(this.currentPatientId);
         }
         
         this.currentPatientId = patientId;
         this.consultation.patientId = patientId;
         
+        console.log('🔄 Refreshing patient data for new patient:', patientId);
+        
         // Refresh patient data for the newly selected patient
         if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
           const groupPatient = this.groupPatients.find(p => p.id === patientId);
           if (groupPatient) {
+            console.log('👥 Using group patient data:', {
+              id: groupPatient.id,
+              name: groupPatient.name,
+              remarks: groupPatient.remarks
+            });
             this.fullPatientDetails = groupPatient;
             // Refresh visit histories for the new patient
+            console.log('📋 Loading visit histories for patient:', patientId);
             await this.loadVisitHistories();
           }
         } else {
           // For single patients, fetch fresh patient details
+          console.log('👤 Fetching fresh patient details for single patient:', patientId);
           await this.fetchPatientDetails();
         }
         
         this.initializePatientData(patientId);
         this.loadPatientDataToForm(patientId);
+        
+        console.log('✅ Patient switch completed for patient:', patientId);
       } catch (error) {
         console.error('❌ Error switching patients:', error);
       }
