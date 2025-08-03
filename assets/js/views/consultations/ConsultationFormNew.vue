@@ -287,37 +287,58 @@ export default {
           remarks: this.fullPatientDetails.remarks
         } : null,
         patientsLength: this.patients?.length || 0,
-        singlePatientRemarks: this.singlePatientRemarks
+        singlePatientRemarks: this.singlePatientRemarks,
+        queueId: this.queueId
       });
       
-      // First priority: Group consultation data (has visit-specific remarks from queue metadata)
-      if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
+      // For group consultations, use group patient data
+      if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
         if (groupPatient) {
           selectedPatient = groupPatient;
-          console.log('✅ Using groupPatient data with queue remarks:', groupPatient.remarks);
+          console.log('🔍 Using group patient data:', {
+            id: selectedPatient.id,
+            name: selectedPatient.name,
+            remarks: selectedPatient.remarks,
+            source: 'groupPatients'
+          });
         }
       }
       
-      // Second priority: Full patient details (general patient info)
+      // For single patients, use full patient details if available
       if (!selectedPatient && this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
         selectedPatient = this.fullPatientDetails;
-        console.log('✅ Using fullPatientDetails:', this.fullPatientDetails.remarks);
+        console.log('🔍 Using fullPatientDetails:', {
+          id: selectedPatient.id,
+          name: selectedPatient.name,
+          remarks: selectedPatient.remarks,
+          source: 'fullPatientDetails'
+        });
       }
       
-      // Fallback: General patients array
+      // Fallback to patients array
       if (!selectedPatient && Array.isArray(this.patients)) {
         const fallbackPatient = this.patients.find(p => p.id === this.consultation.patientId);
         if (fallbackPatient) {
           selectedPatient = fallbackPatient;
-          console.log('⚠️ Using general patients array fallback:', fallbackPatient.remarks);
+          console.log('🔍 Using fallback patient from patients array:', {
+            id: selectedPatient.id,
+            name: selectedPatient.name,
+            remarks: selectedPatient.remarks,
+            source: 'patientsArray'
+          });
         }
       }
       
-      // If we have queue data with single patient remarks, override the remarks
+      // For single patient consultations, prioritize queue remarks over patient remarks
       if (selectedPatient && this.singlePatientRemarks && !this.isGroupConsultation) {
         selectedPatient = { ...selectedPatient, remarks: this.singlePatientRemarks };
-        console.log('✅ Overriding with queue remarks for single patient:', this.singlePatientRemarks);
+        console.log('🔍 Applied singlePatientRemarks from queue:', {
+          id: selectedPatient.id,
+          name: selectedPatient.name,
+          remarks: selectedPatient.remarks,
+          source: 'queueRemarks'
+        });
       }
       
       console.log('🔍 selectedPatient computed - Final result:', {
@@ -375,7 +396,8 @@ export default {
           queueId: this.queueId,
           isGroupConsultation: queueData.isGroupConsultation,
           singlePatientRemarks: queueData.patient?.remarks,
-          groupPatientsCount: queueData.groupPatients?.length || 0
+          groupPatientsCount: queueData.groupPatients?.length || 0,
+          metadata: queueData.metadata
         });
         
         if (queueData.isGroupConsultation) {
@@ -401,7 +423,7 @@ export default {
                 phone: patient.phone,
                 address: patient.address,
                 relationship: patient.relationship || 'N/A',
-                remarks: patient.remarks || ''
+                remarks: patient.remarks || '' // This comes from queue metadata via getQueueSymptoms
               };
             });
             
@@ -426,9 +448,9 @@ export default {
               remarks: queueData.patient.remarks
             });
             
-            // Store the remarks from queue data
+            // Store the remarks from queue data (this comes from queue metadata via getQueueSymptoms)
             this.singlePatientRemarks = queueData.patient.remarks;
-            console.log('✅ Stored singlePatientRemarks:', this.singlePatientRemarks);
+            console.log('✅ Stored singlePatientRemarks from queue:', this.singlePatientRemarks);
             
             // Update the consultation patient ID if not set
             if (!this.consultation.patientId) {
@@ -510,7 +532,7 @@ export default {
       
       try {
         const response = await axios.get(`/api/patients/${this.consultation.patientId}`);
-        console.log('🔍 Using individual patient data for remarks:', {
+        console.log('🔍 Using individual patient data for general info (not remarks):', {
           patientId: response.data.id,
           patientName: response.data.name,
           remarks: response.data.remarks,
