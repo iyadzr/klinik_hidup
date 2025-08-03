@@ -788,8 +788,8 @@ export default {
         setTimeout(async () => {
           await this.soundService.announceQueueCall(
             "A001",
-            "Test Patient",
-            "Test Doctor",
+            null, // patientName - not announced
+            null, // doctorName - not announced
             "Room 1"
           );
         }, 2000);
