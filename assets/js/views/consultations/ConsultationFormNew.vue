@@ -277,43 +277,17 @@ export default {
     selectedPatient() {
       let selectedPatient = null;
       
-      console.log('🔍 selectedPatient computed - Debug info:', {
-        patientId: this.consultation.patientId,
-        isGroupConsultation: this.isGroupConsultation,
-        groupPatientsLength: this.groupPatients?.length || 0,
-        fullPatientDetails: this.fullPatientDetails ? {
-          id: this.fullPatientDetails.id,
-          name: this.fullPatientDetails.name,
-          remarks: this.fullPatientDetails.remarks
-        } : null,
-        patientsLength: this.patients?.length || 0,
-        singlePatientRemarks: this.singlePatientRemarks,
-        queueId: this.queueId
-      });
-      
       // For group consultations, use group patient data
       if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
         if (groupPatient) {
           selectedPatient = groupPatient;
-          console.log('🔍 Using group patient data:', {
-            id: selectedPatient.id,
-            name: selectedPatient.name,
-            remarks: selectedPatient.remarks,
-            source: 'groupPatients'
-          });
         }
       }
       
       // For single patients, use full patient details if available
       if (!selectedPatient && this.fullPatientDetails && this.fullPatientDetails.id === this.consultation.patientId) {
         selectedPatient = this.fullPatientDetails;
-        console.log('🔍 Using fullPatientDetails:', {
-          id: selectedPatient.id,
-          name: selectedPatient.name,
-          remarks: selectedPatient.remarks,
-          source: 'fullPatientDetails'
-        });
       }
       
       // Fallback to patients array
@@ -321,33 +295,13 @@ export default {
         const fallbackPatient = this.patients.find(p => p.id === this.consultation.patientId);
         if (fallbackPatient) {
           selectedPatient = fallbackPatient;
-          console.log('🔍 Using fallback patient from patients array:', {
-            id: selectedPatient.id,
-            name: selectedPatient.name,
-            remarks: selectedPatient.remarks,
-            source: 'patientsArray'
-          });
         }
       }
       
       // For single patient consultations, prioritize queue remarks over patient remarks
       if (selectedPatient && this.singlePatientRemarks && !this.isGroupConsultation) {
         selectedPatient = { ...selectedPatient, remarks: this.singlePatientRemarks };
-        console.log('🔍 Applied singlePatientRemarks from queue:', {
-          id: selectedPatient.id,
-          name: selectedPatient.name,
-          remarks: selectedPatient.remarks,
-          source: 'queueRemarks'
-        });
       }
-      
-      console.log('🔍 selectedPatient computed - Final result:', {
-        selectedPatient: selectedPatient ? {
-          id: selectedPatient.id,
-          name: selectedPatient.name,
-          remarks: selectedPatient.remarks
-        } : null
-      });
       
       return selectedPatient;
     }
@@ -392,13 +346,7 @@ export default {
         const response = await axios.get(`/api/queue/${this.queueId}`);
         const queueData = response.data;
         
-        console.log('🔍 Queue data loaded:', {
-          queueId: this.queueId,
-          isGroupConsultation: queueData.isGroupConsultation,
-          singlePatientRemarks: queueData.patient?.remarks,
-          groupPatientsCount: queueData.groupPatients?.length || 0,
-          metadata: queueData.metadata
-        });
+
         
         if (queueData.isGroupConsultation) {
           this.isGroupConsultation = true;
@@ -406,12 +354,7 @@ export default {
           
           if (queueData.groupPatients && Array.isArray(queueData.groupPatients)) {
             this.groupPatients = queueData.groupPatients.map(patient => {
-              console.log('🔍 Processing group patient:', {
-                id: patient.id,
-                name: patient.name,
-                remarks: patient.remarks,
-                relationship: patient.relationship
-              });
+
               
               return {
                 id: patient.id,
@@ -442,15 +385,10 @@ export default {
         } else {
           // For single patient consultations, use the patient data from queue
           if (queueData.patient) {
-            console.log('🔍 Processing single patient from queue:', {
-              id: queueData.patient.id,
-              name: queueData.patient.name,
-              remarks: queueData.patient.remarks
-            });
+
             
-            // Store the remarks from queue data (this comes from queue metadata via getQueueSymptoms)
-            this.singlePatientRemarks = queueData.patient.remarks;
-            console.log('✅ Stored singlePatientRemarks from queue:', this.singlePatientRemarks);
+                          // Store the remarks from queue data (this comes from queue metadata via getQueueSymptoms)
+              this.singlePatientRemarks = queueData.patient.remarks;
             
             // Update the consultation patient ID if not set
             if (!this.consultation.patientId) {
@@ -518,12 +456,7 @@ export default {
       if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
         if (groupPatient) {
-          console.log('🔍 Using group patient data for remarks:', {
-            patientId: groupPatient.id,
-            patientName: groupPatient.name,
-            remarks: groupPatient.remarks,
-            source: 'groupPatients'
-          });
+
           this.fullPatientDetails = groupPatient;
           await this.loadVisitHistories();
           return;
@@ -532,12 +465,7 @@ export default {
       
       try {
         const response = await axios.get(`/api/patients/${this.consultation.patientId}`);
-        console.log('🔍 Using individual patient data for general info (not remarks):', {
-          patientId: response.data.id,
-          patientName: response.data.name,
-          remarks: response.data.remarks,
-          source: 'patientAPI'
-        });
+
         this.fullPatientDetails = response.data;
         await this.loadVisitHistories();
       } catch (error) {
