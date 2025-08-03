@@ -884,7 +884,8 @@ class PatientController extends AbstractController
                     'mcStartDate' => $consultation->getMcStartDate() ? $consultation->getMcStartDate()->format('Y-m-d') : null,
                     'mcEndDate' => $consultation->getMcEndDate() ? $consultation->getMcEndDate()->format('Y-m-d') : null,
                     'mcRunningNumber' => $consultation->getMcRunningNumber(),
-                    'status' => $consultation->getStatus() ?? 'completed'
+                    'status' => $consultation->getStatus() ?? 'completed',
+                    'patientRemarks' => $patient->getRemarks()
                 ];
             }
 
