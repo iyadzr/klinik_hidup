@@ -742,9 +742,18 @@ class ConsultationController extends AbstractController
             }
             
             return new JsonResponse($data);
+        } catch (\Doctrine\DBAL\Exception $e) {
+            $this->logger->error('Database error fetching ongoing consultations: ' . $e->getMessage());
+            return new JsonResponse([
+                'error' => 'Database error occurred',
+                'message' => 'Unable to fetch ongoing consultations due to database issue'
+            ], 500);
         } catch (\Exception $e) {
             $this->logger->error('Error fetching ongoing consultations: ' . $e->getMessage());
-            return new JsonResponse(['error' => 'Failed to fetch ongoing consultations'], 500);
+            return new JsonResponse([
+                'error' => 'Failed to fetch ongoing consultations',
+                'message' => 'An unexpected error occurred'
+            ], 500);
         }
     }
 

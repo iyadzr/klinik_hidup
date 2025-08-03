@@ -6,13 +6,16 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy configuration files
+COPY webpack.config.js ./
+COPY babel.config.js ./
 
 # Copy source code
 COPY assets/ ./assets/
-COPY webpack.config.js ./
-COPY .babelrc ./
+COPY public/ ./public/
 
 # Build the application
 RUN npm run build
