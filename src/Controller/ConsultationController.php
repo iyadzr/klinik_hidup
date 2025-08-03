@@ -373,6 +373,50 @@ class ConsultationController extends AbstractController
                     'totalAmount' => $data['totalAmount'] ?? 0
                 ]);
                 
+                // For group consultations, update ALL queues in the group
+                if (isset($data['isGroupConsultation']) && $data['isGroupConsultation'] && isset($data['groupId'])) {
+                    $this->logger->info('Group consultation detected, updating all group queues', [
+                        'groupId' => $data['groupId'],
+                        'mainQueueId' => $queue->getId()
+                    ]);
+                    
+                    // Find ALL queues in this group (not just in_consultation ones)
+                    $groupQueues = $queueRepository->createQueryBuilder('q')
+                        ->where('q.metadata LIKE :groupId')
+                        ->setParameter('groupId', '%"groupId":"' . $data['groupId'] . '"%')
+                        ->getQuery()
+                        ->getResult();
+                    
+                    $this->logger->info('Found group queues to update', [
+                        'groupId' => $data['groupId'],
+                        'count' => count($groupQueues)
+                    ]);
+                    
+                    foreach ($groupQueues as $groupQueue) {
+                        if ($groupQueue->getId() !== $queue->getId()) {
+                            // Only update if not already completed
+                            if ($groupQueue->getStatus() !== 'completed_consultation' && $groupQueue->getStatus() !== 'completed') {
+                                $groupQueue->setStatus('completed_consultation');
+                                $this->logger->info('Updated group queue status', [
+                                    'queueId' => $groupQueue->getId(),
+                                    'queueNumber' => $groupQueue->getQueueNumber(),
+                                    'patientName' => $groupQueue->getPatient()->getName(),
+                                    'previousStatus' => $groupQueue->getStatus()
+                                ]);
+                                
+                                // Broadcast update for each group queue
+                                $this->broadcastQueueUpdate($groupQueue);
+                            } else {
+                                $this->logger->info('Group queue already completed, skipping', [
+                                    'queueId' => $groupQueue->getId(),
+                                    'queueNumber' => $groupQueue->getQueueNumber(),
+                                    'status' => $groupQueue->getStatus()
+                                ]);
+                            }
+                        }
+                    }
+                }
+                
                 $this->entityManager->flush();
                 
                 $this->logger->info('Queue status updated successfully', [
@@ -407,6 +451,16 @@ class ConsultationController extends AbstractController
                     'queue_stats'
                 ];
                 
+                // For group consultations, clear additional caches
+                if (isset($data['isGroupConsultation']) && $data['isGroupConsultation']) {
+                    $this->logger->info('Clearing additional caches for group consultation', [
+                        'groupId' => $data['groupId'] ?? 'unknown'
+                    ]);
+                    
+                    // Clear any group-specific caches
+                    $cacheKeys[] = 'group_consultation_' . ($data['groupId'] ?? 'unknown');
+                }
+                
                 foreach ($cacheKeys as $key) {
                     $this->cache->delete($key);
                     $this->logger->debug('Cleared cache key: ' . $key);
@@ -414,7 +468,9 @@ class ConsultationController extends AbstractController
                 
                 $this->logger->info('Cache cleared after consultation completion', [
                     'doctorId' => $doctor->getId(),
-                    'clearedKeys' => count($cacheKeys)
+                    'clearedKeys' => count($cacheKeys),
+                    'isGroupConsultation' => $data['isGroupConsultation'] ?? false,
+                    'groupId' => $data['groupId'] ?? null
                 ]);
             }
             
