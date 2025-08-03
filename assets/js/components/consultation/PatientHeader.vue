@@ -49,7 +49,7 @@
                   </span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 patient-dropdown" 
-                    style="min-width: 350px; border-radius: 15px; max-height: 400px; overflow-y: auto; z-index: 1050;">
+                    style="min-width: 400px; border-radius: 15px; max-height: 500px; overflow-y: auto; z-index: 1050;">
                   <li class="px-3 py-2 bg-light border-bottom">
                     <div class="text-center">
                       <small class="text-muted fw-bold">
@@ -62,33 +62,40 @@
                     <a class="dropdown-item patient-item py-3" 
                        href="#" 
                        @click.prevent.stop="handlePatientSwitch(patient)" 
-                       :class="{ 'active': patient.id === selectedPatient?.id }">
-                      <div class="d-flex align-items-center">
-                        <div class="patient-avatar me-3">
-                          <i class="fas fa-user-circle fa-2x" 
-                             :class="patient.id === selectedPatient?.id ? 'text-warning' : 'text-primary'"></i>
+                       :class="{ 'active': patient.id === selectedPatient?.id }"
+                       style="border-left: 4px solid transparent; transition: all 0.2s ease;">
+                      <div class="d-flex align-items-start">
+                        <div class="patient-avatar me-3 mt-1">
+                          <div class="rounded-circle d-flex align-items-center justify-content-center"
+                               :class="patient.id === selectedPatient?.id ? 'bg-warning text-white' : 'bg-primary text-white'"
+                               style="width: 50px; height: 50px; font-size: 1.2rem;">
+                            <i class="fas fa-user"></i>
+                          </div>
                         </div>
                         <div class="patient-info flex-grow-1">
-                          <div class="patient-name fw-bold mb-1">
+                          <div class="patient-name fw-bold mb-2" style="font-size: 1.1rem; color: #2c3e50;">
                             {{ patient.name || patient.displayName }}
                             <i v-if="patient.id === selectedPatient?.id" class="fas fa-check-circle text-success ms-2"></i>
                           </div>
                           <div class="patient-details">
-                            <small class="text-muted">
-                              <span class="badge bg-info me-1">{{ patient.relationship || 'N/A' }}</span>
-                              <span class="me-2">{{ patient.gender }}, {{ calculateAge(patient.dateOfBirth) }} years</span>
-                              <br>
+                            <div class="mb-1">
+                              <span class="badge bg-info me-2" style="font-size: 0.75rem;">{{ patient.relationship || 'N/A' }}</span>
+                              <span class="text-dark fw-medium">{{ patient.gender }}, {{ calculateAge(patient.dateOfBirth) }} years</span>
+                            </div>
+                            <div class="text-muted" style="font-size: 0.85rem;">
                               <i class="fas fa-id-card me-1"></i>{{ patient.nric || 'No IC' }}
-                            </small>
+                            </div>
                           </div>
                         </div>
-                        <div class="patient-status">
+                        <div class="patient-status ms-2">
                           <span v-if="patient.id === selectedPatient?.id" 
-                                class="badge bg-success">
-                            Current
+                                class="badge bg-success px-3 py-2"
+                                style="font-size: 0.8rem;">
+                            <i class="fas fa-user-check me-1"></i>Current
                           </span>
-                          <span v-else class="badge bg-secondary">
-                            Switch
+                          <span v-else class="badge bg-outline-secondary px-3 py-2"
+                                style="font-size: 0.8rem; border: 1px solid #6c757d; color: #6c757d;">
+                            <i class="fas fa-arrow-right me-1"></i>Switch
                           </span>
                         </div>
                       </div>
@@ -111,6 +118,53 @@
     </div>
   </div>
 </template>
+
+<style scoped>
+.patient-dropdown {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15) !important;
+}
+
+.patient-item {
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  margin: 2px 8px;
+}
+
+.patient-item:hover {
+  background-color: #f8f9fa !important;
+  transform: translateX(2px);
+  border-left-color: #007bff !important;
+}
+
+.patient-item.active {
+  background-color: #fff3cd !important;
+  border-left-color: #ffc107 !important;
+}
+
+.patient-item.active:hover {
+  background-color: #ffeaa7 !important;
+}
+
+.patient-option {
+  margin-bottom: 2px;
+}
+
+.patient-name {
+  line-height: 1.2;
+}
+
+.patient-details {
+  line-height: 1.4;
+}
+
+.badge {
+  font-weight: 500;
+}
+
+.bg-outline-secondary {
+  background-color: transparent !important;
+}
+</style>
 
 <script>
 export default {

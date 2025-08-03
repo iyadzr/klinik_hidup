@@ -685,7 +685,8 @@ class QueueController extends AbstractController
                 $metadata = [
                     'isGroupConsultation' => true,
                     'groupId' => $groupId,
-                    'relationship' => $patientData['relationship'] ?? null
+                    'relationship' => $patientData['relationship'] ?? null,
+                    'remarks' => $patientData['remarks'] ?? null
                 ];
                 $queue->setMetadata(json_encode($metadata));
                 

@@ -176,7 +176,7 @@
                       maxlength="14"
                       @input="handleNRICInput($event, currentPatient)"
                     >
-                    <small class="text-muted">12-digit NRIC format: YYMMDD-XX-XXXX (DOB and gender auto-calculated)</small>
+                    <small class="text-muted">12-digit NRIC format: YYMMDD-XX-XXXX</small>
                   </div>
                 </div>
 
