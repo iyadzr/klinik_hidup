@@ -102,6 +102,17 @@ try {
         }
     }
     
+    // Check and fix queue status column length
+    \$stmt = \$pdo->query(\"SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'queue' AND column_name = 'status'\");
+    \$statusLength = \$stmt->fetchColumn();
+    if (\$statusLength < 50) {
+        echo \"Fixing queue status column length from \$statusLength to 50...\n\";
+        \$pdo->exec(\"ALTER TABLE queue MODIFY COLUMN status VARCHAR(50)\");
+        echo \"✅ Queue status column length updated successfully!\n\";
+    } else {
+        echo \"✅ Queue status column length is already correct.\n\";
+    }
+    
     // Check prescribed_medication table critical columns
     \$prescribedMedColumns = ['dosage', 'frequency', 'duration'];
     foreach (\$prescribedMedColumns as \$column) {

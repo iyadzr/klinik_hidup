@@ -68,6 +68,7 @@ The scripts check for critical columns:
 - `consultation_id` in queue table
 - `is_paid`, `paid_at`, `payment_method`, `amount` in queue table
 - `metadata`, `updated_at` in queue table
+- `dosage`, `frequency`, `duration` in prescribed_medication table
 
 ### 3. Health Checks
 
@@ -180,7 +181,13 @@ If you encounter "Column not found" errors:
 
 3. Manually add missing columns if needed:
    ```bash
+   # For queue table
    docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE queue ADD COLUMN consultation_id INT DEFAULT NULL;"
+   
+   # For prescribed_medication table
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN dosage VARCHAR(255) DEFAULT NULL;"
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN frequency VARCHAR(255) DEFAULT NULL;"
+   docker-compose exec mysql mysql -u clinic_user -pclinic_password clinic_db -e "ALTER TABLE prescribed_medication ADD COLUMN duration VARCHAR(255) DEFAULT NULL;"
    ```
 
 ## Monitoring
