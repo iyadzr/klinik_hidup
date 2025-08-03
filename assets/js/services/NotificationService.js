@@ -44,13 +44,24 @@ class NotificationService {
       title: options.title || '',
       message: options.message || '',
       duration: options.duration || 3000,
-      autoClose: options.autoClose !== false
+      autoClose: options.autoClose !== false,
+      position: options.position || 'bottom-right' // Add position support
     };
 
     this.notifications.push(notification);
     this.renderNotification(notification);
     
     return id;
+  }
+
+  /**
+   * Show notification at bottom-left position
+   */
+  showBottomLeft(options) {
+    return this.show({
+      ...options,
+      position: 'bottom-left'
+    });
   }
 
   /**
@@ -127,9 +138,14 @@ class NotificationService {
     const element = document.createElement('div');
     element.id = `notification-${notification.id}`;
     element.className = 'notification-toast';
+    
+    // Determine position and animation direction
+    const isBottomLeft = notification.position === 'bottom-left';
+    const transformDirection = isBottomLeft ? 'translateX(-400px)' : 'translateX(400px)';
+    
     element.style.cssText = `
       pointer-events: auto;
-      transform: translateX(400px);
+      transform: ${transformDirection};
       transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
       width: 350px;
       background: white;
@@ -197,7 +213,9 @@ class NotificationService {
       "></div>
     `;
 
-    this.container.appendChild(element);
+    // Use appropriate container based on position
+    const targetContainer = isBottomLeft ? this.getBottomLeftContainer() : this.container;
+    targetContainer.appendChild(element);
 
     // Trigger animation
     setTimeout(() => {
@@ -219,7 +237,11 @@ class NotificationService {
   removeNotificationElement(id) {
     const element = document.getElementById(`notification-${id}`);
     if (element) {
-      element.style.transform = 'translateX(400px)';
+      // Determine animation direction based on container
+      const isBottomLeft = element.parentNode && element.parentNode.id === 'notification-container-bottom-left';
+      const transformDirection = isBottomLeft ? 'translateX(-400px)' : 'translateX(400px)';
+      
+      element.style.transform = transformDirection;
       setTimeout(() => {
         if (element.parentNode) {
           element.parentNode.removeChild(element);
@@ -300,6 +322,30 @@ class NotificationService {
       info: 'linear-gradient(90deg, #17a2b8, #138496)'
     };
     return colors[type] || colors.info;
+  }
+
+  /**
+   * Get or create bottom-left container
+   */
+  getBottomLeftContainer() {
+    if (!document.getElementById('notification-container-bottom-left')) {
+      const container = document.createElement('div');
+      container.id = 'notification-container-bottom-left';
+      container.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        pointer-events: none;
+        max-width: 400px;
+        width: 100%;
+      `;
+      document.body.appendChild(container);
+    }
+    return document.getElementById('notification-container-bottom-left');
   }
 }
 

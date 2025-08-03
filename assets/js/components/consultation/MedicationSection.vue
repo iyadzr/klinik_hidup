@@ -308,11 +308,12 @@ export default {
               2500
             );
           } else {
-            notificationService.warning(
-              'No Medications Found',
-              `No medications found matching "${searchTerm}". You can create a new medication using the "Add Medication" button.`,
-              4000
-            );
+            notificationService.showBottomLeft({
+              type: 'warning',
+              title: 'No matched medications',
+              message: `No medications found matching "${searchTerm}"`,
+              duration: 2000
+            });
           }
         }
         

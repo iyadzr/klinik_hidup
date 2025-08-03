@@ -514,22 +514,24 @@ export default {
           this.saveFormDataToPatient(this.currentPatientId);
         }
         
+        this.currentPatientId = patientId;
+        this.consultation.patientId = patientId;
+        
+        // Refresh patient data for the newly selected patient
         if (this.isGroupConsultation && Array.isArray(this.groupPatients)) {
           const groupPatient = this.groupPatients.find(p => p.id === patientId);
           if (groupPatient) {
             this.fullPatientDetails = groupPatient;
+            // Refresh visit histories for the new patient
+            await this.loadVisitHistories();
           }
+        } else {
+          // For single patients, fetch fresh patient details
+          await this.fetchPatientDetails();
         }
-        
-        this.currentPatientId = patientId;
-        this.consultation.patientId = patientId;
         
         this.initializePatientData(patientId);
         this.loadPatientDataToForm(patientId);
-        
-        if (!this.isGroupConsultation) {
-          await this.fetchPatientDetails();
-        }
       } catch (error) {
         console.error('❌ Error switching patients:', error);
       }
