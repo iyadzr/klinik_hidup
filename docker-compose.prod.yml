@@ -1,38 +1,121 @@
-# Production configuration for docker-compose
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Production Docker Compose configuration for clinic management system
 
 services:
-  # Production backend
+  # Backend PHP/Symfony Application
   app:
-    environment:
-      - APP_ENV=prod
-      - APP_DEBUG=0
-    # No bind mounts in production - use volumes only
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
     volumes:
       - app-data:/var/www/html
-      
-  # Production frontend (built during image creation)
-  frontend:
-    # No development volumes in production
     environment:
-      - NODE_ENV=production
+      - APP_ENV=prod
+      - DATABASE_URL=mysql://clinic_user:clinic_password@mysql:3306/clinic_db?serverVersion=8.0
+      - TZ=Asia/Kuala_Lumpur
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - clinic-network
+    restart: unless-stopped
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    command: ["/usr/local/bin/startup-prod.sh"]
 
-  # Production database
+  # Frontend Vue.js Application
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    expose:
+      - "80"
+    depends_on:
+      - app
+    networks:
+      - clinic-network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "0.0.0.0:8090:80"
+    depends_on:
+      app:
+        condition: service_healthy
+      frontend:
+        condition: service_started  
+    networks:
+      - clinic-network
+    restart: unless-stopped
+
   mysql:
-    # Don't expose MySQL port in production
-    # ports: []  # Remove external port exposure
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: clinic_db
+      MYSQL_USER: clinic_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-clinic_password}
+      TZ: Asia/Kuala_Lumpur
+    ports:
+      - "0.0.0.0:3307:3306"
     volumes:
-      - mysql_prod_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
+      - ./COMPLETE_DATABASE_SETUP.sql:/docker-entrypoint-initdb.d/setup.sql:ro
     command: >
       --default-authentication-plugin=mysql_native_password
       --default-time-zone=+08:00
       --innodb-buffer-pool-size=1G
       --innodb-log-file-size=512M
+      --innodb-log-buffer-size=32M
       --innodb-flush-log-at-trx-commit=1
       --innodb-flush-method=O_DIRECT
       --max-connections=500
+      --thread-cache-size=100
+      --table-open-cache=8000
+      --tmp-table-size=128M
+      --max-heap-table-size=128M
+      --sort-buffer-size=4M
+      --join-buffer-size=4M
+      --key-buffer-size=64M
+      --read-buffer-size=2M
+      --read-rnd-buffer-size=4M
+      --bulk-insert-buffer-size=32M
+      --myisam-sort-buffer-size=64M
+      --wait-timeout=600
+      --interactive-timeout=600
+      --connect-timeout=30
+      --lock-wait-timeout=300
+      --innodb-lock-wait-timeout=300
       --slow-query-log=1
+      --slow-query-log-file=/var/log/mysql/slow.log
       --long-query-time=1
+      --log-queries-not-using-indexes=1
+      --innodb-thread-concurrency=0
+      --innodb-read-io-threads=16
+      --innodb-write-io-threads=16
+      --innodb-io-capacity=2000
+      --innodb-io-capacity-max=4000
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "clinic_user", "-p${MYSQL_PASSWORD:-clinic_password}"]
+      timeout: 10s
+      interval: 30s
+      retries: 5
 
 volumes:
-  mysql_prod_data:
+  app-data:
+    driver: local
+  mysql_data:
+    driver: local
+
+networks:
+  clinic-network:
+    driver: bridge

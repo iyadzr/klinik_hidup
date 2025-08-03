@@ -81,8 +81,22 @@ RUN mkdir -p var/cache var/log public/uploads \
 COPY docker/php/startup.sh /usr/local/bin/startup.sh
 RUN chmod +x /usr/local/bin/startup.sh
 
+# Create health check script
+RUN echo '#!/bin/bash\n\
+# Health check script\n\
+if [ -f "bin/console" ]; then\n\
+    php bin/console doctrine:query:sql "SELECT 1" --env=${APP_ENV:-prod} > /dev/null 2>&1\n\
+    exit $?\n\
+else\n\
+    exit 1\n\
+fi' > /usr/local/bin/healthcheck.sh && chmod +x /usr/local/bin/healthcheck.sh
+
 # Switch to non-root user
 USER www
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
 
 # Use startup script as entrypoint
 ENTRYPOINT ["/usr/local/bin/startup.sh"]

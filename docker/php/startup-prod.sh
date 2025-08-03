@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# Startup script for PHP container
-# This script runs migrations and then starts PHP-FPM
+# Production startup script for PHP container
+# This script runs migrations and then starts PHP-FPM with production optimizations
 
 set -e
 
-echo "🚀 Starting Clinic Management System..."
+echo "🚀 Starting Clinic Management System (Production)..."
 echo "📅 Current time: $(date)"
 echo "🐘 PHP version: $(php -v | head -n 1)"
+echo "🌍 Environment: ${APP_ENV:-prod}"
 
 # Function to check database connection
 check_database() {
@@ -24,7 +25,7 @@ check_database() {
 
 # Wait for database to be ready with timeout
 echo "⏳ Waiting for database connection..."
-TIMEOUT=60
+TIMEOUT=120
 COUNTER=0
 
 until check_database; do
@@ -48,6 +49,13 @@ fi
 # Set proper environment
 export APP_ENV=${APP_ENV:-prod}
 export SYMFONY_ENV=${APP_ENV}
+
+# Production-specific optimizations
+echo "⚡ Running production optimizations..."
+
+# Clear all caches first
+echo "🧹 Clearing all caches..."
+php bin/console cache:clear --env=${APP_ENV} --no-debug --no-warmup || echo "⚠️  Cache clear failed, but continuing..."
 
 # Check migration status first
 echo "📊 Checking migration status..."
@@ -99,16 +107,8 @@ try {
 }
 "
 
-# Clear and warm up cache
-echo "🧹 Clearing application cache..."
-if php bin/console cache:clear --env=${APP_ENV} --no-debug; then
-    echo "✅ Cache cleared successfully!"
-else
-    echo "⚠️  Cache clear failed, but continuing..."
-fi
-
-# Warm up cache
-echo "🔥 Warming up cache..."
+# Warm up cache for production
+echo "🔥 Warming up cache for production..."
 php bin/console cache:warmup --env=${APP_ENV} --no-debug || echo "⚠️  Cache warmup failed, but continuing..."
 
 # Validate database schema
@@ -119,13 +119,22 @@ else
     echo "⚠️  Database schema validation failed, but continuing..."
 fi
 
-# Set proper permissions
-echo "🔒 Setting proper permissions..."
+# Set proper permissions for production
+echo "🔒 Setting proper permissions for production..."
 chown -R www:www var/ || true
 chmod -R 755 var/ || true
+chmod -R 644 var/log/*.log 2>/dev/null || true
 
-echo "🎉 Startup completed successfully!"
-echo "🏃 Starting PHP-FPM..."
+# Production security checks
+echo "🛡️  Running production security checks..."
+php bin/console security:check --env=${APP_ENV} || echo "⚠️  Security check failed, but continuing..."
 
-# Start PHP-FPM
-exec php-fpm
+# Final cache optimization
+echo "⚡ Final cache optimization..."
+php bin/console cache:pool:prune --env=${APP_ENV} || echo "⚠️  Cache pruning failed, but continuing..."
+
+echo "🎉 Production startup completed successfully!"
+echo "🏃 Starting PHP-FPM in production mode..."
+
+# Start PHP-FPM with production settings
+exec php-fpm 

@@ -730,16 +730,11 @@ class ConsultationController extends AbstractController
         
         try {
             $doctorId = $request->query->get('doctorId');
-            $cacheKey = 'consultations_ongoing' . ($doctorId ? '_doctor_' . $doctorId : '');
             
-            if ($this->cache) {
-                $data = $this->cache->get($cacheKey, function (ItemInterface $item) use ($doctorId) {
-                    $item->expiresAfter(30); // 30 seconds cache for real-time data
-                    return $this->buildOngoingData($doctorId);
-                });
-            } else {
-                $data = $this->buildOngoingData($doctorId);
-            }
+            // Temporarily disable cache and add debugging
+            $this->logger->info('Starting buildOngoingData', ['doctorId' => $doctorId]);
+            $data = $this->buildOngoingData($doctorId);
+            $this->logger->info('buildOngoingData completed successfully', ['resultCount' => count($data['ongoing'] ?? [])]);
             
             return new JsonResponse($data);
         } catch (\Doctrine\DBAL\Exception $e) {
@@ -787,17 +782,67 @@ class ConsultationController extends AbstractController
     
     private function buildOngoingData($doctorId = null): array
     {
-        $today = \App\Service\TimezoneService::now();
-        
-        // Set time to the beginning of the day for the start of the range
-        $startOfDay = (clone $today)->setTime(0, 0, 0);
-        
-        // Set time to the end of the day for the end of the range
-        $endOfDay = (clone $today)->setTime(23, 59, 59);
+        try {
+            $today = \App\Service\TimezoneService::now();
+            
+            // Set time to the beginning of the day for the start of the range
+            $startOfDay = (clone $today)->setTime(0, 0, 0);
+            
+            // Set time to the end of the day for the end of the range
+            $endOfDay = (clone $today)->setTime(23, 59, 59);
 
-        $ongoingData = [];
+            $ongoingData = [];
 
-        // Get ongoing consultations for the current day
+            // Get ongoing consultations for the current day
+            $ongoingConsultations = $this->getOngoingConsultations($startOfDay, $endOfDay, $doctorId);
+            $ongoingData = array_merge($ongoingData, $ongoingConsultations);
+
+            // Get queue entries that are waiting for consultation
+            $queueEntries = $this->getOngoingQueueEntries($startOfDay, $endOfDay, $doctorId);
+            $ongoingData = array_merge($ongoingData, $queueEntries);
+
+            // Sort by queue number and consultation date
+            usort($ongoingData, function($a, $b) {
+                if ($a['isQueueEntry'] && $b['isQueueEntry']) {
+                    return strcmp($a['queueNumber'] ?? '', $b['queueNumber'] ?? '');
+                } elseif ($a['isQueueEntry']) {
+                    return -1; // Queue entries first
+                } elseif ($b['isQueueEntry']) {
+                    return 1;
+                } else {
+                    // Both are consultations - compare by date
+                    $dateA = $a['consultationDate'] ?? '';
+                    $dateB = $b['consultationDate'] ?? '';
+                    return strcmp($dateA, $dateB);
+                }
+            });
+                
+            // Get total unique patients for today
+            $todayTotal = $this->getTodayTotalPatients($startOfDay, $endOfDay, $doctorId);
+
+            return [
+                'ongoing' => $ongoingData,
+                'todayTotal' => $todayTotal
+            ];
+        } catch (\Exception $e) {
+            $this->logger->error('Error in buildOngoingData: ' . $e->getMessage(), [
+                'doctorId' => $doctorId,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Return empty data instead of throwing
+            return [
+                'ongoing' => [],
+                'todayTotal' => 0
+            ];
+        }
+    }
+
+    /**
+     * Get ongoing consultations for the specified time range
+     */
+    private function getOngoingConsultations(\DateTimeInterface $startOfDay, \DateTimeInterface $endOfDay, $doctorId = null): array
+    {
         $consultationQb = $this->entityManager->getRepository(Consultation::class)
             ->createQueryBuilder('c')
             ->select('c.id', 'c.consultationDate', 'p.name as patientName', 'd.name as doctorName', 'c.status', 'c.symptoms', 'p.id as patientId', 'd.id as doctorId')
@@ -814,12 +859,12 @@ class ConsultationController extends AbstractController
                           ->setParameter('doctorId', $doctorId);
         }
 
-        $ongoingConsultations = $consultationQb->orderBy('c.consultationDate', 'ASC')
+        $consultations = $consultationQb->orderBy('c.consultationDate', 'ASC')
             ->getQuery()
             ->getResult();
 
-        // Add ongoing consultations to the data
-        foreach ($ongoingConsultations as $consultation) {
+        $ongoingData = [];
+        foreach ($consultations as $consultation) {
             $ongoingData[] = [
                 'id' => $consultation['id'],
                 'consultationDate' => $consultation['consultationDate'] instanceof \DateTimeInterface
@@ -837,10 +882,17 @@ class ConsultationController extends AbstractController
             ];
         }
 
-        // Get queue entries that are waiting for consultation
+        return $ongoingData;
+    }
+
+    /**
+     * Get ongoing queue entries for the specified time range
+     */
+    private function getOngoingQueueEntries(\DateTimeInterface $startOfDay, \DateTimeInterface $endOfDay, $doctorId = null): array
+    {
         $queueQb = $this->entityManager->getRepository(Queue::class)
             ->createQueryBuilder('q')
-            ->select('q', 'p', 'd') // Select full objects to access entity methods
+            ->select('q', 'p', 'd')
             ->join('q.patient', 'p')
             ->join('q.doctor', 'd')
             ->where('q.status IN (:statuses)')
@@ -849,7 +901,6 @@ class ConsultationController extends AbstractController
             ->setParameter('start', $startOfDay)
             ->setParameter('end', $endOfDay);
             
-        // Add doctor filter if specified
         if ($doctorId) {
             $queueQb->andWhere('d.id = :queueDoctorId')
                     ->setParameter('queueDoctorId', $doctorId);
@@ -859,62 +910,33 @@ class ConsultationController extends AbstractController
             ->getQuery()
             ->getResult();
 
-        // Add queue entries to the data
+        $ongoingData = [];
         $groupedQueues = [];
+
         foreach ($queueEntries as $queue) {
             $patient = $queue->getPatient();
             $doctor = $queue->getDoctor();
             
             if (!$patient || !$doctor) {
-                continue; // Skip incomplete records
+                $this->logger->warning('Skipping queue entry with missing patient or doctor', [
+                    'queueId' => $queue->getId(),
+                    'patientId' => $patient?->getId(),
+                    'doctorId' => $doctor?->getId()
+                ]);
+                continue;
             }
             
-            // Check if this is a group consultation using Queue entity methods
+            // Check if this is a group consultation
             $groupId = $queue->getGroupId();
             $isGroupConsultation = $queue->isGroupConsultation();
             
             if ($groupId && $isGroupConsultation) {
-                // Group consultation: group by groupId
+                // Handle group consultation
                 if (!isset($groupedQueues[$groupId])) {
-                    // Fetch all patients in this group
-                    $allGroupQueues = $this->entityManager->getRepository(Queue::class)
-                        ->createQueryBuilder('gq')
-                        ->select('gq', 'gp') // Select queue and patient
-                        ->join('gq.patient', 'gp')
-                        ->where('gq.metadata LIKE :groupId')
-                        ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
-                        ->getQuery()
-                        ->getResult();
-                    
-                    $groupPatients = [];
-                    foreach ($allGroupQueues as $groupQueue) {
-                        $groupPatient = $groupQueue->getPatient();
-                        if ($groupPatient) {
-                            $groupPatients[] = [
-                                'patientName' => $groupPatient->getName(),
-                                'patientId' => $groupPatient->getId(),
-                                'symptoms' => $groupPatient->getRemarks()
-                            ];
-                        }
+                    $groupData = $this->buildGroupConsultationData($queue, $groupId);
+                    if ($groupData) {
+                        $groupedQueues[$groupId] = $groupData;
                     }
-                    
-                    $groupedQueues[$groupId] = [
-                        'id' => null,
-                        'consultationDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
-                        'doctorName' => $doctor->getName(),
-                        'doctorId' => $doctor->getId(),
-                        'status' => $queue->getStatus(),
-                        'isQueueEntry' => true,
-                        'queueId' => $queue->getId(),
-                        'queueNumber' => $queue->getQueueNumber(),
-                        'isGroupConsultation' => true,
-                        'patients' => $groupPatients
-                    ];
-                    $this->logger->info("Created new group consultation entry", [
-                        'groupId' => $groupId,
-                        'queueNumber' => $queue->getQueueNumber(),
-                        'patientCount' => count($groupPatients)
-                    ]);
                 }
             } else {
                 // Single patient queue
@@ -934,48 +956,96 @@ class ConsultationController extends AbstractController
                 ];
             }
         }
-        // Add grouped group consultations to ongoingData
+
+        // Add grouped consultations to ongoing data
         foreach ($groupedQueues as $group) {
             $ongoingData[] = $group;
         }
 
-        // Sort by queue number and consultation date
-        usort($ongoingData, function($a, $b) {
-            if ($a['isQueueEntry'] && $b['isQueueEntry']) {
-                return strcmp($a['queueNumber'] ?? '', $b['queueNumber'] ?? '');
-            } elseif ($a['isQueueEntry']) {
-                return -1; // Queue entries first
-            } elseif ($b['isQueueEntry']) {
-                return 1;
-            } else {
-                // Both are consultations - compare by date (now both are strings)
-                $dateA = $a['consultationDate'] ?? '';
-                $dateB = $b['consultationDate'] ?? '';
-                return strcmp($dateA, $dateB);
-            }
-        });
-            
-        // Get total unique patients for today (count queue entries as primary source)
-        // Queue entries represent patient visits, consultations are created from queue entries
-        $queueQb = $this->entityManager->getRepository(Queue::class)
-            ->createQueryBuilder('q')
-            ->select('COUNT(DISTINCT IDENTITY(q.patient))')
-            ->where('q.queueDateTime BETWEEN :start AND :end')
-            ->setParameter('start', $startOfDay)
-            ->setParameter('end', $endOfDay);
-            
-        if ($doctorId) {
-            $queueQb->join('q.doctor', 'd')
-                   ->andWhere('d.id = :doctorId')
-                   ->setParameter('doctorId', $doctorId);
-        }
-        
-        $todayTotal = $queueQb->getQuery()->getSingleScalarResult();
+        return $ongoingData;
+    }
 
-        return [
-            'ongoing' => $ongoingData,
-            'todayTotal' => $todayTotal
-        ];
+    /**
+     * Build data for group consultation
+     */
+    private function buildGroupConsultationData($queue, $groupId): ?array
+    {
+        try {
+            $patient = $queue->getPatient();
+            $doctor = $queue->getDoctor();
+            
+            // Fetch all patients in this group
+            $allGroupQueues = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('gq')
+                ->select('gq', 'gp')
+                ->join('gq.patient', 'gp')
+                ->where('gq.metadata LIKE :groupId')
+                ->setParameter('groupId', '%"groupId":"' . $groupId . '"%')
+                ->getQuery()
+                ->getResult();
+            
+            $groupPatients = [];
+            foreach ($allGroupQueues as $groupQueue) {
+                $groupPatient = $groupQueue->getPatient();
+                if ($groupPatient) {
+                    $groupPatients[] = [
+                        'patientName' => $groupPatient->getName(),
+                        'patientId' => $groupPatient->getId(),
+                        'symptoms' => $groupPatient->getRemarks()
+                    ];
+                }
+            }
+            
+            if (empty($groupPatients)) {
+                $this->logger->warning('Group consultation has no patients', ['groupId' => $groupId]);
+                return null;
+            }
+            
+            return [
+                'id' => null,
+                'consultationDate' => $queue->getQueueDateTime()->format('Y-m-d H:i:s'),
+                'doctorName' => $doctor->getName(),
+                'doctorId' => $doctor->getId(),
+                'status' => $queue->getStatus(),
+                'isQueueEntry' => true,
+                'queueId' => $queue->getId(),
+                'queueNumber' => $queue->getQueueNumber(),
+                'isGroupConsultation' => true,
+                'patients' => $groupPatients
+            ];
+        } catch (\Exception $e) {
+            $this->logger->error('Error building group consultation data: ' . $e->getMessage(), [
+                'groupId' => $groupId,
+                'queueId' => $queue->getId()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Get total unique patients for today
+     */
+    private function getTodayTotalPatients(\DateTimeInterface $startOfDay, \DateTimeInterface $endOfDay, $doctorId = null): int
+    {
+        try {
+            $queueQb = $this->entityManager->getRepository(Queue::class)
+                ->createQueryBuilder('q')
+                ->select('COUNT(DISTINCT IDENTITY(q.patient))')
+                ->where('q.queueDateTime BETWEEN :start AND :end')
+                ->setParameter('start', $startOfDay)
+                ->setParameter('end', $endOfDay);
+                
+            if ($doctorId) {
+                $queueQb->join('q.doctor', 'd')
+                       ->andWhere('d.id = :doctorId')
+                       ->setParameter('doctorId', $doctorId);
+            }
+            
+            return (int) $queueQb->getQuery()->getSingleScalarResult();
+        } catch (\Exception $e) {
+            $this->logger->error('Error getting today total patients: ' . $e->getMessage());
+            return 0;
+        }
     }
 
     private function buildTodayAllData($doctorId = null): array
