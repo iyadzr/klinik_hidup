@@ -277,6 +277,19 @@ export default {
     selectedPatient() {
       let selectedPatient = null;
       
+      console.log('🔍 selectedPatient computed - Debug info:', {
+        patientId: this.consultation.patientId,
+        isGroupConsultation: this.isGroupConsultation,
+        groupPatientsLength: this.groupPatients?.length || 0,
+        fullPatientDetails: this.fullPatientDetails ? {
+          id: this.fullPatientDetails.id,
+          name: this.fullPatientDetails.name,
+          remarks: this.fullPatientDetails.remarks
+        } : null,
+        patientsLength: this.patients?.length || 0,
+        singlePatientRemarks: this.singlePatientRemarks
+      });
+      
       // First priority: Group consultation data (has visit-specific remarks from queue metadata)
       if (this.isGroupConsultation && Array.isArray(this.groupPatients) && this.groupPatients.length > 0) {
         const groupPatient = this.groupPatients.find(p => p.id === this.consultation.patientId);
@@ -306,6 +319,14 @@ export default {
         selectedPatient = { ...selectedPatient, remarks: this.singlePatientRemarks };
         console.log('✅ Overriding with queue remarks for single patient:', this.singlePatientRemarks);
       }
+      
+      console.log('🔍 selectedPatient computed - Final result:', {
+        selectedPatient: selectedPatient ? {
+          id: selectedPatient.id,
+          name: selectedPatient.name,
+          remarks: selectedPatient.remarks
+        } : null
+      });
       
       return selectedPatient;
     }
