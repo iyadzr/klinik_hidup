@@ -1271,6 +1271,22 @@ class ConsultationController extends AbstractController
                 ];
             }
             
+            // If no medications are prescribed, add a message
+            if (empty($medicationsData)) {
+                $medicationsData = [
+                    [
+                        'name' => 'No medications prescribed',
+                        'medicationName' => 'No medications prescribed',
+                        'dosage' => null,
+                        'frequency' => null,
+                        'duration' => null,
+                        'instructions' => 'No medications were prescribed during this consultation.',
+                        'quantity' => null,
+                        'unitType' => null,
+                    ]
+                ];
+            }
+            
             return new JsonResponse([
                 'id' => $consultation->getId(),
                 'patientId' => $patient->getId(),
