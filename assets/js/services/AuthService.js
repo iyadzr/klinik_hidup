@@ -138,9 +138,9 @@ class AuthService {
       const payload = JSON.parse(atob(token.split('.')[1]));
       const currentTime = Math.floor(Date.now() / 1000);
       
-      // Check if token has expired (with 30 second buffer)
-      if (payload.exp && payload.exp < (currentTime + 30)) {
-        console.log('🕒 JWT token will expire soon or has expired');
+      // Check if token has expired
+      if (payload.exp && payload.exp < currentTime) {
+        console.log('🕒 JWT token has expired');
         return true;
       }
       
