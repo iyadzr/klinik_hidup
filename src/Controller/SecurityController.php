@@ -57,19 +57,8 @@ class SecurityController extends AbstractController
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        // Verify password - check both hashed and plain text for backward compatibility
-        $isPasswordValid = false;
-        
-        // First try hashed password verification (for new users)
-        if ($passwordHasher->isPasswordValid($user, $password)) {
-            $isPasswordValid = true;
-        }
-        // Fallback to plain text comparison (for existing users)
-        elseif ($user->getPassword() === $password) {
-            $isPasswordValid = true;
-        }
-        
-        if (!$isPasswordValid) {
+        // Verify password using Symfony's password hasher
+        if (!$passwordHasher->isPasswordValid($user, $password)) {
             return $this->json([
                 'error' => 'Invalid credentials',
                 'message' => 'Incorrect password. Please try again.'
