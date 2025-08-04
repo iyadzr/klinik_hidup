@@ -54,7 +54,7 @@ services:
       - "0.0.0.0:8090:80"
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
       frontend:
         condition: service_started  
     networks:
