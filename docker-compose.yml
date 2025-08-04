@@ -8,6 +8,7 @@ services:
       dockerfile: docker/php/Dockerfile
     volumes:
       - app-data:/var/www/html
+      - build-assets:/var/www/html/public/build
     environment:
       - APP_ENV=dev
       - DATABASE_URL=mysql://clinic_user:clinic_password@mysql:3306/clinic_db?serverVersion=8.0
@@ -26,6 +27,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend/Dockerfile
+    volumes:
+      - build-assets:/usr/share/nginx/html/build:rw
     expose:
       - "80"
     depends_on:
@@ -108,6 +111,7 @@ services:
 volumes:
   mysql_data:
   app-data:
+  build-assets:
 
 networks:
   clinic-network:
