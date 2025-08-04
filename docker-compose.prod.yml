@@ -24,12 +24,12 @@ services:
     restart: unless-stopped
     expose:
       - "9000"
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    # healthcheck:
+    #   test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 60s
     command: ["/usr/local/bin/startup-prod.sh"]
 
   # Frontend Vue.js Application
