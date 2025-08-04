@@ -54,7 +54,7 @@ class CreateInitialUsersCommand extends Command
                 'name' => 'Super Admin',
                 'username' => 'superadmin',
                 'email' => 'dhiak@gmail.com',
-                'password' => 'admin123',
+                'password' => 'password',
                 'roles' => ['ROLE_USER', 'ROLE_SUPER_ADMIN'],
                 'allowedPages' => ['dashboard', 'queue', 'queue-display', 'consultations', 'financial', 'admin', 'settings']
             ],
@@ -62,7 +62,7 @@ class CreateInitialUsersCommand extends Command
                 'name' => 'Dr. John Doe',
                 'username' => 'doctor',
                 'email' => 'doctor@gmail.com',
-                'password' => 'doctor123',
+                'password' => 'password',
                 'roles' => ['ROLE_USER', 'ROLE_DOCTOR'],
                 'allowedPages' => ['dashboard', 'queue', 'queue-display', 'consultations']
             ],
@@ -70,7 +70,7 @@ class CreateInitialUsersCommand extends Command
                 'name' => 'Dr. Mat Hayat',
                 'username' => 'mathayat',
                 'email' => 'mat.hayat@ymail.com',
-                'password' => 'doctor123',
+                'password' => 'password',
                 'roles' => ['ROLE_USER', 'ROLE_DOCTOR'],
                 'allowedPages' => ['dashboard', 'queue', 'queue-display', 'consultations']
             ],
@@ -78,7 +78,7 @@ class CreateInitialUsersCommand extends Command
                 'name' => 'Clinic Assistant',
                 'username' => 'assistant',
                 'email' => 'assistant@gmail.com',
-                'password' => 'assistant123',
+                'password' => 'password',
                 'roles' => ['ROLE_USER', 'ROLE_ASSISTANT'],
                 'allowedPages' => ['dashboard', 'queue', 'queue-display', 'registration']
             ]
