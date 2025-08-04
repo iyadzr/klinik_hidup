@@ -77,9 +77,10 @@ RUN mkdir -p var/cache var/log public/uploads \
     && chown -R www:www var/ public/ \
     && chmod -R 755 var/ public/
 
-# Copy and set up startup script
+# Copy and set up startup scripts
 COPY docker/php/startup.sh /usr/local/bin/startup.sh
-RUN chmod +x /usr/local/bin/startup.sh
+COPY docker/php/startup-prod.sh /usr/local/bin/startup-prod.sh
+RUN chmod +x /usr/local/bin/startup.sh /usr/local/bin/startup-prod.sh
 
 # Create health check script
 RUN echo '#!/bin/bash\n\

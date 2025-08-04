@@ -13,6 +13,9 @@ services:
       - APP_ENV=dev
       - DATABASE_URL=mysql://clinic_user:clinic_password@mysql:3306/clinic_db?serverVersion=8.0
       - TZ=Asia/Kuala_Lumpur
+      - JWT_SECRET_KEY=/var/www/html/config/jwt/private.pem
+      - JWT_PUBLIC_KEY=/var/www/html/config/jwt/public.pem
+      - JWT_PASSPHRASE=0769fa69cb42c84beedcfc421bd5ff638be91715fa4987b71afd2dd1a845077a
     depends_on:
       mysql:
         condition: service_healthy

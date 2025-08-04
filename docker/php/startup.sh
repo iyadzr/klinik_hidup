@@ -165,6 +165,17 @@ echo "🔒 Setting proper permissions..."
 chown -R www:www var/ || true
 chmod -R 755 var/ || true
 
+# Ensure JWT keys have proper permissions
+if [ -d "config/jwt" ]; then
+    echo "🔐 Setting JWT key permissions..."
+    chown -R www:www config/jwt/ || true
+    chmod 600 config/jwt/private.pem || true
+    chmod 644 config/jwt/public.pem || true
+    echo "✅ JWT key permissions set!"
+else
+    echo "⚠️  JWT keys directory not found at config/jwt/"
+fi
+
 echo "🎉 Startup completed successfully!"
 echo "🏃 Starting PHP-FPM..."
 

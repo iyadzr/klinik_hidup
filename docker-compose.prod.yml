@@ -8,6 +8,7 @@ services:
       dockerfile: docker/php/Dockerfile
     volumes:
       - app-data:/var/www/html
+      - ./config/jwt:/var/www/html/config/jwt:ro
     environment:
       - APP_ENV=prod
       - DATABASE_URL=mysql://clinic_user:clinic_password@mysql:3306/clinic_db?serverVersion=8.0

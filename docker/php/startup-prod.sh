@@ -166,6 +166,25 @@ chown -R www:www var/ || true
 chmod -R 755 var/ || true
 chmod -R 644 var/log/*.log 2>/dev/null || true
 
+# Ensure JWT keys have proper permissions
+if [ -d "config/jwt" ]; then
+    echo "🔐 Setting JWT key permissions..."
+    chown -R www:www config/jwt/ || true
+    chmod 600 config/jwt/private.pem || true
+    chmod 644 config/jwt/public.pem || true
+    echo "✅ JWT key permissions set!"
+    
+    # Verify JWT configuration
+    echo "🔍 Verifying JWT configuration..."
+    if php bin/console lexik:jwt:check-config --env=${APP_ENV}; then
+        echo "✅ JWT configuration is valid!"
+    else
+        echo "❌ JWT configuration failed! This will cause login issues."
+    fi
+else
+    echo "⚠️  JWT keys directory not found at config/jwt/"
+fi
+
 # Production security checks
 echo "🛡️  Running production security checks..."
 php bin/console security:check --env=${APP_ENV} || echo "⚠️  Security check failed, but continuing..."
