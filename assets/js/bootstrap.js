@@ -14,15 +14,27 @@ axios.interceptors.request.use(
       try {
         const user = JSON.parse(userStr);
         if (user && user.token) {
-          config.headers.Authorization = `Bearer ${user.token}`;
+          // Ensure token is properly formatted
+          const token = user.token.trim();
+          if (token && token.length > 0) {
+            config.headers.Authorization = `Bearer ${token}`;
+            console.log('🔐 Request interceptor: Token set for', config.url, 'Token length:', token.length);
+          } else {
+            console.warn('⚠️ Request interceptor: Empty or invalid token for', config.url);
+          }
+        } else {
+          console.warn('⚠️ Request interceptor: No token in user data for', config.url);
         }
       } catch (e) {
-        console.error('Error parsing user data:', e);
+        console.error('❌ Request interceptor: Error parsing user data:', e);
       }
+    } else {
+      console.warn('⚠️ Request interceptor: No user data in localStorage for', config.url);
     }
     return config;
   },
   (error) => {
+    console.error('❌ Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -71,7 +83,8 @@ axios.interceptors.response.use(
         return Promise.reject(error);
       }
       
-      if (isTokenExpired) {
+      // Only show session expiration for actual JWT token issues
+      if (isTokenExpired && errorMessage && errorMessage.includes('Invalid JWT Token')) {
         console.log('🕒 JWT Token expired - performing automatic logout');
         
         // Show user-friendly message about session expiration
@@ -87,39 +100,39 @@ axios.interceptors.response.use(
             alert('Your session has expired. You will be redirected to the login page.');
           }
         }
-      } else {
-        console.log('🚫 Authentication failed - unauthorized access');
-      }
-      
-      // Clear ALL authentication data (complete logout)
-      localStorage.clear();
-      sessionStorage.clear();
-      delete axios.defaults.headers.common['Authorization'];
-      
-      // Clear all cookies for security
-      const cookies = document.cookie.split(";");
-      for (let cookie of cookies) {
-        const eqPos = cookie.indexOf("=");
-        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
-      }
-      
-      // Only redirect if not already on login page
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-        console.log('🔄 Redirecting to login page...');
         
-        // Use Vue Router if available, otherwise fallback to direct navigation
-        if (window.Vue && window.Vue.router) {
-          window.Vue.router.push('/login').catch(() => {
-            window.location.href = '/login';
-          });
-        } else {
-          // Small delay to allow any toast messages to show
-          setTimeout(() => {
-            window.location.href = '/login';
-          }, 1000);
+        // Clear ALL authentication data (complete logout)
+        localStorage.clear();
+        sessionStorage.clear();
+        delete axios.defaults.headers.common['Authorization'];
+        
+        // Clear all cookies for security
+        const cookies = document.cookie.split(";");
+        for (let cookie of cookies) {
+          const eqPos = cookie.indexOf("=");
+          const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
         }
+        
+        // Only redirect if not already on login page
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+          console.log('🔄 Redirecting to login page...');
+          
+          // Use Vue Router if available, otherwise fallback to direct navigation
+          if (window.Vue && window.Vue.router) {
+            window.Vue.router.push('/login').catch(() => {
+              window.location.href = '/login';
+            });
+          } else {
+            // Small delay to allow any toast messages to show
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 1000);
+          }
+        }
+      } else {
+        console.log('🚫 Authentication failed - unauthorized access (not session expiration)');
       }
     }
     

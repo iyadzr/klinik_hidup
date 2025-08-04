@@ -12,17 +12,7 @@ class AuthService {
       this._authStateReady = true;
     }
     
-    // Add axios interceptor to ensure token is always sent
-    axios.interceptors.request.use(
-      (config) => {
-        const currentUser = this.getCurrentUser();
-        if (currentUser && currentUser.token) {
-          config.headers.Authorization = `Bearer ${currentUser.token}`;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
+    // Note: axios interceptor is handled in bootstrap.js to avoid conflicts
   }
 
   // New method to wait for authentication state to be ready
@@ -72,21 +62,28 @@ class AuthService {
       });
       
       if (response.data && response.data.token) {
+        // Validate token format before storing
+        const token = response.data.token;
+        if (!this.isValidJWTFormat(token)) {
+          console.error('🔐 AuthService: Invalid JWT token format received');
+          throw new Error('Invalid JWT token format');
+        }
+        
         // Store both user and token data
         const userData = {
-          token: response.data.token,
+          token: token,
           user: response.data.user || response.data,
           ...response.data.user
         };
         
         localStorage.setItem('user', JSON.stringify(userData));
-        this.setAuthHeader(response.data.token);
+        this.setAuthHeader(token);
         
         // Mark authentication state as ready
         this._authStateReady = true;
         this._authStatePromise = Promise.resolve(true);
         
-        console.log('🔐 AuthService: Login successful, user data stored');
+        console.log('🔐 AuthService: Login successful, user data stored, token length:', token.length);
         return userData;
       } else {
         console.error('🔐 AuthService: Invalid response data', response.data);
@@ -156,10 +153,13 @@ class AuthService {
   }
 
   setAuthHeader(token) {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    if (token && this.isValidJWTFormat(token)) {
+      const cleanToken = token.trim();
+      axios.defaults.headers.common['Authorization'] = `Bearer ${cleanToken}`;
+      console.log('🔐 AuthService: Authorization header set, token length:', cleanToken.length);
     } else {
       delete axios.defaults.headers.common['Authorization'];
+      console.warn('⚠️ AuthService: Invalid token, cleared Authorization header');
     }
   }
 
@@ -272,6 +272,34 @@ class AuthService {
     }
     
     return null;
+  }
+
+  // New method to validate JWT token format
+  isValidJWTFormat(token) {
+    if (!token || typeof token !== 'string') {
+      return false;
+    }
+    
+    // JWT tokens have 3 parts separated by dots
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return false;
+    }
+    
+    // Each part should be base64 encoded
+    try {
+      parts.forEach(part => {
+        if (part.length === 0) {
+          throw new Error('Empty JWT part');
+        }
+        // Try to decode each part
+        atob(part);
+      });
+      return true;
+    } catch (error) {
+      console.error('🔐 AuthService: Invalid JWT format:', error);
+      return false;
+    }
   }
 }
 
