@@ -44,6 +44,33 @@ axios.interceptors.response.use(
         errorMessage.includes('JWT')
       );
       
+      // Check if we're on a page that should trigger session expiration
+      const currentPath = window.location.pathname;
+      const isAuthPage = ['/login', '/register'].includes(currentPath);
+      const isDashboardPage = currentPath === '/dashboard';
+      
+      // Don't show session expiration for auth pages or if we're already logged out
+      if (isAuthPage) {
+        console.log('🔐 On auth page, skipping session expiration handling');
+        return Promise.reject(error);
+      }
+      
+      // For dashboard API calls, be more lenient and don't immediately logout
+      if (isDashboardPage && !isTokenExpired) {
+        console.log('🔐 Dashboard API call failed, but not treating as session expiration');
+        return Promise.reject(error);
+      }
+      
+      // Add grace period for authentication establishment (first 10 seconds after page load)
+      const pageLoadTime = window._pageLoadTime || Date.now();
+      const timeSincePageLoad = Date.now() - pageLoadTime;
+      const gracePeriod = 10000; // 10 seconds
+      
+      if (timeSincePageLoad < gracePeriod && !isTokenExpired) {
+        console.log('🔐 Within grace period, not treating as session expiration');
+        return Promise.reject(error);
+      }
+      
       if (isTokenExpired) {
         console.log('🕒 JWT Token expired - performing automatic logout');
         
@@ -110,5 +137,8 @@ axios.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Set page load time for grace period calculation
+window._pageLoadTime = Date.now();
 
 console.log('🔧 Axios configured with authentication interceptors'); 

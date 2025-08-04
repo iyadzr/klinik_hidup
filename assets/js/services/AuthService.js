@@ -2,10 +2,14 @@ import axios from 'axios';
 
 class AuthService {
   constructor() {
+    this._authStateReady = false;
+    this._authStatePromise = null;
+    
     // Set auth header on initialization if user is logged in
     const user = this.getCurrentUser();
     if (user && user.token) {
       this.setAuthHeader(user.token);
+      this._authStateReady = true;
     }
     
     // Add axios interceptor to ensure token is always sent
@@ -19,6 +23,43 @@ class AuthService {
       },
       (error) => Promise.reject(error)
     );
+  }
+
+  // New method to wait for authentication state to be ready
+  async waitForAuthState() {
+    if (this._authStateReady) {
+      return true;
+    }
+    
+    if (this._authStatePromise) {
+      return this._authStatePromise;
+    }
+    
+    this._authStatePromise = new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = 50; // 5 seconds total
+      
+      const checkAuth = () => {
+        if (this.isAuthenticated()) {
+          this._authStateReady = true;
+          resolve(true);
+          return;
+        }
+        
+        attempts++;
+        if (attempts >= maxAttempts) {
+          console.warn('⚠️ Authentication state not ready after maximum attempts');
+          resolve(false);
+          return;
+        }
+        
+        setTimeout(checkAuth, 100);
+      };
+      
+      checkAuth();
+    });
+    
+    return this._authStatePromise;
   }
 
   async login(username, password) {
@@ -40,6 +81,10 @@ class AuthService {
         
         localStorage.setItem('user', JSON.stringify(userData));
         this.setAuthHeader(response.data.token);
+        
+        // Mark authentication state as ready
+        this._authStateReady = true;
+        this._authStatePromise = Promise.resolve(true);
         
         console.log('🔐 AuthService: Login successful, user data stored');
         return userData;
@@ -67,6 +112,10 @@ class AuthService {
     
     // Clear all cookies
     this.clearAllCookies();
+    
+    // Reset authentication state
+    this._authStateReady = false;
+    this._authStatePromise = null;
     
     console.log('Logout: All storage and cookies cleared');
   }
@@ -138,16 +187,21 @@ class AuthService {
       const payload = JSON.parse(atob(token.split('.')[1]));
       const currentTime = Math.floor(Date.now() / 1000);
       
-      // Check if token has expired
-      if (payload.exp && payload.exp < currentTime) {
-        console.log('🕒 JWT token has expired');
+      // Add a 5-minute buffer to prevent edge cases
+      const bufferTime = 5 * 60; // 5 minutes in seconds
+      
+      // Check if token has expired (with buffer)
+      if (payload.exp && payload.exp < (currentTime + bufferTime)) {
+        console.log('🕒 JWT token has expired or will expire soon');
         return true;
       }
       
       return false;
     } catch (error) {
       console.error('❌ Error checking token expiration:', error);
-      return true; // Treat invalid tokens as expired
+      // Don't treat parsing errors as expired tokens
+      // This prevents false positives during token validation
+      return false;
     }
   }
 

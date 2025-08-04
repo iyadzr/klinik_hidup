@@ -120,6 +120,8 @@ export default {
     }
   },
   async created() {
+    // Wait for authentication to be properly established
+    await this.waitForAuthentication();
     await this.fetchData();
   },
   beforeUnmount() {
@@ -129,28 +131,65 @@ export default {
     stopAutoRefresh() {
       // Dummy method to prevent errors. Implement auto-refresh cleanup if needed.
     },
+    
+    // New method to ensure authentication is ready before making API calls
+    async waitForAuthentication() {
+      try {
+        const authReady = await AuthService.waitForAuthState();
+        if (authReady) {
+          console.log('✅ Authentication confirmed, proceeding with API calls');
+        } else {
+          console.warn('⚠️ Authentication not established after maximum attempts');
+        }
+      } catch (error) {
+        console.error('❌ Error waiting for authentication:', error);
+      }
+    },
+    
     async fetchPatientCount() {
+      // Double-check authentication before making API call
+      if (!AuthService.isAuthenticated()) {
+        console.warn('❌ Authentication not available for patient count API call');
+        return;
+      }
+      
       this.loading.patients = true;
       try {
         const response = await axios.get('/api/patients/count');
         this.patientCount = response.data.count;
       } catch (error) {
         console.error('Failed to load patient count:', error);
+        // Don't show session expiration for dashboard API calls
+        if (error.response?.status !== 401) {
+          console.error('Patient count API error:', error.response?.data);
+        }
       } finally {
         this.loading.patients = false;
       }
     },
+    
     async fetchDoctorCount() {
+      // Double-check authentication before making API call
+      if (!AuthService.isAuthenticated()) {
+        console.warn('❌ Authentication not available for doctor count API call');
+        return;
+      }
+      
       this.loading.doctors = true;
       try {
         const response = await axios.get('/api/doctors/count');
         this.doctorCount = response.data.count;
       } catch (error) {
         console.error('Failed to load doctor count:', error);
+        // Don't show session expiration for dashboard API calls
+        if (error.response?.status !== 401) {
+          console.error('Doctor count API error:', error.response?.data);
+        }
       } finally {
         this.loading.doctors = false;
       }
     },
+    
     async fetchData() {
       await Promise.all([
         this.fetchPatientCount(),

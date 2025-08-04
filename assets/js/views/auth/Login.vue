@@ -90,8 +90,8 @@ export default {
           // Emit login success event to parent App component first
           emit('login-success');
           
-          // Small delay to ensure authentication state is updated
-          await new Promise(resolve => setTimeout(resolve, 150));
+          // Ensure authentication state is properly established
+          await this.ensureAuthenticationEstablished();
           
           // Get user roles for appropriate redirection
           const user = AuthService.getCurrentUser();
@@ -117,6 +117,20 @@ export default {
         loginError.value = error.response?.data?.message || 'Login failed. Please try again.';
       } finally {
         loading.value = false;
+      }
+    };
+
+    // New method to ensure authentication is properly established
+    const ensureAuthenticationEstablished = async () => {
+      try {
+        const authReady = await AuthService.waitForAuthState();
+        if (authReady) {
+          console.log('✅ Authentication state confirmed');
+        } else {
+          console.warn('⚠️ Authentication state not confirmed after maximum attempts');
+        }
+      } catch (error) {
+        console.error('❌ Error ensuring authentication state:', error);
       }
     };
 

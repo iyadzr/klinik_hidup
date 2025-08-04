@@ -248,8 +248,18 @@ router.beforeEach((to, from, next) => {
     return;
   }
 
+  // For protected routes, check authentication more thoroughly
   if (requiresAuth && !isAuthenticated) {
-    next('/login');
+    // Double-check authentication state with a small delay
+    setTimeout(() => {
+      if (AuthService.isAuthenticated()) {
+        console.log('✅ Authentication confirmed after delay, proceeding');
+        next();
+      } else {
+        console.log('❌ Authentication not confirmed, redirecting to login');
+        next('/login');
+      }
+    }, 100);
     return;
   }
   

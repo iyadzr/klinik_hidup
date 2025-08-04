@@ -468,13 +468,16 @@ export default {
 
     const handleLoginSuccess = () => {
       console.log('📡 App received login success event');
-      // Add a small delay to ensure the login process is complete
+      // Add a longer delay to ensure the login process is complete
       setTimeout(() => {
         loadUserData();
         // Force reactivity update
         currentUser.value = { ...AuthService.getCurrentUser() };
         console.log('✅ App user data updated:', currentUser.value);
-      }, 50);
+        
+        // Start token monitoring after successful login
+        startTokenExpirationMonitoring();
+      }, 200);
     };
 
     const handleDataChange = () => {
