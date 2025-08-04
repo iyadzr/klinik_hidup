@@ -36,7 +36,7 @@ class Doctor
     #[ORM\Column(type: 'json')]
     private array $workingHours = [];
 
-    #[ORM\OneToOne(targetEntity: User::class, cascade: ['persist'])]
+    #[ORM\OneToOne(targetEntity: User::class, inversedBy: 'doctorProfile', cascade: ['persist'])]
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     private ?User $user = null;
 
