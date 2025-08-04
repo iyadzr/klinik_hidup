@@ -74,9 +74,9 @@ fi
 echo -e "${YELLOW}🔄 Running database migrations...${NC}"
 if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then
     # Check if updated_at column already exists
-    COLUMN_EXISTS=$(docker exec clinic-management-system-mysql-1 mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep updated_at | wc -l)
+    COLUMN_EXISTS=$(docker exec klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep updated_at | wc -l)
     if [ "$COLUMN_EXISTS" -eq 0 ]; then
-        docker exec -i clinic-management-system-mysql-1 mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql
+        docker exec -i klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql
         check_status "Database migration completed"
     else
         echo -e "${GREEN}✅ Database migration already applied${NC}"

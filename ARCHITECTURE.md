@@ -106,7 +106,7 @@ docker exec -it clinic-management-system-app-1 bash
 docker exec -it clinic-management-system-frontend-1 sh
 
 # Database access
-docker exec -it clinic-management-system-mysql-1 mysql -u clinic_user -p clinic_db
+docker exec -it klinik_hidup-mysql-1 mysql -u clinic_user -p clinic_db
 ```
 
 ### Production Deployment

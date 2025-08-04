@@ -4,7 +4,7 @@
 echo "🚀 Setting up test database for clinic management system..."
 
 # Check if Docker containers are running
-if ! docker ps | grep -q "clinic-management-system-mysql-1"; then
+if ! docker ps | grep -q "klinik_hidup-mysql-1"; then
     echo "❌ MySQL container is not running. Please start Docker containers first with:"
     echo "   docker-compose up -d"
     exit 1
@@ -13,7 +13,7 @@ fi
 echo "📋 Creating test database and setting up schema..."
 
 # Execute the test database setup script
-docker exec -i clinic-management-system-mysql-1 mysql -uroot -proot_password < setup_test_database.sql
+docker exec -i klinik_hidup-mysql-1 mysql -uroot -proot_password < setup_test_database.sql
 
 if [ $? -eq 0 ]; then
     echo "✅ Test database deployed successfully!"

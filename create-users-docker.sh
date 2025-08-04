@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Try to find MySQL container
-MYSQL_CONTAINERS=("clinic-management-system-mysql-1" "klinik_hidup-mysql-1" "symfony_db")
+MYSQL_CONTAINERS=("klinik_hidup-mysql-1" "klinik_hidup-mysql-1" "symfony_db")
 MYSQL_CONTAINER=""
 
 for container in "${MYSQL_CONTAINERS[@]}"; do
