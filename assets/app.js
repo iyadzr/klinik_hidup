@@ -8,65 +8,76 @@
 import './styles/app.scss';
 import './styles/global-improvements.css';
 
+// Import all the bootstrap and Vue setup from the full app
+import './js/bootstrap.js';
 import { createApp } from 'vue';
 import App from './js/App.vue';
 import router from './js/router';
-import axios from 'axios';
-import AuthService from './js/services/AuthService';
-
-// Font Awesome
-import { library } from '@fortawesome/fontawesome-svg-core';
-import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
-import { 
-  faTachometerAlt, 
-  faUserInjured, 
-  faUserMd, 
-  faCalendarAlt, 
-  faSignOutAlt 
-} from '@fortawesome/free-solid-svg-icons';
-
-// Set axios baseURL to current host (dynamic)
-// In containerized setup, API calls go through nginx proxy to /api/
-axios.defaults.baseURL = window.location.protocol + '//' + window.location.host;
-
-// Configure axios defaults
-axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-
-// Initialize AuthService to set up axios headers
-console.log('🔐 Initializing AuthService...');
-const currentUser = AuthService.getCurrentUser();
-if (currentUser && currentUser.token) {
-  console.log('✅ User found, setting auth header');
-  AuthService.setAuthHeader(currentUser.token);
-} else {
-  console.log('❌ No authenticated user found');
-}
-
-// Add Font Awesome icons
-library.add(
-  faTachometerAlt, 
-  faUserInjured, 
-  faUserMd, 
-  faCalendarAlt, 
-  faSignOutAlt
-);
+import { createPinia } from 'pinia';
+import enterSubmitDirective from './js/enterSubmitDirective.js';
+import globalRequestManager from './js/utils/GlobalRequestManager.js';
+import requestKiller from './js/utils/AggressiveRequestKiller.js';
 
 const app = createApp(App);
+
+// Use Pinia for state management
+app.use(createPinia());
 app.use(router);
-app.component('font-awesome-icon', FontAwesomeIcon);
 
-// Add global currency formatting methods
-app.config.globalProperties.$formatCurrency = function(amount) {
-  const numericAmount = parseFloat(amount || 0);
-  return numericAmount.toFixed(2);
-};
+// Add custom directive for enter to submit
+app.directive('enter-submit', enterSubmitDirective);
 
-app.config.globalProperties.$formatRM = function(amount) {
-  const formatted = this.$formatCurrency(amount);
-  return `RM ${formatted}`;
+// Global error handler
+app.config.errorHandler = (err, vm, info) => {
+    console.error('Vue error:', err, info);
 };
 
 app.mount('#app');
 
-// Expose router for debugging
-window.$router = router;
+// Simple global click protection to prevent system overwhelm
+let lastClickTime = 0;
+const CLICK_THROTTLE_MS = 300; // 300ms between clicks
+
+document.addEventListener('click', function(e) {
+    const now = Date.now();
+    
+    // Only protect buttons and form elements that could trigger API calls
+    if (e.target.matches('button, .btn, input[type="submit"], a[href*="/"], .clickable')) {
+        if (now - lastClickTime < CLICK_THROTTLE_MS) {
+            console.log('Click throttled - too fast');
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            return false;
+        }
+        lastClickTime = now;
+    }
+}, true); // Use capture phase to catch early
+
+// Simple debugging helpers
+window.clinicDebug = {
+    clearConsole: () => console.clear(),
+    reloadPage: () => window.location.reload(),
+    getCurrentRoute: () => router.currentRoute.value,
+    getRequestStatus: () => globalRequestManager.getStatus(),
+    cancelAllRequests: () => globalRequestManager.cancelAllRequests(),
+    getKillerStats: () => requestKiller.getStats(),
+    killAllRequests: () => requestKiller.killAllRequests(),
+    
+    // Emergency reset function
+    emergencyReset: () => {
+        console.log('🚨 Emergency reset initiated');
+        
+        // NUCLEAR OPTION: Kill everything immediately
+        requestKiller.killAllRequests();
+        
+        // Also use existing cleanup methods as backup
+        globalRequestManager.cancelAllRequests();
+        
+        // Reset click protection
+        lastClickTime = 0;
+        
+        console.log('✅ Emergency reset completed - ALL REQUESTS KILLED');
+    }
+};
+
+console.log('Clinic Management System initialized with simple, safe architecture');
