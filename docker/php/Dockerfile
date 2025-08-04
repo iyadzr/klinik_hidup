@@ -83,14 +83,8 @@ COPY docker/php/startup-prod.sh /usr/local/bin/startup-prod.sh
 RUN chmod +x /usr/local/bin/startup.sh /usr/local/bin/startup-prod.sh
 
 # Create health check script
-RUN echo '#!/bin/bash\n\
-# Health check script\n\
-if [ -f "bin/console" ]; then\n\
-    php bin/console doctrine:query:sql "SELECT 1" --env=${APP_ENV:-prod} > /dev/null 2>&1\n\
-    exit $?\n\
-else\n\
-    exit 1\n\
-fi' > /usr/local/bin/healthcheck.sh && chmod +x /usr/local/bin/healthcheck.sh
+COPY docker/php/healthcheck.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/healthcheck.sh
 
 # Switch to non-root user
 USER www
