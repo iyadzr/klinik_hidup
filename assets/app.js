@@ -12,7 +12,7 @@ import './styles/global-improvements.css';
 import './js/bootstrap.js';
 import { createApp } from 'vue';
 import App from './js/App.vue';
-import router from './js/router';
+import router from './js/router/index.js';
 import { createPinia } from 'pinia';
 import enterSubmitDirective from './js/enterSubmitDirective.js';
 import globalRequestManager from './js/utils/GlobalRequestManager.js';
