@@ -259,10 +259,10 @@ ALTER TABLE doctor ADD CONSTRAINT FK_DOCTOR_USER FOREIGN KEY (user_id) REFERENCE
 
 -- Insert Users
 INSERT INTO user (id, username, email, roles, password, name, allowed_pages, created_at, updated_at, is_active) VALUES
-(1, 'superadmin', 'admin@clinic.com', '["ROLE_SUPER_ADMIN"]', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Super Admin', '[]', NOW(), NOW(), 1),
-(2, 'dr.adhar', 'dr.adhar@clinic.com', '["ROLE_DOCTOR"]', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Dr. Md Adhar bin Tahir', '[]', NOW(), NOW(), 1),
-(3, 'assistant1', 'assistant@clinic.com', '["ROLE_ASSISTANT"]', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Clinic Assistant', '[]', NOW(), NOW(), 1),
-(4, 'dr.sarah', 'dr.sarah@clinic.com', '["ROLE_DOCTOR"]', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Dr. Sarah Johnson', '[]', NOW(), NOW(), 1);
+(1, 'superadmin', 'admin@clinic.com', '["ROLE_SUPER_ADMIN"]', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK', 'Super Admin', '[]', NOW(), NOW(), 1),
+(2, 'dr.adhar', 'dr.adhar@clinic.com', '["ROLE_DOCTOR"]', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK', 'Dr. Md Adhar bin Tahir', '[]', NOW(), NOW(), 1),
+(3, 'assistant1', 'assistant@clinic.com', '["ROLE_ASSISTANT"]', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK', 'Clinic Assistant', '[]', NOW(), NOW(), 1),
+(4, 'dr.sarah', 'dr.sarah@clinic.com', '["ROLE_DOCTOR"]', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK', 'Dr. Sarah Johnson', '[]', NOW(), NOW(), 1);
 
 -- Insert Doctors
 INSERT INTO doctor (id, name, email, phone, specialization, license_number, working_hours, user_id) VALUES
@@ -271,8 +271,8 @@ INSERT INTO doctor (id, name, email, phone, specialization, license_number, work
 
 -- Insert Clinic Assistants
 INSERT INTO clinic_assistant (id, name, email, phone, username, password) VALUES
-(1, 'Nurse Mary', 'mary@clinic.com', '+60123456791', 'mary', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi'),
-(2, 'Assistant John', 'john@clinic.com', '+60123456792', 'john', '$2y$13$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi');
+(1, 'Nurse Mary', 'mary@clinic.com', '+60123456791', 'mary', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK'),
+(2, 'Assistant John', 'john@clinic.com', '+60123456792', 'john', '$2y$13$tarOU6Z5kowOY.blp0rkv.bR5GCxz9sn.uhaGe07aJ7H8XvYYfaWK');
 
 -- Insert Sample Patients
 INSERT INTO patient (id, registered_by_id, name, nric, email, phone, date_of_birth, medical_history, company, remarks, gender, address) VALUES
