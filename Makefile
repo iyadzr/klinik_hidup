@@ -187,11 +187,75 @@ db-restore: ## Restore database from backup (specify BACKUP_FILE=filename.sql)
 .PHONY: db-migrate
 db-migrate: ## Run database migrations
 	@echo "$(YELLOW)🔄 Running database migrations...$(NC)"
-	@if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then \
-		docker exec -i $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql; \
-		echo "$(GREEN)✅ Database migrations completed$(NC)"; \
+	@echo "$(BLUE)  📝 Checking payment columns migration...$(NC)"
+	@if [ -f "./migrations/add_payment_columns_to_queue.sql" ]; then \
+		PAYMENT_COLUMNS_EXIST=$$(docker exec $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep is_paid | wc -l); \
+		if [ "$$PAYMENT_COLUMNS_EXIST" -eq 0 ]; then \
+			docker exec -i $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_payment_columns_to_queue.sql; \
+			echo "$(GREEN)  ✅ Payment columns migration completed$(NC)"; \
+		else \
+			echo "$(GREEN)  ✅ Payment columns migration already applied$(NC)"; \
+		fi; \
 	else \
-		echo "$(YELLOW)⚠️  No migration files found$(NC)"; \
+		echo "$(YELLOW)  ⚠️  Payment columns migration file not found$(NC)"; \
+	fi
+	@echo "$(BLUE)  📝 Checking updated_at migration...$(NC)"
+	@if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then \
+		UPDATED_AT_EXISTS=$$(docker exec $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep updated_at | wc -l); \
+		if [ "$$UPDATED_AT_EXISTS" -eq 0 ]; then \
+			docker exec -i $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql; \
+			echo "$(GREEN)  ✅ Updated_at migration completed$(NC)"; \
+		else \
+			echo "$(GREEN)  ✅ Updated_at migration already applied$(NC)"; \
+		fi; \
+	else \
+		echo "$(YELLOW)  ⚠️  Updated_at migration file not found$(NC)"; \
+	fi
+	@echo "$(GREEN)🔄 All database migrations processed$(NC)"
+
+.PHONY: db-migrate-force
+db-migrate-force: ## Force run all database migrations (ignores existing columns)
+	@echo "$(YELLOW)🔄 Force running database migrations...$(NC)"
+	@if [ -f "./migrations/add_payment_columns_to_queue.sql" ]; then \
+		echo "$(BLUE)  📝 Force applying payment columns migration...$(NC)"; \
+		docker exec -i $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_payment_columns_to_queue.sql || true; \
+	fi
+	@if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then \
+		echo "$(BLUE)  📝 Force applying updated_at migration...$(NC)"; \
+		docker exec -i $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql || true; \
+	fi
+	@echo "$(GREEN)🔄 All migrations attempted$(NC)"
+
+.PHONY: db-schema-check
+db-schema-check: ## Check database schema and show missing columns
+	@echo "$(BLUE)🔍 Checking database schema...$(NC)"
+	@echo "$(YELLOW)Current queue table structure:$(NC)"
+	@docker exec $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null || echo "$(RED)❌ Could not access database$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Checking for required columns:$(NC)"
+	@MISSING_COLS=0; \
+	for col in is_paid paid_at payment_method amount metadata updated_at; do \
+		if ! docker exec $(MYSQL_CONTAINER) mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep -q "$$col"; then \
+			echo "$(RED)  ❌ Missing column: $$col$(NC)"; \
+			MISSING_COLS=$$((MISSING_COLS + 1)); \
+		else \
+			echo "$(GREEN)  ✅ Found column: $$col$(NC)"; \
+		fi; \
+	done; \
+	if [ "$$MISSING_COLS" -eq 0 ]; then \
+		echo "$(GREEN)🎉 All required columns are present!$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠️  Found $$MISSING_COLS missing columns. Run 'make db-migrate' to fix.$(NC)"; \
+	fi
+
+.PHONY: db-init
+db-init: ## Initialize database schema with all required columns
+	@echo "$(YELLOW)🚀 Initializing database schema...$(NC)"
+	@if [ -f "./scripts/init-database.sh" ]; then \
+		./scripts/init-database.sh; \
+	else \
+		echo "$(RED)❌ Database initialization script not found$(NC)"; \
+		exit 1; \
 	fi
 
 .PHONY: create-users
@@ -203,6 +267,17 @@ create-users: ## Create default users
 	else \
 		echo "$(RED)❌ User creation script not found$(NC)"; \
 	fi
+
+# Complete Setup Commands
+.PHONY: dev-setup
+dev-setup: dev db-init create-users ## Complete development setup
+	@echo "$(GREEN)🎉 Development setup completed!$(NC)"
+	@$(MAKE) urls
+
+.PHONY: prod-setup  
+prod-setup: prod db-init create-users ## Complete production setup
+	@echo "$(GREEN)🎉 Production setup completed!$(NC)"
+	@$(MAKE) urls
 
 # Frontend Commands
 .PHONY: npm-install

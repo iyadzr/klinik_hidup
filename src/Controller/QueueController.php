@@ -259,7 +259,7 @@ class QueueController extends AbstractController
             $groupedQueues = [];
 
             foreach ($queues as $queue) {
-                if (!$queue['patientId'] || !$queue['doctorId']) {
+                if (!isset($queue['patientId']) || !isset($queue['doctorId']) || !$queue['patientId'] || !$queue['doctorId']) {
                     continue; // Skip incomplete records
                 }
 
@@ -268,16 +268,16 @@ class QueueController extends AbstractController
                 $isGroupConsultation = $metadata['is_group_consultation'] ?? false;
                 $groupId = $metadata['group_id'] ?? null;
 
-                // Format dates safely
-                $queueDateTime = $queue['queue_date_time'] instanceof \DateTime 
-                    ? $queue['queue_date_time'] 
-                    : new \DateTime($queue['queue_date_time']);
+                // Format dates safely - Doctrine getScalarResult() returns camelCase keys
+                $queueDateTime = $queue['queueDateTime'] instanceof \DateTime 
+                    ? $queue['queueDateTime'] 
+                    : new \DateTime($queue['queueDateTime']);
                     
                 $paidAt = null;
-                if ($queue['paid_at']) {
-                    $paidAt = $queue['paid_at'] instanceof \DateTime 
-                        ? $queue['paid_at']->format('Y-m-d H:i:s')
-                        : (new \DateTime($queue['paid_at']))->format('Y-m-d H:i:s');
+                if ($queue['paidAt']) {
+                    $paidAt = $queue['paidAt'] instanceof \DateTime 
+                        ? $queue['paidAt']->format('Y-m-d H:i:s')
+                        : (new \DateTime($queue['paidAt']))->format('Y-m-d H:i:s');
                 }
 
                 $queueItem = [
@@ -306,22 +306,22 @@ class QueueController extends AbstractController
                     $queueItem['patients'] = []; // Simplified - avoid expensive group query
                     $queueItem['patientCount'] = 1; // Simplified
                     $queueItem['mainPatient'] = [
-                        'id' => $queue['patient_id'],
-                        'name' => $queue['patient_name']
+                        'id' => $queue['patientId'],
+                        'name' => $queue['patientName']
                     ];
                     $groupedQueues[$groupId] = true;
                 } else {
                     $queueItem['patient'] = [
-                        'id' => $queue['patient_id'],
-                        'name' => $queue['patient_name'],
-                        'displayName' => $queue['patient_name']
+                        'id' => $queue['patientId'],
+                        'name' => $queue['patientName'],
+                        'displayName' => $queue['patientName']
                     ];
                 }
                 
                 $queueItem['doctor'] = [
-                    'id' => $queue['doctor_id'],
-                    'name' => $queue['doctor_name'],
-                    'displayName' => $queue['doctor_name']
+                    'id' => $queue['doctorId'],
+                    'name' => $queue['doctorName'],
+                    'displayName' => $queue['doctorName']
                 ];
 
                 $queueData[] = $queueItem;

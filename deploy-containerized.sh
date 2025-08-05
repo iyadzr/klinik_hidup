@@ -72,18 +72,38 @@ fi
 
 # Run database migrations for missing columns
 echo -e "${YELLOW}🔄 Running database migrations...${NC}"
-if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then
-    # Check if updated_at column already exists
-    COLUMN_EXISTS=$(docker exec klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep updated_at | wc -l)
-    if [ "$COLUMN_EXISTS" -eq 0 ]; then
-        docker exec -i klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql
-        check_status "Database migration completed"
+
+# Migration 1: Add payment columns to queue table
+if [ -f "./migrations/add_payment_columns_to_queue.sql" ]; then
+    # Check if is_paid column already exists
+    PAYMENT_COLUMNS_EXIST=$(docker exec klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep is_paid | wc -l)
+    if [ "$PAYMENT_COLUMNS_EXIST" -eq 0 ]; then
+        echo -e "${BLUE}  📝 Applying payment columns migration...${NC}"
+        docker exec -i klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_payment_columns_to_queue.sql
+        check_status "Payment columns migration completed"
     else
-        echo -e "${GREEN}✅ Database migration already applied${NC}"
+        echo -e "${GREEN}  ✅ Payment columns migration already applied${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠️  No migration files found${NC}"
+    echo -e "${YELLOW}  ⚠️  Payment columns migration file not found${NC}"
 fi
+
+# Migration 2: Add updated_at column (legacy migration)
+if [ -f "./migrations/add_updated_at_to_queue.sql" ]; then
+    # Check if updated_at column already exists
+    UPDATED_AT_EXISTS=$(docker exec klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db -e "DESCRIBE queue;" 2>/dev/null | grep updated_at | wc -l)
+    if [ "$UPDATED_AT_EXISTS" -eq 0 ]; then
+        echo -e "${BLUE}  📝 Applying updated_at migration...${NC}"
+        docker exec -i klinik_hidup-mysql-1 mysql -u clinic_user -pclinic_password clinic_db < ./migrations/add_updated_at_to_queue.sql
+        check_status "Updated_at migration completed"
+    else
+        echo -e "${GREEN}  ✅ Updated_at migration already applied${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⚠️  Updated_at migration file not found${NC}"
+fi
+
+echo -e "${GREEN}🔄 All database migrations processed${NC}"
 
 # Run health checks
 echo -e "${YELLOW}🏥 Running health checks...${NC}"

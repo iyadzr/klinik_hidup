@@ -93,13 +93,39 @@ try {
         echo \"✅ consultation_id column already exists.\n\";
     }
     
-    // Check if other critical columns exist
-    \$criticalColumns = ['is_paid', 'paid_at', 'payment_method', 'amount', 'metadata', 'updated_at'];
-    foreach (\$criticalColumns as \$column) {
+    // Check and add other critical columns
+    \$criticalColumns = [
+        'is_paid' => 'BOOLEAN DEFAULT FALSE NOT NULL',
+        'paid_at' => 'DATETIME NULL',
+        'payment_method' => 'VARCHAR(20) NULL',
+        'amount' => 'DECIMAL(10,2) NULL',
+        'metadata' => 'TEXT NULL',
+        'updated_at' => 'DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+    ];
+    
+    foreach (\$criticalColumns as \$column => \$definition) {
         \$stmt = \$pdo->query(\"SHOW COLUMNS FROM queue LIKE '\$column'\");
         if (\$stmt->rowCount() == 0) {
-            echo \"⚠️  Missing column: \$column in queue table\n\";
+            echo \"Adding missing column: \$column to queue table...\n\";
+            try {
+                \$pdo->exec(\"ALTER TABLE queue ADD COLUMN \$column \$definition\");
+                echo \"✅ \$column column added successfully!\n\";
+            } catch (Exception \$e) {
+                echo \"⚠️  Failed to add \$column column: \" . \$e->getMessage() . \"\n\";
+            }
+        } else {
+            echo \"✅ \$column column already exists.\n\";
         }
+    }
+    
+    // Update existing records to have proper defaults for new columns
+    echo \"🔄 Updating existing records with proper defaults...\n\";
+    try {
+        \$pdo->exec(\"UPDATE queue SET is_paid = FALSE WHERE is_paid IS NULL\");
+        \$pdo->exec(\"UPDATE queue SET updated_at = NOW() WHERE updated_at IS NULL\");
+        echo \"✅ Default values updated successfully!\n\";
+    } catch (Exception \$e) {
+        echo \"⚠️  Failed to update default values: \" . \$e->getMessage() . \"\n\";
     }
     
     // Check and fix queue status column length
