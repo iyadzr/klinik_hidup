@@ -3,11 +3,20 @@ FROM node:20-alpine AS node-builder
 
 WORKDIR /app
 
+# Set npm configuration for better network handling in production builds
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000
+
 # Copy package files first for better caching
 COPY package.json package-lock.json* ./
 
-# Install Node.js dependencies (including dev dependencies for build)
-RUN npm ci --no-audit --no-fund && npm cache clean --force
+# Install Node.js dependencies with retry logic and fallbacks
+RUN npm ci --no-audit --no-fund && npm cache clean --force || \
+    (npm cache clean --force && npm ci --no-audit --no-fund) || \
+    (rm -rf node_modules package-lock.json && npm install --no-audit --no-fund && npm cache clean --force)
 
 # Copy source files needed for build
 COPY webpack.config.js ./

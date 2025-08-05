@@ -54,6 +54,16 @@ dev: ## Start development environment
 	@echo "$(GREEN)✅ Development environment started$(NC)"
 	@$(MAKE) status
 
+.PHONY: dev-retry
+dev-retry: ## Retry development build with network optimization
+	@echo "$(YELLOW)🔄 Retrying development build with network optimization...$(NC)"
+	@docker system prune -f
+	@docker builder prune -f
+	@$(DOCKER_COMPOSE_DEV) build --no-cache --pull
+	@$(DOCKER_COMPOSE_DEV) up -d
+	@echo "$(GREEN)✅ Development environment built and started$(NC)"
+	@$(MAKE) status
+
 .PHONY: dev-build
 dev-build: ## Build and start development environment
 	@echo "$(YELLOW)🔧 Building and starting development environment...$(NC)"
@@ -84,6 +94,16 @@ prod-build: ## Build and start production environment
 prod-rebuild: clean prod-build ## Clean and rebuild production environment
 	@echo "$(GREEN)✅ Production environment rebuilt$(NC)"
 
+.PHONY: prod-retry
+prod-retry: ## Retry production build with network optimization
+	@echo "$(YELLOW)🔄 Retrying production build with network optimization...$(NC)"
+	@docker system prune -f
+	@docker builder prune -f
+	@$(DOCKER_COMPOSE_PROD) build --no-cache --pull
+	@$(DOCKER_COMPOSE_PROD) up -d
+	@echo "$(GREEN)✅ Production environment built and started$(NC)"
+	@$(MAKE) status
+
 # Deploy Commands (using existing scripts)
 .PHONY: deploy-dev
 deploy-dev: ## Deploy development environment with full setup
@@ -104,6 +124,13 @@ deploy-dev-rebuild: ## Deploy development with forced rebuild
 deploy-prod-rebuild: ## Deploy production with forced rebuild
 	@echo "$(YELLOW)🚀 Deploying production with rebuild...$(NC)"
 	@./deploy-containerized.sh prod true
+
+.PHONY: deploy-prod-retry
+deploy-prod-retry: ## Deploy production with network retry optimization
+	@echo "$(YELLOW)🔄 Deploying production with network retry...$(NC)"
+	@docker system prune -f
+	@docker builder prune -f
+	@DOCKER_BUILDKIT=1 ./deploy-containerized.sh prod true
 
 # Container Management
 .PHONY: stop

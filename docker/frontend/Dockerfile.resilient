@@ -1,9 +1,9 @@
-# Frontend Dockerfile for Vue.js application
+# Network-resilient Frontend Dockerfile
 FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Set npm configuration for better network handling in production
+# Set npm configuration for better network handling
 RUN npm config set registry https://registry.npmjs.org/ && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
@@ -13,8 +13,8 @@ RUN npm config set registry https://registry.npmjs.org/ && \
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies with retry logic and fallbacks
-RUN npm ci --no-audit --no-fund || \
+# Install dependencies with retry logic and fallbacks
+RUN npm ci --no-audit --no-fund --prefer-offline || \
     (npm cache clean --force && npm ci --no-audit --no-fund) || \
     (rm -rf node_modules package-lock.json && npm install --no-audit --no-fund)
 
