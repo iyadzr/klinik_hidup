@@ -153,11 +153,7 @@ export default {
         return;
       }
       
-      // Debug: Check token before API call
-      const user = AuthService.getCurrentUser();
-      console.log('🔍 Dashboard: Making patient count API call with token length:', user?.token?.length || 0);
-      console.log('🔍 Dashboard: Token starts with:', user?.token?.substring(0, 20) + '...');
-      
+
       this.loading.patients = true;
       try {
         const response = await axios.get('/api/patients/count');
@@ -180,11 +176,7 @@ export default {
         return;
       }
       
-      // Debug: Check token before API call
-      const user = AuthService.getCurrentUser();
-      console.log('🔍 Dashboard: Making doctor count API call with token length:', user?.token?.length || 0);
-      console.log('🔍 Dashboard: Token starts with:', user?.token?.substring(0, 20) + '...');
-      
+
       this.loading.doctors = true;
       try {
         const response = await axios.get('/api/doctors/count');
@@ -201,29 +193,10 @@ export default {
     },
     
     async fetchData() {
-      // First, test if token is being sent correctly
-      await this.testTokenTransmission();
-      
-      // Re-enable API calls now that JWT keys are properly configured
       await Promise.all([
         this.fetchPatientCount(),
         this.fetchDoctorCount()
       ]);
-    },
-    
-    async testTokenTransmission() {
-      try {
-        console.log('🧪 Testing token transmission...');
-        const user = AuthService.getCurrentUser();
-        console.log('🧪 Current user token length:', user?.token?.length || 0);
-        console.log('🧪 Token preview:', user?.token?.substring(0, 50) + '...');
-        
-        // Test with a simple API call that should work
-        const response = await axios.get('/api/performance/health');
-        console.log('🧪 Health check successful:', response.data);
-      } catch (error) {
-        console.error('🧪 Health check failed:', error.response?.status, error.response?.data);
-      }
     }
   }
 };

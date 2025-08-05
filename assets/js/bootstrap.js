@@ -18,18 +18,11 @@ axios.interceptors.request.use(
           const token = user.token.trim();
           if (token && token.length > 0) {
             config.headers.Authorization = `Bearer ${token}`;
-            console.log('🔐 Request interceptor: Token set for', config.url, 'Token length:', token.length);
-          } else {
-            console.warn('⚠️ Request interceptor: Empty or invalid token for', config.url);
           }
-        } else {
-          console.warn('⚠️ Request interceptor: No token in user data for', config.url);
         }
       } catch (e) {
         console.error('❌ Request interceptor: Error parsing user data:', e);
       }
-    } else {
-      console.warn('⚠️ Request interceptor: No user data in localStorage for', config.url);
     }
     return config;
   },
