@@ -51,17 +51,13 @@ class AssetService
 
         $assets = $entrypoints['entrypoints']['app'];
         
-        // Convert absolute URLs to relative paths for nginx proxy
+        // Convert absolute URLs to relative paths - production ready
         if (isset($assets['js'])) {
-            $assets['js'] = array_map(function($url) {
-                return str_replace('http://localhost:8080', '', $url);
-            }, $assets['js']);
+            $assets['js'] = array_map([$this, 'normalizeAssetUrl'], $assets['js']);
         }
         
         if (isset($assets['css'])) {
-            $assets['css'] = array_map(function($url) {
-                return str_replace('http://localhost:8080', '', $url);
-            }, $assets['css']);
+            $assets['css'] = array_map([$this, 'normalizeAssetUrl'], $assets['css']);
         }
         
         // If using shared assets, sync them to local public directory for direct serving
@@ -236,5 +232,30 @@ class AssetService
         }
         
         error_log('[AssetService] Asset sync completed');
+    }
+    
+    /**
+     * Normalize asset URLs to be relative paths suitable for any domain
+     * Removes any hardcoded localhost references and ensures proper relative paths
+     */
+    private function normalizeAssetUrl(string $url): string
+    {
+        // Remove any absolute URL prefixes (localhost, webpack dev server, etc.)
+        $patterns = [
+            '/^https?:\/\/localhost(:[0-9]+)?\//',
+            '/^https?:\/\/[^:\/]+:[0-9]+\//',  // Any host:port combination
+            '/^https?:\/\/[^:\/]+\//'           // Any host without port
+        ];
+        
+        foreach ($patterns as $pattern) {
+            $url = preg_replace($pattern, '/', $url);
+        }
+        
+        // Ensure URL starts with / for proper relative path
+        if (!str_starts_with($url, '/')) {
+            $url = '/' . $url;
+        }
+        
+        return $url;
     }
 } 
