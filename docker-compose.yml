@@ -49,6 +49,9 @@ services:
       dockerfile: docker/nginx/Dockerfile
     ports:
       - "0.0.0.0:8090:80"
+    volumes:
+      - app-data:/var/www/html
+      - build-assets:/shared/build-assets:ro
     depends_on:
       - app
       - frontend  

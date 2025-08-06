@@ -181,11 +181,19 @@ class AuthService {
   }
   
   _overrideAxiosRequests(authHeader) {
-    // Override ALL axios methods to force Authorization header
+    // CRITICAL: Override ALL axios methods AND global XMLHttpRequest to force Authorization header
     const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
     
+    // Store original methods if not already stored
+    if (!window._originalAxiosMethods) {
+      window._originalAxiosMethods = {};
+      methods.forEach(method => {
+        window._originalAxiosMethods[method] = axios[method];
+      });
+      window._originalAxiosMethods.request = axios.request;
+    }
+    
     methods.forEach(method => {
-      const originalMethod = axios[method];
       axios[method] = function(url, ...args) {
         // For GET requests: axios.get(url, config)
         // For POST requests: axios.post(url, data, config)
@@ -201,25 +209,49 @@ class AuthService {
         
         // Force Authorization header
         config.headers.Authorization = authHeader;
-        console.log(`🔐 AuthService: Force-added auth to ${method.toUpperCase()} ${url}`);
+        console.log(`🔐 AuthService: FORCE-OVERRIDE auth to ${method.toUpperCase()} ${url}`);
         
         // Call original method with modified config
         if (method === 'get' || method === 'delete' || method === 'head' || method === 'options') {
-          return originalMethod.call(this, url, config);
+          return window._originalAxiosMethods[method].call(this, url, config);
         } else {
-          return originalMethod.call(this, url, args[0], config);
+          return window._originalAxiosMethods[method].call(this, url, args[0], config);
         }
       };
     });
     
     // Also override the generic request method
-    const originalRequest = axios.request;
     axios.request = function(config) {
       if (!config.headers) config.headers = {};
       config.headers.Authorization = authHeader;
-      console.log('🔐 AuthService: Force-added auth to REQUEST:', config.url || config.method);
-      return originalRequest.call(this, config);
+      console.log('🔐 AuthService: FORCE-OVERRIDE auth to REQUEST:', config.url || config.method);
+      return window._originalAxiosMethods.request.call(this, config);
     };
+    
+    // NUCLEAR OPTION: Override XMLHttpRequest globally
+    if (!window._originalXHR) {
+      window._originalXHR = {
+        open: XMLHttpRequest.prototype.open,
+        send: XMLHttpRequest.prototype.send,
+        setRequestHeader: XMLHttpRequest.prototype.setRequestHeader
+      };
+      
+      XMLHttpRequest.prototype.open = function(method, url, ...args) {
+        this._requestUrl = url;
+        this._requestMethod = method;
+        console.log(`🌐 XHR OVERRIDE: ${method} ${url}`);
+        return window._originalXHR.open.apply(this, [method, url, ...args]);
+      };
+      
+      XMLHttpRequest.prototype.send = function(data) {
+        // Force add Authorization header if this is an API request
+        if (this._requestUrl && this._requestUrl.includes('/api/')) {
+          console.log(`🔐 XHR FORCE-AUTH: Adding auth to ${this._requestMethod} ${this._requestUrl}`);
+          this.setRequestHeader('Authorization', authHeader);
+        }
+        return window._originalXHR.send.apply(this, [data]);
+      };
+    }
   }
 
   isAuthenticated() {
