@@ -18,7 +18,7 @@ axios.interceptors.request.use(
           const token = user.token.trim();
           if (token && token.length > 0) {
             config.headers.Authorization = `Bearer ${token}`;
-            // console.log('🔐 Request interceptor: Token attached for', config.url);
+            console.log('🔐 Request interceptor: Token attached for', config.url, 'Token length:', token.length);
           }
         }
       } catch (e) {
@@ -31,7 +31,14 @@ axios.interceptors.request.use(
     // Fallback: if no Authorization header set and axios defaults exist, use them
     if (!config.headers.Authorization && axios.defaults.headers.common['Authorization']) {
       config.headers.Authorization = axios.defaults.headers.common['Authorization'];
-      // console.log('🔐 Request interceptor: Using axios default auth header');
+      console.log('🔐 Request interceptor: Using axios default auth header for', config.url);
+    }
+    
+    // Final debug: Show what authorization header we're sending
+    if (config.headers.Authorization) {
+      console.log('🔐 Final auth header for', config.url, ':', config.headers.Authorization.substring(0, 50) + '...');
+    } else {
+      console.log('❌ NO AUTH HEADER for', config.url);
     }
     
     return config;
