@@ -18,12 +18,22 @@ axios.interceptors.request.use(
           const token = user.token.trim();
           if (token && token.length > 0) {
             config.headers.Authorization = `Bearer ${token}`;
+            // console.log('🔐 Request interceptor: Token attached for', config.url);
           }
         }
       } catch (e) {
         console.error('❌ Request interceptor: Error parsing user data:', e);
+        // Clear corrupted localStorage
+        localStorage.removeItem('user');
       }
     }
+    
+    // Fallback: if no Authorization header set and axios defaults exist, use them
+    if (!config.headers.Authorization && axios.defaults.headers.common['Authorization']) {
+      config.headers.Authorization = axios.defaults.headers.common['Authorization'];
+      // console.log('🔐 Request interceptor: Using axios default auth header');
+    }
+    
     return config;
   },
   (error) => {

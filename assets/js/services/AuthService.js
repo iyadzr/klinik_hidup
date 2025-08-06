@@ -76,7 +76,17 @@ class AuthService {
           ...response.data.user
         };
         
+        // Store user data first
         localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Ensure localStorage write is complete before setting axios header
+        // Force localStorage to be written synchronously
+        const verifyData = localStorage.getItem('user');
+        if (!verifyData || !JSON.parse(verifyData).token) {
+          throw new Error('Failed to store authentication data');
+        }
+        
+        // Now set the axios default header as backup
         this.setAuthHeader(token);
         
         // Mark authentication state as ready
