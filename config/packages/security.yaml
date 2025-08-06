@@ -26,6 +26,7 @@ security:
         # Allow public access to login and register endpoints
         - { path: ^/api/sse, roles: PUBLIC_ACCESS }
         - { path: ^/api/performance/health, roles: PUBLIC_ACCESS }
+        - { path: ^/api/debug, roles: PUBLIC_ACCESS }
         - { path: ^/api/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/register, roles: PUBLIC_ACCESS }
         # Restrict all other /api routes to authenticated users
