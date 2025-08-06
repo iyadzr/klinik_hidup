@@ -181,15 +181,43 @@ class AuthService {
   }
   
   _overrideAxiosRequests(authHeader) {
-    // Force axios to include Authorization header on every request
+    // Override ALL axios methods to force Authorization header
+    const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+    
+    methods.forEach(method => {
+      const originalMethod = axios[method];
+      axios[method] = function(url, ...args) {
+        // For GET requests: axios.get(url, config)
+        // For POST requests: axios.post(url, data, config)
+        let config;
+        if (method === 'get' || method === 'delete' || method === 'head' || method === 'options') {
+          config = args[0] || {};
+        } else {
+          config = args[1] || {};
+        }
+        
+        // Ensure headers exist
+        if (!config.headers) config.headers = {};
+        
+        // Force Authorization header
+        config.headers.Authorization = authHeader;
+        console.log(`🔐 AuthService: Force-added auth to ${method.toUpperCase()} ${url}`);
+        
+        // Call original method with modified config
+        if (method === 'get' || method === 'delete' || method === 'head' || method === 'options') {
+          return originalMethod.call(this, url, config);
+        } else {
+          return originalMethod.call(this, url, args[0], config);
+        }
+      };
+    });
+    
+    // Also override the generic request method
     const originalRequest = axios.request;
     axios.request = function(config) {
-      // Always ensure Authorization header is present
       if (!config.headers) config.headers = {};
-      if (!config.headers.Authorization) {
-        config.headers.Authorization = authHeader;
-        console.log('🔐 AuthService: Force-added auth header to request:', config.url);
-      }
+      config.headers.Authorization = authHeader;
+      console.log('🔐 AuthService: Force-added auth to REQUEST:', config.url || config.method);
       return originalRequest.call(this, config);
     };
   }
