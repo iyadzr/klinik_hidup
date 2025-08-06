@@ -38,7 +38,7 @@ check_current_versions() {
     
     echo -e "${YELLOW}Local System:${NC}"
     echo "Docker: $(docker --version 2>/dev/null || echo 'Not installed')"
-    echo "Docker Compose: $(docker-compose --version 2>/dev/null || echo 'Not installed')"
+    echo "Docker Compose: $(docker compose --version 2>/dev/null || echo 'Not installed')"
     echo ""
     
     echo -e "${YELLOW}Container Base Images:${NC}"
@@ -46,7 +46,7 @@ check_current_versions() {
     echo "Node.js (main): $(grep 'FROM node:' docker/php/Dockerfile | head -1 | cut -d' ' -f2)"
     echo "Node.js (frontend): $(grep 'FROM node:' docker/frontend/Dockerfile | head -1 | cut -d' ' -f2)"
     echo "Nginx: $(grep 'FROM nginx:' docker/nginx/Dockerfile | cut -d' ' -f2)"
-    echo "MySQL: $(grep 'image: mysql:' docker-compose.yml | cut -d':' -f3 || echo 'Using default')"
+    echo "MySQL: $(grep 'image: mysql:' docker compose.yml | cut -d':' -f3 || echo 'Using default')"
     echo ""
 }
 
@@ -55,25 +55,25 @@ create_version_locked_compose() {
     print_section "Creating Version-Locked Docker Compose Files"
     
     # Backup existing files
-    if [ -f "docker-compose.yml" ]; then
-        cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S)
-        echo -e "${GREEN}✅ Backed up docker-compose.yml${NC}"
+    if [ -f "docker compose.yml" ]; then
+        cp docker compose.yml docker compose.yml.backup.$(date +%Y%m%d_%H%M%S)
+        echo -e "${GREEN}✅ Backed up docker compose.yml${NC}"
     fi
     
-    if [ -f "docker-compose.prod.yml" ]; then
-        cp docker-compose.prod.yml docker-compose.prod.yml.backup.$(date +%Y%m%d_%H%M%S)
-        echo -e "${GREEN}✅ Backed up docker-compose.prod.yml${NC}"
+    if [ -f "docker compose.prod.yml" ]; then
+        cp docker compose.prod.yml docker compose.prod.yml.backup.$(date +%Y%m%d_%H%M%S)
+        echo -e "${GREEN}✅ Backed up docker compose.prod.yml${NC}"
     fi
     
     # Add version specification to compose files
     echo -e "${YELLOW}📝 Adding version locks to compose files...${NC}"
     
     # Update MySQL version in compose files
-    if grep -q "image: mysql" docker-compose.yml; then
-        sed -i.tmp "s/image: mysql:[0-9]\.[0-9]*/image: mysql:${MYSQL_VERSION_TARGET}/" docker-compose.yml
-        sed -i.tmp "s/image: mysql$/image: mysql:${MYSQL_VERSION_TARGET}/" docker-compose.yml
-        rm docker-compose.yml.tmp 2>/dev/null || true
-        echo -e "${GREEN}✅ Updated MySQL version in docker-compose.yml${NC}"
+    if grep -q "image: mysql" docker compose.yml; then
+        sed -i.tmp "s/image: mysql:[0-9]\.[0-9]*/image: mysql:${MYSQL_VERSION_TARGET}/" docker compose.yml
+        sed -i.tmp "s/image: mysql$/image: mysql:${MYSQL_VERSION_TARGET}/" docker compose.yml
+        rm docker compose.yml.tmp 2>/dev/null || true
+        echo -e "${GREEN}✅ Updated MySQL version in docker compose.yml${NC}"
     fi
     
     echo ""
@@ -133,7 +133,7 @@ DOCKER_CURRENT=$(docker --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -
 echo "Docker: $DOCKER_CURRENT (target: $DOCKER_TARGET)"
 
 # Check Docker Compose version
-COMPOSE_CURRENT=$(docker-compose --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+COMPOSE_CURRENT=$(docker compose --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
 echo "Docker Compose: $COMPOSE_CURRENT (target: $COMPOSE_TARGET)"
 
 # Check if versions match
@@ -201,7 +201,7 @@ if command -v apt-get >/dev/null 2>&1; then
     
     # Install specific Docker version
     sudo apt-get update
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker compose-plugin
     
 # Install Docker (CentOS/RHEL)
 elif command -v yum >/dev/null 2>&1; then
@@ -215,7 +215,7 @@ elif command -v yum >/dev/null 2>&1; then
     sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     
     # Install Docker
-    sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    sudo yum install -y docker-ce docker-ce-cli containerd.io docker compose-plugin
 
 # macOS with Homebrew
 elif command -v brew >/dev/null 2>&1; then
@@ -263,7 +263,7 @@ echo "=========================================="
 
 # Stop all containers
 echo "🛑 Stopping containers..."
-docker-compose down -v
+docker compose down -v
 
 # Remove all related images to force rebuild
 echo "🧹 Cleaning up old images..."
@@ -279,8 +279,8 @@ docker pull mysql:8.0
 
 # Rebuild and start with no cache
 echo "🏗️  Rebuilding containers..."
-docker-compose build --no-cache --pull
-docker-compose up -d
+docker compose build --no-cache --pull
+docker compose up -d
 
 # Wait for services
 echo "⏳ Waiting for services to start..."
@@ -288,7 +288,7 @@ sleep 15
 
 # Check status
 echo "📊 Container status:"
-docker-compose ps
+docker compose ps
 
 echo "✅ Rebuild completed with aligned versions!"
 EOF

@@ -6,7 +6,7 @@ echo "🚀 Setting up test database for clinic management system..."
 # Check if Docker containers are running
 if ! docker ps | grep -q "klinik_hidup-mysql-1"; then
     echo "❌ MySQL container is not running. Please start Docker containers first with:"
-    echo "   docker-compose up -d"
+    echo "   docker compose up -d"
     exit 1
 fi
 

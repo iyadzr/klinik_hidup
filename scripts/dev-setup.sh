@@ -22,13 +22,13 @@ start_services() {
     echo "🚀 Starting development services..."
     
     # Build and start all services
-    docker-compose up -d --build
+    docker compose up -d --build
     
     echo "⏳ Waiting for services to be ready..."
     sleep 10
     
     # Check if services are running
-    if docker-compose ps | grep -q "Up"; then
+    if docker compose ps | grep -q "Up"; then
         echo "✅ All services are running!"
         echo ""
         echo "🌐 Access your application:"
@@ -37,9 +37,9 @@ start_services() {
         echo "   Database: localhost:3307"
         echo ""
         echo "📊 Service Status:"
-        docker-compose ps
+        docker compose ps
     else
-        echo "❌ Some services failed to start. Check logs with: docker-compose logs"
+        echo "❌ Some services failed to start. Check logs with: docker compose logs"
         exit 1
     fi
 }
@@ -47,22 +47,22 @@ start_services() {
 # Function to stop services
 stop_services() {
     echo "🛑 Stopping development services..."
-    docker-compose down
+    docker compose down
     echo "✅ Services stopped"
 }
 
 # Function to restart services
 restart_services() {
     echo "🔄 Restarting development services..."
-    docker-compose down
-    docker-compose up -d --build
+    docker compose down
+    docker compose up -d --build
     echo "✅ Services restarted"
 }
 
 # Function to view logs
 view_logs() {
     echo "📋 Viewing logs..."
-    docker-compose logs -f
+    docker compose logs -f
 }
 
 # Function to install dependencies
@@ -71,11 +71,11 @@ install_deps() {
     
     # Install PHP dependencies
     echo "Installing PHP dependencies..."
-    docker-compose exec php composer install
+    docker compose exec php composer install
     
     # Install Node.js dependencies
     echo "Installing Node.js dependencies..."
-    docker-compose exec node npm install
+    docker compose exec node npm install
     
     echo "✅ Dependencies installed"
 }
@@ -83,14 +83,14 @@ install_deps() {
 # Function to run database migrations
 run_migrations() {
     echo "🗄️ Running database migrations..."
-    docker-compose exec php bin/console doctrine:migrations:migrate --no-interaction
+    docker compose exec php bin/console doctrine:migrations:migrate --no-interaction
     echo "✅ Migrations completed"
 }
 
 # Function to seed database
 seed_database() {
     echo "🌱 Seeding database..."
-    docker-compose exec php bin/console doctrine:fixtures:load --no-interaction
+    docker compose exec php bin/console doctrine:fixtures:load --no-interaction
     echo "✅ Database seeded"
 }
 

@@ -42,7 +42,7 @@ if command -v apt-get >/dev/null 2>&1; then
     
     # Install specific Docker version
     sudo apt-get update
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker compose-plugin
     
 # Install Docker (CentOS/RHEL)
 elif command -v yum >/dev/null 2>&1; then
@@ -56,7 +56,7 @@ elif command -v yum >/dev/null 2>&1; then
     sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     
     # Install Docker
-    sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    sudo yum install -y docker-ce docker-ce-cli containerd.io docker compose-plugin
 
 # macOS with Homebrew
 elif command -v brew >/dev/null 2>&1; then

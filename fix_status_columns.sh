@@ -6,14 +6,14 @@
 echo "🔧 Fixing status column length in consultation and queue tables..."
 
 # Check if Docker is running
-if docker-compose ps app | grep -q "Up"; then
+if docker compose ps app | grep -q "Up"; then
     echo "✅ Docker container is running, applying fix via container..."
     
     # Apply the SQL fix via Docker
-    docker-compose exec app mysql -u root -proot clinic_management < fix_consultation_status_column.sql
+    docker compose exec app mysql -u root -proot clinic_management < fix_consultation_status_column.sql
     
     # Run the migration as well
-    docker-compose exec app php bin/console doctrine:migrations:migrate --no-interaction
+    docker compose exec app php bin/console doctrine:migrations:migrate --no-interaction
     
     echo "✅ Database fix applied successfully via Docker!"
     

@@ -82,7 +82,7 @@ print_success "Git repository updated"
 # 4. Stop and remove old containers
 print_info "Stopping and removing old containers..."
 docker compose down -v 2>/dev/null || true
-docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
+docker compose -f docker compose.prod.yml down -v 2>/dev/null || true
 print_success "Old containers removed"
 
 # 5. Clean up orphan containers
@@ -91,12 +91,12 @@ docker compose down --remove-orphans 2>/dev/null || true
 print_success "Orphan containers removed"
 
 # 6. Check which compose file to use
-COMPOSE_FILE="docker-compose.yml"
-if [ -f "docker-compose.prod.yml" ]; then
-    COMPOSE_FILE="docker-compose.prod.yml"
-    print_info "Using production docker-compose file"
+COMPOSE_FILE="docker compose.yml"
+if [ -f "docker compose.prod.yml" ]; then
+    COMPOSE_FILE="docker compose.prod.yml"
+    print_info "Using production docker compose file"
 else
-    print_info "Using default docker-compose file"
+    print_info "Using default docker compose file"
 fi
 
 # 7. Build and start containers

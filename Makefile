@@ -2,9 +2,9 @@
 # Standardizes Docker Compose operations to reduce errors
 
 # Variables
-DOCKER_COMPOSE = docker-compose
-DOCKER_COMPOSE_PROD = docker-compose -f docker-compose.yml -f docker-compose.prod.yml
-DOCKER_COMPOSE_DEV = docker-compose
+DOCKER_COMPOSE = docker compose
+DOCKER_COMPOSE_PROD = docker compose -f docker-compose.yml -f docker-compose.prod.yml
+DOCKER_COMPOSE_DEV = docker compose
 PROJECT_NAME = clinic-management-system
 MYSQL_CONTAINER = $(PROJECT_NAME)-mysql-1
 
@@ -378,7 +378,7 @@ debug: ## Show debug information
 	@docker --version
 	@echo ""
 	@echo "Docker Compose version:"
-	@docker-compose --version
+	@docker compose version
 	@echo ""
 	@echo "Container status:"
 	@$(MAKE) status

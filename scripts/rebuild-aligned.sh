@@ -10,7 +10,7 @@ echo "=========================================="
 
 # Stop all containers
 echo "🛑 Stopping containers..."
-docker-compose down -v
+docker compose down -v
 
 # Remove all related images to force rebuild
 echo "🧹 Cleaning up old images..."
@@ -26,8 +26,8 @@ docker pull mysql:8.4
 
 # Rebuild and start with no cache
 echo "🏗️  Rebuilding containers..."
-docker-compose build --no-cache --pull
-docker-compose up -d
+docker compose build --no-cache --pull
+docker compose up -d
 
 # Wait for services
 echo "⏳ Waiting for services to start..."
@@ -35,6 +35,6 @@ sleep 15
 
 # Check status
 echo "📊 Container status:"
-docker-compose ps
+docker compose ps
 
 echo "✅ Rebuild completed with aligned versions!"

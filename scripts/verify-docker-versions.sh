@@ -14,7 +14,7 @@ DOCKER_CURRENT=$(docker --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -
 echo "Docker: $DOCKER_CURRENT (target: $DOCKER_TARGET)"
 
 # Check Docker Compose version
-COMPOSE_CURRENT=$(docker-compose --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+COMPOSE_CURRENT=$(docker compose --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
 echo "Docker Compose: $COMPOSE_CURRENT (target: $COMPOSE_TARGET)"
 
 # Check if versions match

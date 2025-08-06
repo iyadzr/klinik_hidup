@@ -31,7 +31,7 @@ check_status() {
 
 # Stop existing containers
 echo -e "${YELLOW}🛑 Stopping existing containers...${NC}"
-docker-compose down
+docker compose down
 check_status "Containers stopped"
 
 # Clean up if rebuild requested
@@ -45,11 +45,11 @@ fi
 # Build and start containers based on environment
 if [ "$ENVIRONMENT" = "prod" ]; then
     echo -e "${YELLOW}🏭 Building production containers...${NC}"
-    docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
     check_status "Production containers started"
 else
     echo -e "${YELLOW}🔧 Building development containers...${NC}"
-    docker-compose up -d --build
+    docker compose up -d --build
     check_status "Development containers started"
 fi
 
@@ -59,7 +59,7 @@ sleep 10
 
 # Check container status
 echo -e "${BLUE}📊 Container status:${NC}"
-docker-compose ps
+docker compose ps
 
 # Create default users
 echo -e "${YELLOW}👥 Creating default users...${NC}"
@@ -139,8 +139,8 @@ echo "  Doctor: doctor / password"
 echo "  Assistant: assistant / password"
 echo ""
 echo -e "${BLUE}🛠️  Useful Commands:${NC}"
-echo "  View logs: docker-compose logs -f [service]"
-echo "  Stop: docker-compose down"
+echo "  View logs: docker compose logs -f [service]"
+echo "  Stop: docker compose down"
 echo "  Rebuild: ./deploy-containerized.sh $ENVIRONMENT true"
 echo ""
 
