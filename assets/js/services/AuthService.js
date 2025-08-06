@@ -165,12 +165,33 @@ class AuthService {
   setAuthHeader(token) {
     if (token && this.isValidJWTFormat(token)) {
       const cleanToken = token.trim();
-      axios.defaults.headers.common['Authorization'] = `Bearer ${cleanToken}`;
+      const authHeader = `Bearer ${cleanToken}`;
+      
+      // Set both axios defaults AND manual override for all future requests
+      axios.defaults.headers.common['Authorization'] = authHeader;
+      
+      // Override axios interceptors to ensure token is always sent
+      this._overrideAxiosRequests(authHeader);
+      
       console.log('🔐 AuthService: Authorization header set, token length:', cleanToken.length);
     } else {
       delete axios.defaults.headers.common['Authorization'];
       console.warn('⚠️ AuthService: Invalid token, cleared Authorization header');
     }
+  }
+  
+  _overrideAxiosRequests(authHeader) {
+    // Force axios to include Authorization header on every request
+    const originalRequest = axios.request;
+    axios.request = function(config) {
+      // Always ensure Authorization header is present
+      if (!config.headers) config.headers = {};
+      if (!config.headers.Authorization) {
+        config.headers.Authorization = authHeader;
+        console.log('🔐 AuthService: Force-added auth header to request:', config.url);
+      }
+      return originalRequest.call(this, config);
+    };
   }
 
   isAuthenticated() {

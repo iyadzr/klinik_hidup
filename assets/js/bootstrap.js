@@ -37,8 +37,13 @@ axios.interceptors.request.use(
     // Final debug: Show what authorization header we're sending
     if (config.headers.Authorization) {
       console.log('🔐 Final auth header for', config.url, ':', config.headers.Authorization.substring(0, 50) + '...');
+      // Store for debugging - this will persist even after logout
+      window._lastAuthHeader = config.headers.Authorization.substring(0, 50) + '...';
+      window._lastAuthUrl = config.url;
     } else {
       console.log('❌ NO AUTH HEADER for', config.url);
+      window._noAuthHeaderUrl = config.url;
+      window._noAuthHeaderTime = new Date().toISOString();
     }
     
     return config;
