@@ -224,10 +224,21 @@ class AssetService
             
             if ($item->isDir()) {
                 if (!is_dir($target)) {
-                    mkdir($target, 0755, true);
+                    @mkdir($target, 0755, true);
                 }
             } else {
-                copy($item, $target);
+                // Skip copy if file already exists and is newer or same age
+                if (file_exists($target) && filemtime($target) >= filemtime($item)) {
+                    continue;
+                }
+                
+                // Try to copy, suppress errors for read-only files
+                @copy($item, $target);
+                
+                // If copy failed, try to at least ensure file exists locally
+                if (!file_exists($target) && file_exists($item)) {
+                    error_log("[AssetService] Could not copy {$item} to {$target}, file may be read-only");
+                }
             }
         }
         
