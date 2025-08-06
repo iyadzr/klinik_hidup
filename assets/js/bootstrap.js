@@ -36,15 +36,23 @@ axios.interceptors.request.use(
     
     // Final debug: Show what authorization header we're sending
     if (config.headers.Authorization) {
-      console.log('🔐 Final auth header for', config.url, ':', config.headers.Authorization.substring(0, 50) + '...');
+      console.log('🔐 INTERCEPTOR: Auth header attached for', config.url, ':', config.headers.Authorization.substring(0, 50) + '...');
       // Store for debugging - this will persist even after logout
       window._lastAuthHeader = config.headers.Authorization.substring(0, 50) + '...';
       window._lastAuthUrl = config.url;
     } else {
-      console.log('❌ NO AUTH HEADER for', config.url);
+      console.log('❌ INTERCEPTOR: NO AUTH HEADER for', config.url);
       window._noAuthHeaderUrl = config.url;
       window._noAuthHeaderTime = new Date().toISOString();
     }
+    
+    // Debug: Force log ALL request details
+    console.log('🔍 INTERCEPTOR: Processing request:', {
+      url: config.url,
+      method: config.method,
+      hasAuth: !!config.headers.Authorization,
+      headers: Object.keys(config.headers)
+    });
     
     return config;
   },
@@ -169,4 +177,25 @@ axios.interceptors.response.use(
 // Set page load time for grace period calculation
 window._pageLoadTime = Date.now();
 
-console.log('🔧 Axios configured with authentication interceptors'); 
+// Debug: Override XMLHttpRequest to catch ALL HTTP requests
+const originalXHROpen = XMLHttpRequest.prototype.open;
+const originalXHRSend = XMLHttpRequest.prototype.send;
+
+XMLHttpRequest.prototype.open = function(method, url, ...args) {
+  this._requestUrl = url;
+  this._requestMethod = method;
+  console.log('🌐 XHR OPEN:', method, url);
+  return originalXHROpen.apply(this, [method, url, ...args]);
+};
+
+XMLHttpRequest.prototype.send = function(data) {
+  console.log('🌐 XHR SEND:', this._requestMethod, this._requestUrl, 'Headers:', Object.fromEntries([...Array(this._requestHeaders?.length || 0)].map((_, i) => [this.getRequestHeader?.(i) || '', ''])));
+  
+  // Log authorization header specifically
+  const authHeader = this.getRequestHeader ? this.getRequestHeader('Authorization') : 'NOT_ACCESSIBLE';
+  console.log('🔐 XHR AUTH HEADER:', authHeader);
+  
+  return originalXHRSend.apply(this, [data]);
+};
+
+console.log('🔧 Axios configured with authentication interceptors + XHR debugging'); 
