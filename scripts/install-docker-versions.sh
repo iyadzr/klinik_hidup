@@ -5,8 +5,8 @@
 
 set -e
 
-DOCKER_VERSION="27.3.1"
-COMPOSE_VERSION="2.29.7"
+DOCKER_VERSION="27.4.1"
+COMPOSE_VERSION="2.31.0"
 
 echo "🐳 Installing Docker Version $DOCKER_VERSION"
 echo "🔧 Installing Docker Compose Version $COMPOSE_VERSION"

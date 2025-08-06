@@ -408,24 +408,3 @@ rebuild-aligned: ## Rebuild containers with aligned versions
 install-docker-aligned: ## Install aligned Docker versions
 	@echo "$(YELLOW)🐳 Installing aligned Docker versions...$(NC)"
 	@./scripts/install-docker-versions.sh
-
-# Docker Version Alignment Commands
-.PHONY: version-check
-version-check: ## Check Docker version alignment
-	@echo "$(BLUE)🔍 Checking Docker version alignment...$(NC)"
-	@./scripts/verify-docker-versions.sh
-
-.PHONY: version-align
-version-align: ## Align Docker versions across environments
-	@echo "$(YELLOW)🔧 Aligning Docker versions...$(NC)"
-	@./scripts/docker-version-align.sh align
-
-.PHONY: rebuild-aligned
-rebuild-aligned: ## Rebuild containers with aligned versions
-	@echo "$(YELLOW)🔄 Rebuilding with aligned versions...$(NC)"
-	@./scripts/rebuild-aligned.sh
-
-.PHONY: install-docker-aligned
-install-docker-aligned: ## Install aligned Docker versions
-	@echo "$(YELLOW)🐳 Installing aligned Docker versions...$(NC)"
-	@./scripts/install-docker-versions.sh

@@ -14,13 +14,13 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Standard versions to align to (more stable versions)
-DOCKER_VERSION_TARGET="27.3.1"           # Stable Docker version
-DOCKER_COMPOSE_VERSION_TARGET="2.29.7"   # Stable Docker Compose version
-NODE_VERSION_TARGET="20"                 # LTS Node.js version
-PHP_VERSION_TARGET="8.3"                 # Current stable PHP version
-NGINX_VERSION_TARGET="1.25"              # Stable Nginx version
-MYSQL_VERSION_TARGET="8.0"               # Current MySQL version
+# Standard versions to align to (latest stable versions)
+DOCKER_VERSION_TARGET="27.4.1"           # Latest stable Docker version
+DOCKER_COMPOSE_VERSION_TARGET="2.31.0"   # Latest stable Docker Compose version
+NODE_VERSION_TARGET="22"                 # Latest LTS Node.js version (minimum 20 for Claude compatibility)
+PHP_VERSION_TARGET="8.4"                 # Latest stable PHP version
+NGINX_VERSION_TARGET="1.27"              # Latest stable Nginx version
+MYSQL_VERSION_TARGET="8.0"               # Latest LTS MySQL version (8.4 has breaking changes)
 
 echo -e "${BLUE}🔧 Docker Version Alignment Tool${NC}"
 echo "=============================================="
@@ -70,6 +70,7 @@ create_version_locked_compose() {
     
     # Update MySQL version in compose files
     if grep -q "image: mysql" docker-compose.yml; then
+        sed -i.tmp "s/image: mysql:[0-9]\.[0-9]*/image: mysql:${MYSQL_VERSION_TARGET}/" docker-compose.yml
         sed -i.tmp "s/image: mysql$/image: mysql:${MYSQL_VERSION_TARGET}/" docker-compose.yml
         rm docker-compose.yml.tmp 2>/dev/null || true
         echo -e "${GREEN}✅ Updated MySQL version in docker-compose.yml${NC}"
@@ -103,6 +104,7 @@ create_standardized_dockerfiles() {
     
     # Update Nginx Dockerfile
     echo -e "${YELLOW}📝 Standardizing Nginx Dockerfile...${NC}"
+    sed -i.tmp "s/FROM nginx:[0-9]\.[0-9]*-alpine/FROM nginx:${NGINX_VERSION_TARGET}-alpine/g" docker/nginx/Dockerfile
     sed -i.tmp "s/FROM nginx:alpine/FROM nginx:${NGINX_VERSION_TARGET}-alpine/g" docker/nginx/Dockerfile
     rm docker/nginx/Dockerfile.tmp 2>/dev/null || true
     
@@ -120,8 +122,8 @@ create_version_check_script() {
 # Docker Version Verification Script
 # Checks if current Docker versions match the standardized versions
 
-DOCKER_TARGET="27.3.1"
-COMPOSE_TARGET="2.29.7"
+DOCKER_TARGET="27.4.1"
+COMPOSE_TARGET="2.31.0"
 
 echo "🔍 Docker Version Verification"
 echo "=============================="
@@ -270,9 +272,9 @@ docker system prune -f
 
 # Pull latest base images with specific versions
 echo "📥 Pulling aligned base images..."
-docker pull php:8.3-fpm-alpine
-docker pull node:20-alpine  
-docker pull nginx:1.25-alpine
+docker pull php:8.4-fpm-alpine
+docker pull node:22-alpine  
+docker pull nginx:1.27-alpine
 docker pull mysql:8.0
 
 # Rebuild and start with no cache
@@ -356,13 +358,13 @@ show_recommendations() {
     echo "5. Deploy to production with same versions:"
     echo "   ${CYAN}make deploy-prod-rebuild${NC}"
     echo ""
-    echo -e "${GREEN}📝 Target Versions Set:${NC}"
-    echo "   • Docker: $DOCKER_VERSION_TARGET"
-    echo "   • Docker Compose: $DOCKER_COMPOSE_VERSION_TARGET"
-    echo "   • PHP: $PHP_VERSION_TARGET"
-    echo "   • Node.js: $NODE_VERSION_TARGET"
-    echo "   • Nginx: $NGINX_VERSION_TARGET"
-    echo "   • MySQL: $MYSQL_VERSION_TARGET"
+    echo -e "${GREEN}📝 Latest Stable Target Versions Set:${NC}"
+    echo "   • Docker: $DOCKER_VERSION_TARGET (latest stable)"
+    echo "   • Docker Compose: $DOCKER_COMPOSE_VERSION_TARGET (latest stable)"
+    echo "   • PHP: $PHP_VERSION_TARGET (latest stable)"
+    echo "   • Node.js: $NODE_VERSION_TARGET (latest LTS, Claude compatible)"
+    echo "   • Nginx: $NGINX_VERSION_TARGET (latest stable)"
+    echo "   • MySQL: $MYSQL_VERSION_TARGET (latest LTS, 8.4 has breaking changes)"
     echo ""
     echo -e "${CYAN}💡 Pro Tip:${NC} Run 'make version-check' regularly to ensure alignment!"
 }

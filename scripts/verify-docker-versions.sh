@@ -3,8 +3,8 @@
 # Docker Version Verification Script
 # Checks if current Docker versions match the standardized versions
 
-DOCKER_TARGET="27.3.1"
-COMPOSE_TARGET="2.29.7"
+DOCKER_TARGET="27.4.1"
+COMPOSE_TARGET="2.31.0"
 
 echo "🔍 Docker Version Verification"
 echo "=============================="

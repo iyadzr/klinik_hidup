@@ -107,7 +107,7 @@ echo -e "${GREEN}🔄 All database migrations processed${NC}"
 
 # Run health checks
 echo -e "${YELLOW}🏥 Running health checks...${NC}"
-
+support TLS.
 # Check frontend
 if curl -f -s http://localhost:8090/ > /dev/null; then
     echo -e "${GREEN}✅ Frontend is responding${NC}"

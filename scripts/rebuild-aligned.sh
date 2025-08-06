@@ -19,10 +19,10 @@ docker system prune -f
 
 # Pull latest base images with specific versions
 echo "📥 Pulling aligned base images..."
-docker pull php:8.3-fpm-alpine
-docker pull node:20-alpine  
-docker pull nginx:1.25-alpine
-docker pull mysql:8.0
+docker pull php:8.4-fpm-alpine
+docker pull node:22-alpine  
+docker pull nginx:1.27-alpine
+docker pull mysql:8.4
 
 # Rebuild and start with no cache
 echo "🏗️  Rebuilding containers..."
