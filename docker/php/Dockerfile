@@ -1,5 +1,5 @@
 # Multi-stage build for production
-FROM node:22-alpine AS node-builder
+FROM node:20-alpine AS node-builder
 
 WORKDIR /app
 
@@ -27,8 +27,8 @@ COPY public/ ./public/
 ENV NODE_ENV=production
 RUN npm run build
 
-# Production PHP image - use PHP 8.3 for better performance and security
-FROM php:8.4-fpm-alpine
+# Production PHP image - use PHP 8.2 for stability and compatibility
+FROM php:8.2-fpm-alpine3.19
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -75,8 +75,11 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 # Copy application files with proper ownership
 COPY --chown=www:www . .
 
-# Copy built assets from node-builder stage
+# Copy built assets from node-builder stage (fallback assets)
 COPY --from=node-builder --chown=www:www /app/public/build ./public/build
+
+# Copy asset loader for dynamic asset management
+COPY --chown=www:www docker/php/asset-loader.php ./src/Utils/AssetLoader.php
 
 # Run post-install scripts
 RUN composer dump-autoload --optimize && composer clear-cache

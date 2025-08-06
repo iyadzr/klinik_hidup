@@ -8,7 +8,7 @@ services:
       dockerfile: docker/php/Dockerfile
     volumes:
       - app-data:/var/www/html
-      - build-assets:/var/www/html/public/build
+      - build-assets:/shared/build-assets:ro
     environment:
       - APP_ENV=dev
       - DATABASE_URL=mysql://clinic_user:clinic_password@mysql:3306/clinic_db?serverVersion=8.0
@@ -25,13 +25,13 @@ services:
     expose:
       - "9000"
 
-  # Frontend Vue.js Application
+  # Frontend Vue.js Application Builder
   frontend:
     build:
       context: .
       dockerfile: docker/frontend/Dockerfile
     volumes:
-      - build-assets:/usr/share/nginx/html/build:rw
+      - build-assets:/shared/build-assets:rw
     expose:
       - "80"
     depends_on:
@@ -39,6 +39,8 @@ services:
     networks:
       - clinic-network
     restart: unless-stopped
+    environment:
+      - ASSET_SYNC_ENABLED=true
 
   # Nginx Reverse Proxy
   nginx:
@@ -55,7 +57,7 @@ services:
     restart: unless-stopped
 
   mysql:
-    image: mysql:8.4
+    image: mysql:8.0
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: clinic_db

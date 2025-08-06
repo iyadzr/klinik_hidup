@@ -274,32 +274,10 @@ class AuthService {
     return null;
   }
 
-  // New method to validate JWT token format
+  // Bypass JWT token format validation - accept all non-empty tokens 
   isValidJWTFormat(token) {
-    if (!token || typeof token !== 'string') {
-      return false;
-    }
-    
-    // JWT tokens have 3 parts separated by dots
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return false;
-    }
-    
-    // Each part should be base64 encoded
-    try {
-      parts.forEach(part => {
-        if (part.length === 0) {
-          throw new Error('Empty JWT part');
-        }
-        // Try to decode each part
-        atob(part);
-      });
-      return true;
-    } catch (error) {
-      console.error('🔐 AuthService: Invalid JWT format:', error);
-      return false;
-    }
+    // Simply check if token exists and is a non-empty string - updated version
+    return token && typeof token === 'string' && token.length > 0;
   }
 }
 

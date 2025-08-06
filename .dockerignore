@@ -49,8 +49,8 @@ node_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# Environment variables
-.env
+# Environment variables (keep .env for Docker builds)
+#.env
 .env.local
 .env.development.local
 .env.test.local

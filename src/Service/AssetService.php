@@ -16,15 +16,32 @@ class AssetService
     }
 
     /**
-     * Get webpack assets dynamically without hardcoding filenames
+     * Get webpack assets dynamically from shared volume or local fallback
+     * Implements microservices asset synchronization
      */
     public function getWebpackAssets(): array
     {
-        $entrypointsFile = $this->projectDir . '/public/build/entrypoints.json';
+        // Try shared volume first (updated by frontend container)
+        $sharedEntrypointsFile = '/shared/build-assets/entrypoints.json';
+        $localEntrypointsFile = $this->projectDir . '/public/build/entrypoints.json';
         
-        if (!file_exists($entrypointsFile)) {
+        $entrypointsFile = null;
+        $source = 'fallback';
+        
+        if (file_exists($sharedEntrypointsFile)) {
+            $entrypointsFile = $sharedEntrypointsFile;
+            $source = 'shared';
+        } elseif (file_exists($localEntrypointsFile)) {
+            $entrypointsFile = $localEntrypointsFile;
+            $source = 'local';
+        }
+        
+        if (!$entrypointsFile) {
+            error_log('[AssetService] No entrypoints.json found, using fallback assets');
             return $this->getFallbackAssets();
         }
+        
+        error_log('[AssetService] Loading assets from: ' . $source);
 
         $entrypoints = json_decode(file_get_contents($entrypointsFile), true);
         
@@ -45,6 +62,11 @@ class AssetService
             $assets['css'] = array_map(function($url) {
                 return str_replace('http://localhost:8080', '', $url);
             }, $assets['css']);
+        }
+        
+        // If using shared assets, sync them to local public directory for direct serving
+        if ($source === 'shared') {
+            $this->syncSharedAssets();
         }
 
         // DEVELOPMENT FIX: Verify files actually exist, fallback if they don't
@@ -162,5 +184,57 @@ class AssetService
             'js' => $jsFiles,
             'css' => $cssFiles
         ];
+    }
+    
+    /**
+     * Sync assets from shared volume to local public directory
+     * This ensures assets are available for direct serving by nginx
+     */
+    private function syncSharedAssets(): void
+    {
+        $sharedDir = '/shared/build-assets';
+        $localDir = $this->projectDir . '/public/build';
+        
+        if (!is_dir($sharedDir)) {
+            return;
+        }
+        
+        // Create local build directory if it doesn't exist
+        if (!is_dir($localDir)) {
+            mkdir($localDir, 0755, true);
+        }
+        
+        // Get modification times to avoid unnecessary copies
+        $sharedModTime = filemtime($sharedDir . '/entrypoints.json');
+        $localModTime = file_exists($localDir . '/entrypoints.json') 
+            ? filemtime($localDir . '/entrypoints.json') 
+            : 0;
+            
+        // Only sync if shared assets are newer
+        if ($sharedModTime <= $localModTime) {
+            return;
+        }
+        
+        error_log('[AssetService] Syncing assets from shared volume to local directory');
+        
+        // Copy all files from shared to local
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($sharedDir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+        
+        foreach ($iterator as $item) {
+            $target = $localDir . DIRECTORY_SEPARATOR . $iterator->getSubPathName();
+            
+            if ($item->isDir()) {
+                if (!is_dir($target)) {
+                    mkdir($target, 0755, true);
+                }
+            } else {
+                copy($item, $target);
+            }
+        }
+        
+        error_log('[AssetService] Asset sync completed');
     }
 } 

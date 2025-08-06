@@ -91,7 +91,7 @@ export default {
           emit('login-success');
           
           // Ensure authentication state is properly established
-          await this.ensureAuthenticationEstablished();
+          await ensureAuthenticationEstablished();
           
           // Get user roles for appropriate redirection
           const user = AuthService.getCurrentUser();
