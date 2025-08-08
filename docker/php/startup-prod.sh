@@ -192,13 +192,13 @@ chown -R www:www var/ || true
 chmod -R 755 var/ || true
 chmod -R 644 var/log/*.log 2>/dev/null || true
 
-# Ensure JWT keys have proper permissions
-if [ -d "config/jwt" ]; then
+# Ensure JWT keys exist and have proper permissions
+if [ -d "config/jwt" ] && [ -f "config/jwt/private.pem" ] && [ -f "config/jwt/public.pem" ]; then
     echo "🔐 Setting JWT key permissions..."
     chown -R www:www config/jwt/ || true
     chmod 600 config/jwt/private.pem || true
     chmod 644 config/jwt/public.pem || true
-    echo "✅ JWT key permissions set!"
+    echo "✅ JWT keys found and permissions set!"
     
     # Verify JWT configuration
     echo "🔍 Verifying JWT configuration..."
@@ -206,9 +206,35 @@ if [ -d "config/jwt" ]; then
         echo "✅ JWT configuration is valid!"
     else
         echo "❌ JWT configuration failed! This will cause login issues."
+        exit 1
     fi
 else
-    echo "⚠️  JWT keys directory not found at config/jwt/"
+    echo "❌ JWT keys not found! This will cause authentication failures."
+    echo "📍 Expected files:"
+    echo "   - config/jwt/private.pem"
+    echo "   - config/jwt/public.pem"
+    echo "🔧 Attempting to generate JWT keys..."
+    
+    # Try to generate keys as fallback
+    mkdir -p config/jwt
+    if openssl genpkey -out config/jwt/private.pem -aes256 -algorithm rsa -pkeyopt rsa_keygen_bits:4096 -pass pass:0769fa69cb42c84beedcfc421bd5ff638be91715fa4987b71afd2dd1a845077a 2>/dev/null; then
+        openssl pkey -in config/jwt/private.pem -out config/jwt/public.pem -pubout -passin pass:0769fa69cb42c84beedcfc421bd5ff638be91715fa4987b71afd2dd1a845077a 2>/dev/null
+        chown www:www config/jwt/private.pem config/jwt/public.pem
+        chmod 600 config/jwt/private.pem
+        chmod 644 config/jwt/public.pem
+        echo "✅ JWT keys generated successfully as fallback!"
+        
+        # Re-verify after generation
+        if php bin/console lexik:jwt:check-config --env=${APP_ENV}; then
+            echo "✅ JWT configuration is now valid!"
+        else
+            echo "❌ JWT configuration still failed after key generation!"
+            exit 1
+        fi
+    else
+        echo "❌ Failed to generate JWT keys! Authentication will not work."
+        exit 1
+    fi
 fi
 
 # Production security checks

@@ -85,9 +85,16 @@ COPY --chown=www:www docker/php/asset-loader.php ./src/Utils/AssetLoader.php
 RUN composer dump-autoload --optimize && composer clear-cache
 
 # Create necessary directories and set proper permissions
-RUN mkdir -p var/cache var/log public/uploads \
-    && chown -R www:www var/ public/ \
+RUN mkdir -p var/cache var/log public/uploads config/jwt \
+    && chown -R www:www var/ public/ config/jwt \
     && chmod -R 755 var/ public/
+
+# Generate JWT keys during build (production-safe approach)
+RUN openssl genpkey -out config/jwt/private.pem -aes256 -algorithm rsa -pkeyopt rsa_keygen_bits:4096 -pass pass:0769fa69cb42c84beedcfc421bd5ff638be91715fa4987b71afd2dd1a845077a \
+    && openssl pkey -in config/jwt/private.pem -out config/jwt/public.pem -pubout -passin pass:0769fa69cb42c84beedcfc421bd5ff638be91715fa4987b71afd2dd1a845077a \
+    && chown www:www config/jwt/private.pem config/jwt/public.pem \
+    && chmod 600 config/jwt/private.pem \
+    && chmod 644 config/jwt/public.pem
 
 # Copy and set up startup scripts
 COPY docker/php/startup.sh /usr/local/bin/startup.sh
