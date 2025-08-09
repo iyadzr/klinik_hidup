@@ -38,6 +38,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend/Dockerfile
+    volumes:
+      - build-assets:/shared/build-assets:rw
     expose:
       - "80"
     depends_on:
@@ -45,6 +47,8 @@ services:
     networks:
       - clinic-network
     restart: unless-stopped
+    environment:
+      - ASSET_SYNC_ENABLED=true
 
   # Nginx Reverse Proxy
   nginx:
@@ -53,6 +57,9 @@ services:
       dockerfile: docker/nginx/Dockerfile
     ports:
       - "0.0.0.0:8090:80"
+    volumes:
+      - app-data:/var/www/html
+      - build-assets:/shared/build-assets:ro
     depends_on:
       app:
         condition: service_started
@@ -121,6 +128,8 @@ volumes:
   app-data:
     driver: local
   mysql_data:
+    driver: local
+  build-assets:
     driver: local
 
 networks:
